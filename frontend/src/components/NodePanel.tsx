@@ -18,6 +18,9 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
   const closeChildConversation = useTreeLearnStore((state) => state.closeChildConversation);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(node.messages.length);
+  const previousNodeIdRef = useRef(node.id);
+  const shouldFollowScrollRef = useRef(true);
 
   const path = useMemo(() => {
     const items: KnowledgeNode[] = [];
@@ -29,12 +32,27 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
     return items;
   }, [node, nodes]);
 
+  const latestMessageContent = node.messages[node.messages.length - 1]?.content ?? "";
+
   useEffect(() => {
+    const isNodeChange = previousNodeIdRef.current !== node.id;
+    previousNodeIdRef.current = node.id;
+    if (isNodeChange) shouldFollowScrollRef.current = true;
+
     // 新消息出现时，只滚动中间消息区到底部；底部输入框不会被消息内容挤走。
     const scroller = scrollRef.current;
     if (!scroller) return;
-    scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
-  }, [node.id, node.messages.length]);
+    const hasNewMessage = previousMessageCountRef.current !== node.messages.length;
+    previousMessageCountRef.current = node.messages.length;
+    if (!shouldFollowScrollRef.current) return;
+
+    requestAnimationFrame(() => {
+      scroller.scrollTo({
+        top: scroller.scrollHeight,
+        behavior: hasNewMessage ? "smooth" : "auto",
+      });
+    });
+  }, [node.id, node.messages.length, latestMessageContent]);
 
   const handleMouseUp = () => {
     // 使用浏览器 Selection API 读取用户在聊天内容区选中的文本。
@@ -45,6 +63,13 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
     if (!selection || !text || text.length < 2) return;
     const range = selection.getRangeAt(0);
     setSelectionDraft({ text, rect: range.getBoundingClientRect(), sourceNodeId: node.id });
+  };
+
+  const handleScroll = () => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const distanceToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    shouldFollowScrollRef.current = distanceToBottom < 80;
   };
 
   return (
@@ -71,7 +96,12 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         </div>
       </div>
 
-      <div ref={scrollRef} className="min-h-0 overflow-y-auto px-3 py-6" onMouseUp={handleMouseUp}>
+      <div
+        ref={scrollRef}
+        className="min-h-0 overflow-y-auto px-3 py-6"
+        onScroll={handleScroll}
+        onMouseUp={handleMouseUp}
+      >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
           {node.selectedText && (
             <div className="mx-auto w-full max-w-3xl rounded-xl border border-primary/20 bg-accent/55 p-3 text-sm">

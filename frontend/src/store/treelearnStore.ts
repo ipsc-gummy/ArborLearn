@@ -10,6 +10,7 @@ import {
   login as loginRequest,
   patchBackendNode,
   postChat,
+  postChatStream,
   register as registerRequest,
   setAuthToken,
   type AuthUser,
@@ -343,22 +344,87 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const now = new Date().toISOString();
     const notebookId = getNotebookRootId(state.nodes, nodeId);
     const userMessage: ChatMessage = { id: uid("msg"), role: "user", content, createdAt: now };
+    const assistantMessageId = uid("msg");
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "正在思考...",
+      createdAt: now,
+    };
 
     set((current) => ({
       nodes: {
         ...current.nodes,
         [nodeId]: {
           ...current.nodes[nodeId],
-          messages: [...current.nodes[nodeId].messages, userMessage],
+          messages: [...current.nodes[nodeId].messages, userMessage, assistantMessage],
           updatedAt: now,
         },
       },
       apiError: null,
     }));
 
-    void postChat({ notebookId, nodeId, message: content, userMessageId: userMessage.id })
+    let streamedContent = "";
+    void postChatStream(
+      { notebookId, nodeId, message: content, userMessageId: userMessage.id },
+      {
+        onDelta: (delta) => {
+          streamedContent += delta;
+          set((current) => {
+            const node = current.nodes[nodeId];
+            if (!node) return {};
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...node,
+                  messages: node.messages.map((message) =>
+                    message.id === assistantMessageId ? { ...message, content: streamedContent } : message,
+                  ),
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+            };
+          });
+        },
+        onDone: (response) => {
+          const finalAssistantMessage: ChatMessage = response.message ?? {
+            id: response.messageId,
+            role: response.role,
+            content: response.content,
+            createdAt: response.createdAt,
+          };
+
+          set((current) => {
+            const node = current.nodes[nodeId];
+            if (!node) return {};
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...node,
+                  messages: node.messages.map((message) =>
+                    message.id === assistantMessageId ? finalAssistantMessage : message,
+                  ),
+                  updatedAt: finalAssistantMessage.createdAt,
+                },
+              },
+              apiStatus: "ready",
+              apiError: null,
+            };
+          });
+        },
+      },
+    )
+      .catch((error) => {
+        if (error instanceof Error && error.message.includes("Not Found")) {
+          return postChat({ notebookId, nodeId, message: content, userMessageId: userMessage.id });
+        }
+        throw error;
+      })
       .then((response) => {
-        const assistantMessage: ChatMessage = response.message ?? {
+        if (!response) return;
+        const fallbackAssistantMessage: ChatMessage = response.message ?? {
           id: response.messageId,
           role: response.role,
           content: response.content,
@@ -373,8 +439,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
               ...current.nodes,
               [nodeId]: {
                 ...node,
-                messages: [...node.messages, assistantMessage],
-                updatedAt: assistantMessage.createdAt,
+                messages: node.messages.map((message) =>
+                  message.id === assistantMessageId ? fallbackAssistantMessage : message,
+                ),
+                updatedAt: fallbackAssistantMessage.createdAt,
               },
             },
             apiStatus: "ready",
@@ -399,7 +467,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
               ...current.nodes,
               [nodeId]: {
                 ...node,
-                messages: [...node.messages, errorMessage],
+                messages: node.messages.map((item) => (item.id === assistantMessageId ? errorMessage : item)),
                 updatedAt: errorMessage.createdAt,
               },
             },

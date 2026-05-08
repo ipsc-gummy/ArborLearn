@@ -3,10 +3,24 @@ import type { ReactElement } from "react";
 import type { ChatMessage } from "../types/treelearn";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface MessageBlockProps {
   nodeId: string;
   message: ChatMessage;
+}
+
+function ThinkingIndicator() {
+  return (
+    <div className="flex items-center gap-2 text-muted-foreground">
+      <span className="animate-pulse">正在思考</span>
+      <span className="flex items-center gap-1" aria-hidden="true">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.24s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.12s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+      </span>
+    </div>
+  );
 }
 
 // 单条聊天消息：根据角色切换左右布局，并把已创建子对话的选中文本渲染为可点击链接。
@@ -86,7 +100,24 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
             {isUser ? "用户" : "TreeLearn AI"}
           </span>
         </div>
-        <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
+        {!isUser && message.content === "正在思考..." ? (
+          <ThinkingIndicator />
+        ) : isUser ? (
+          <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
+        ) : (
+          <MarkdownContent
+            content={message.content}
+            treeLinks={children
+              .filter((child) => child.selectedText)
+              .map((child) => ({
+                id: child.id,
+                text: child.selectedText ?? "",
+                title: child.title,
+                summary: child.summary,
+              }))}
+            onTreeLinkClick={setActiveNode}
+          />
+        )}
       </div>
     </article>
   );

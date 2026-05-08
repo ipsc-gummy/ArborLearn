@@ -26,7 +26,13 @@ interface ChatResponse {
   role: "assistant";
   content: string;
   createdAt: string;
+  userMessage?: ChatMessage;
   message?: ChatMessage;
+}
+
+interface ChatStreamCallbacks {
+  onDelta: (delta: string) => void;
+  onDone: (response: ChatResponse) => void;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -130,4 +136,78 @@ export function postChat(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+function applySseFrame(frame: string, callbacks: ChatStreamCallbacks) {
+  const lines = frame.split(/\r?\n/);
+  const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+  const data = lines
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n");
+
+  if (!data) return;
+  const payload = JSON.parse(data);
+  if (eventName === "error") {
+    throw new Error(payload?.error ?? "模型调用失败");
+  }
+  if (eventName === "done") {
+    callbacks.onDone(payload as ChatResponse);
+    return;
+  }
+  if (payload?.content) {
+    callbacks.onDelta(String(payload.content));
+  }
+}
+
+export async function postChatStream(
+  payload: {
+    notebookId: string;
+    nodeId: string;
+    message: string;
+    userMessageId: string;
+  },
+  callbacks: ChatStreamCallbacks,
+) {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {
+      // Keep status text when the backend returns plain text.
+    }
+    throw new Error(detail);
+  }
+
+  if (!response.body) {
+    throw new Error("模型流式响应为空");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\n\n|\r\n\r\n/);
+    buffer = frames.pop() ?? "";
+    frames.forEach((frame) => applySseFrame(frame, callbacks));
+  }
+
+  if (buffer.trim()) {
+    applySseFrame(buffer, callbacks);
+  }
 }

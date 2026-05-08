@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
@@ -23,7 +25,7 @@ from .db import (
     touch_node,
     uid,
 )
-from .model_client import ModelConfigurationError, ModelProviderError, call_model
+from .model_client import ModelConfigurationError, ModelProviderError, call_model, stream_model
 from .settings import get_cors_origins
 
 
@@ -83,6 +85,11 @@ def serialize_user(user: dict) -> dict:
         "email": user["email"],
         "displayName": user["display_name"],
     }
+
+
+def sse_event(payload: dict, event: str | None = None) -> str:
+    prefix = f"event: {event}\n" if event else ""
+    return f"{prefix}data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @app.on_event("startup")
@@ -334,3 +341,52 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             "userMessage": user_message,
             "message": assistant_message,
         }
+
+
+@app.post("/api/chat/stream")
+def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
+    with connect() as conn:
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+        if payload.notebookId and not get_notebook_for_user(conn, payload.notebookId, user["id"]):
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
+        model_messages = build_model_messages(conn, payload.nodeId)
+
+    def generate():
+        content_parts: list[str] = []
+        try:
+            for delta in stream_model(model_messages):
+                content_parts.append(delta)
+                yield sse_event({"content": delta})
+
+            content = "".join(content_parts).strip() or "模型没有返回内容。"
+            with connect() as conn:
+                assistant_message = add_message(conn, payload.nodeId, "assistant", content)
+            yield sse_event(
+                {
+                    "messageId": assistant_message["id"],
+                    "role": "assistant",
+                    "content": assistant_message["content"],
+                    "createdAt": assistant_message["createdAt"],
+                    "userMessage": user_message,
+                    "message": assistant_message,
+                },
+                "done",
+            )
+        except (ModelConfigurationError, ModelProviderError) as exc:
+            yield sse_event({"error": str(exc)}, "error")
+        except Exception as exc:
+            yield sse_event({"error": f"Unexpected server error: {exc}"}, "error")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
