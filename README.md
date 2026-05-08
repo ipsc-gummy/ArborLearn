@@ -53,6 +53,14 @@ Set `VITE_API_BASE_URL` if the backend is not running at `http://127.0.0.1:8000`
 - `DELETE /api/nodes/{id}`
 - `GET /api/nodes/{id}/messages`
 
+## ECS Deployment
+
+Use GitHub as the source repository, then deploy on ECS with Nginx + systemd. See:
+
+```text
+deploy/README.md
+```
+
 ## Current Context Strategy
 
 When a user chats in a node, the backend builds model context from:
