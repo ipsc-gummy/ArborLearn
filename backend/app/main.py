@@ -55,7 +55,7 @@ class NodeCreate(BaseModel):
     summary: str = ""
     selectedText: str | None = None
     contextWeight: Literal["isolated", "mainline"] = "isolated"
-    messages: list[MessagePayload] = []
+    messages: list[MessagePayload] = Field(default_factory=list)
 
 
 class NodePatch(BaseModel):
@@ -182,7 +182,7 @@ def create_node(payload: NodeCreate) -> dict:
 
 @app.patch("/api/nodes/{node_id}")
 def patch_node(node_id: str, payload: NodePatch) -> dict:
-    updates = payload.dict(exclude_unset=True)
+    updates = payload.model_dump(exclude_unset=True)
     if not updates:
         return {"ok": True}
 
