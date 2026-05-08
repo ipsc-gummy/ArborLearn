@@ -11,6 +11,8 @@ Frontend chat
 -> assistant message saved back to SQLite
 ```
 
+Accounts are email/password based in the current MVP. Each user owns their own notebooks, nodes, and messages; unauthenticated requests cannot read or mutate tree data.
+
 ## Backend
 
 ```bash
@@ -45,6 +47,9 @@ Set `VITE_API_BASE_URL` if the backend is not running at `http://127.0.0.1:8000`
 
 ## Core API
 
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 - `POST /api/chat`
 - `GET /api/tree`
 - `GET /api/notebooks/{id}/tree`

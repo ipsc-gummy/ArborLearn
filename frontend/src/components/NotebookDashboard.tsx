@@ -17,13 +17,17 @@ import { AccountMenu, SettingsMenu, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
+import type { AuthUser } from "../lib/api";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
-  isLoggedIn: boolean;
-  onLogin: () => void;
+  user: AuthUser | null;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string | null;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
 }
 
@@ -39,8 +43,11 @@ export function NotebookDashboard({
   onOpenNotebook,
   themeMode,
   onThemeChange,
-  isLoggedIn,
+  user,
+  authStatus,
+  authError,
   onLogin,
+  onRegister,
   onLogout,
 }: NotebookDashboardProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
@@ -49,6 +56,7 @@ export function NotebookDashboard({
   const createRootConversation = useTreeLearnStore((state) => state.createRootConversation);
   const renameNode = useTreeLearnStore((state) => state.renameNode);
   const deleteNode = useTreeLearnStore((state) => state.deleteNode);
+  const isLoggedIn = Boolean(user);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -134,7 +142,14 @@ export function NotebookDashboard({
           </div>
           <div className="flex items-center gap-2">
             <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
-            <AccountMenu isLoggedIn={isLoggedIn} onLogin={onLogin} onLogout={onLogout} />
+            <AccountMenu
+              user={user}
+              authStatus={authStatus}
+              authError={authError}
+              onLogin={onLogin}
+              onRegister={onRegister}
+              onLogout={onLogout}
+            />
           </div>
         </div>
       </header>
@@ -215,6 +230,7 @@ export function NotebookDashboard({
               <Button
                 variant="primary"
                 onClick={handleCreateNotebook}
+                disabled={!isLoggedIn}
                 className="border-[#202124] bg-[#202124] text-white hover:bg-[#3c4043] dark:border-[#f1f3f4] dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
               >
                 <Plus className="h-4 w-4" />
@@ -227,12 +243,15 @@ export function NotebookDashboard({
             <button
               className="tl-panel tl-hover flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-5 text-center transition hover:border-primary"
               onClick={handleCreateNotebook}
+              disabled={!isLoggedIn}
             >
               <div className="tl-brand-soft-bg mb-3 flex h-11 w-11 items-center justify-center rounded-full">
                 <Plus className="h-5 w-5" />
               </div>
               <span className="font-medium">新建笔记本</span>
-              <span className="mt-1 text-sm text-muted-foreground">开始一段新的树形学习</span>
+              <span className="mt-1 text-sm text-muted-foreground">
+                {isLoggedIn ? "开始一段新的树形学习" : "请先登录或注册账号"}
+              </span>
             </button>
 
             {orderedRootIds.map((id) => {

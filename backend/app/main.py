@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import sqlite3
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .auth import create_token, normalize_email, password_hash, require_user, verify_password
 from .context_builder import build_model_messages
 from .db import (
     add_message,
     connect,
+    create_starter_notebook,
     descendant_ids,
+    get_node_for_user,
+    get_notebook_for_user,
     get_notebook_state,
     init_db,
     list_messages,
@@ -37,6 +42,12 @@ class ChatRequest(BaseModel):
     nodeId: str
     message: str = Field(min_length=1)
     userMessageId: str | None = None
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+    displayName: str | None = None
 
 
 class MessagePayload(BaseModel):
@@ -66,6 +77,14 @@ class NodePatch(BaseModel):
     parentId: str | None = None
 
 
+def serialize_user(user: dict) -> dict:
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "displayName": user["display_name"],
+    }
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -76,41 +95,86 @@ def health() -> dict:
     return {"ok": True}
 
 
-@app.get("/api/tree")
-def all_tree() -> dict:
+@app.post("/api/auth/register", status_code=201)
+def register(payload: AuthRequest) -> dict:
+    email = normalize_email(payload.email)
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+
+    display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
+    user_id = uid("user")
+    ts = now_iso()
     with connect() as conn:
-        return get_notebook_state(conn)
+        try:
+            conn.execute(
+                """
+                INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, email, display_name, password_hash(payload.password), ts, ts),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="Email is already registered") from exc
+        create_starter_notebook(conn, user_id)
+
+    user = {"id": user_id, "email": email, "display_name": display_name}
+    return {"token": create_token(user_id), "user": serialize_user(user)}
+
+
+@app.post("/api/auth/login")
+def login(payload: AuthRequest) -> dict:
+    email = normalize_email(payload.email)
+    with connect() as conn:
+        user = conn.execute(
+            """
+            SELECT id, email, display_name, password_hash
+            FROM users
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
+
+
+@app.get("/api/auth/me")
+def me(user: dict = Depends(require_user)) -> dict:
+    return {"user": serialize_user(user)}
+
+
+@app.get("/api/tree")
+def all_tree(user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        return get_notebook_state(conn, user["id"])
 
 
 @app.get("/api/notebooks/{notebook_id}/tree")
-def notebook_tree(notebook_id: str) -> dict:
+def notebook_tree(notebook_id: str, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        state = get_notebook_state(conn, notebook_id)
+        state = get_notebook_state(conn, user["id"], notebook_id)
         if not state["rootIds"]:
             raise HTTPException(status_code=404, detail="Notebook not found")
         return state
 
 
 @app.get("/api/nodes/{node_id}/messages")
-def node_messages(node_id: str) -> dict:
+def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        exists = conn.execute("SELECT id FROM nodes WHERE id = ?", (node_id,)).fetchone()
+        exists = get_node_for_user(conn, node_id, user["id"])
         if not exists:
             raise HTTPException(status_code=404, detail="Node not found")
         return {"messages": list_messages(conn, node_id)}
 
 
 @app.post("/api/nodes", status_code=201)
-def create_node(payload: NodeCreate) -> dict:
+def create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict:
     node_id = payload.id or uid("node")
     ts = now_iso()
 
     with connect() as conn:
         if payload.parentId:
-            parent = conn.execute(
-                "SELECT id, notebook_id FROM nodes WHERE id = ?",
-                (payload.parentId,),
-            ).fetchone()
+            parent = get_node_for_user(conn, payload.parentId, user["id"])
             if not parent:
                 raise HTTPException(status_code=404, detail="Parent node not found")
             notebook_id = parent["notebook_id"]
@@ -120,11 +184,14 @@ def create_node(payload: NodeCreate) -> dict:
             context_mode = "mainline"
             conn.execute(
                 """
-                INSERT INTO notebooks(id, title, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at
+                INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  owner_user_id = excluded.owner_user_id,
+                  title = excluded.title,
+                  updated_at = excluded.updated_at
                 """,
-                (notebook_id, payload.title, ts, ts),
+                (notebook_id, user["id"], payload.title, ts, ts),
             )
 
         sibling_count = conn.execute(
@@ -181,13 +248,13 @@ def create_node(payload: NodeCreate) -> dict:
 
 
 @app.patch("/api/nodes/{node_id}")
-def patch_node(node_id: str, payload: NodePatch) -> dict:
+def patch_node(node_id: str, payload: NodePatch, user: dict = Depends(require_user)) -> dict:
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         return {"ok": True}
 
     with connect() as conn:
-        node = conn.execute("SELECT id, notebook_id, parent_id FROM nodes WHERE id = ?", (node_id,)).fetchone()
+        node = get_node_for_user(conn, node_id, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
 
@@ -199,7 +266,7 @@ def patch_node(node_id: str, payload: NodePatch) -> dict:
                 raise HTTPException(status_code=400, detail="Node cannot be its own parent")
             if target_parent_id in descendant_ids(conn, node_id):
                 raise HTTPException(status_code=400, detail="Node cannot move under its own descendant")
-            parent = conn.execute("SELECT notebook_id FROM nodes WHERE id = ?", (target_parent_id,)).fetchone()
+            parent = get_node_for_user(conn, target_parent_id, user["id"])
             if not parent:
                 raise HTTPException(status_code=404, detail="Target parent not found")
             conn.execute(
@@ -225,9 +292,9 @@ def patch_node(node_id: str, payload: NodePatch) -> dict:
 
 
 @app.delete("/api/nodes/{node_id}")
-def delete_node(node_id: str) -> dict:
+def delete_node(node_id: str, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        node = conn.execute("SELECT notebook_id, parent_id FROM nodes WHERE id = ?", (node_id,)).fetchone()
+        node = get_node_for_user(conn, node_id, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
 
@@ -240,11 +307,13 @@ def delete_node(node_id: str) -> dict:
 
 
 @app.post("/api/chat")
-def chat(payload: ChatRequest) -> dict:
+def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        node = conn.execute("SELECT id FROM nodes WHERE id = ?", (payload.nodeId,)).fetchone()
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
+        if payload.notebookId and not get_notebook_for_user(conn, payload.notebookId, user["id"]):
+            raise HTTPException(status_code=404, detail="Notebook not found")
 
         user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
         model_messages = build_model_messages(conn, payload.nodeId)

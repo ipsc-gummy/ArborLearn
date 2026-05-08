@@ -14,14 +14,19 @@ export default function App() {
   const sidebarOpen = useTreeLearnStore((state) => state.sidebarOpen);
   const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
+  const initializeAuth = useTreeLearnStore((state) => state.initializeAuth);
+  const user = useTreeLearnStore((state) => state.user);
+  const authStatus = useTreeLearnStore((state) => state.authStatus);
+  const authError = useTreeLearnStore((state) => state.authError);
+  const login = useTreeLearnStore((state) => state.login);
+  const register = useTreeLearnStore((state) => state.register);
+  const logout = useTreeLearnStore((state) => state.logout);
   const [screen, setScreen] = useState<"dashboard" | "workspace">("dashboard");
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    void hydrateFromBackend();
-  }, [hydrateFromBackend]);
+    void initializeAuth();
+  }, [initializeAuth]);
 
   useEffect(() => {
     // 主题只通过 html 根节点上的 class/data 属性下发，避免各组件重复处理明暗色。
@@ -47,9 +52,15 @@ export default function App() {
   const menuProps = {
     themeMode,
     onThemeChange: setThemeMode,
-    isLoggedIn,
-    onLogin: () => setIsLoggedIn(true),
-    onLogout: () => setIsLoggedIn(false),
+    user,
+    authStatus,
+    authError,
+    onLogin: login,
+    onRegister: register,
+    onLogout: () => {
+      logout();
+      setScreen("dashboard");
+    },
   };
 
   if (screen === "dashboard") {

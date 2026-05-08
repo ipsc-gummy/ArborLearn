@@ -29,6 +29,7 @@ Edit `/opt/arborlearn/backend/.env`:
 MODEL_BASE_URL=https://api.deepseek.com
 MODEL_NAME=deepseek-v4-flash
 MODEL_API_KEY=your_deepseek_key
+AUTH_SECRET=replace_with_a_long_random_value
 CORS_ORIGINS=http://your_server_ip
 DATABASE_PATH=data/treelearn.sqlite3
 ```

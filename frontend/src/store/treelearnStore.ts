@@ -1,6 +1,19 @@
 import { create } from "zustand";
-import { seedNodes, seedSkills } from "../data/seed";
-import { createBackendNode, deleteBackendNode, fetchTreeState, patchBackendNode, postChat } from "../lib/api";
+import { seedSkills } from "../data/seed";
+import {
+  clearAuthToken,
+  createBackendNode,
+  deleteBackendNode,
+  fetchMe,
+  fetchTreeState,
+  getAuthToken,
+  login as loginRequest,
+  patchBackendNode,
+  postChat,
+  register as registerRequest,
+  setAuthToken,
+  type AuthUser,
+} from "../lib/api";
 import type { ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
 import { uid } from "../lib/utils";
 
@@ -17,9 +30,16 @@ interface TreeLearnState {
   sidebarOpen: boolean;
   apiStatus: "idle" | "loading" | "ready" | "error";
   apiError: string | null;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string | null;
+  user: AuthUser | null;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
   skills: SkillTemplate[];
+  initializeAuth: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, displayName?: string) => Promise<void>;
+  logout: () => void;
   hydrateFromBackend: () => Promise<void>;
   createRootConversation: () => string;
   createChildNodeUnderActive: () => string;
@@ -89,21 +109,100 @@ function isDescendantOf(nodes: Record<string, KnowledgeNode>, nodeId: string, ca
 }
 
 export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
-  nodes: seedNodes,
-  rootIds: ["root"],
+  nodes: {},
+  rootIds: [],
   pinnedRootIds: [],
-  activeNodeId: "root",
+  activeNodeId: "",
   compareNodeId: null,
   sidebarOpen: true,
   apiStatus: "idle",
   apiError: null,
+  authStatus: "checking",
+  authError: null,
+  user: null,
   selectionDraft: null,
   skills: seedSkills,
+  initializeAuth: async () => {
+    if (!getAuthToken()) {
+      set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "" });
+      return;
+    }
+
+    set({ authStatus: "checking", authError: null });
+    try {
+      const response = await fetchMe();
+      set({ user: response.user, authStatus: "authenticated", authError: null });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      clearAuthToken();
+      set({
+        authStatus: "anonymous",
+        authError: error instanceof Error ? error.message : "登录状态已失效",
+        user: null,
+        nodes: {},
+        rootIds: [],
+        pinnedRootIds: [],
+        activeNodeId: "",
+      });
+    }
+  },
+  login: async (email, password) => {
+    set({ authStatus: "checking", authError: null });
+    try {
+      const response = await loginRequest({ email, password });
+      setAuthToken(response.token);
+      set({ user: response.user, authStatus: "authenticated", authError: null });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      clearAuthToken();
+      set({
+        authStatus: "error",
+        authError: error instanceof Error ? error.message : "登录失败",
+        user: null,
+      });
+      throw error;
+    }
+  },
+  register: async (email, password, displayName) => {
+    set({ authStatus: "checking", authError: null });
+    try {
+      const response = await registerRequest({ email, password, displayName });
+      setAuthToken(response.token);
+      set({ user: response.user, authStatus: "authenticated", authError: null });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      clearAuthToken();
+      set({
+        authStatus: "error",
+        authError: error instanceof Error ? error.message : "注册失败",
+        user: null,
+      });
+      throw error;
+    }
+  },
+  logout: () => {
+    clearAuthToken();
+    set({
+      user: null,
+      authStatus: "anonymous",
+      authError: null,
+      nodes: {},
+      rootIds: [],
+      pinnedRootIds: [],
+      activeNodeId: "",
+      compareNodeId: null,
+      selectionDraft: null,
+    });
+  },
   hydrateFromBackend: async () => {
+    if (!getAuthToken()) {
+      set({ apiStatus: "idle", apiError: null });
+      return;
+    }
     set({ apiStatus: "loading", apiError: null });
     try {
       const state = await fetchTreeState();
-      const activeNodeId = state.rootIds[0] ?? "root";
+      const activeNodeId = state.rootIds[0] ?? "";
       set({
         nodes: state.nodes,
         rootIds: state.rootIds,
@@ -115,7 +214,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         apiError: null,
       });
     } catch (error) {
-      // 后端未启动时仍保留 seed 数据，让前端原型可读；真正聊天会显示具体 API 错误。
+      if (error instanceof Error && error.message.includes("Authentication")) {
+        clearAuthToken();
+        set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "" });
+      }
       set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "无法连接 TreeLearn API" });
     }
   },

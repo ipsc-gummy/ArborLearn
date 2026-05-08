@@ -1,18 +1,22 @@
 import { ArrowLeft, Download, Share2 } from "lucide-react";
 import { AccountMenu, SettingsMenu, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
+import type { AuthUser } from "../lib/api";
 
 interface TopBarProps {
   onHome: () => void;
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
-  isLoggedIn: boolean;
-  onLogin: () => void;
+  user: AuthUser | null;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string | null;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
 }
 
 // 工作区顶部栏：只保留页面级操作，具体节点操作放在左侧树和聊天面板中。
-export function TopBar({ onHome, themeMode, onThemeChange, isLoggedIn, onLogin, onLogout }: TopBarProps) {
+export function TopBar({ onHome, themeMode, onThemeChange, user, authStatus, authError, onLogin, onRegister, onLogout }: TopBarProps) {
   return (
     <header className="tl-app-bg-elevated flex h-16 shrink-0 items-center justify-between border-b tl-border px-3 backdrop-blur md:px-5">
       <div className="flex items-center gap-2">
@@ -35,7 +39,14 @@ export function TopBar({ onHome, themeMode, onThemeChange, isLoggedIn, onLogin, 
           <span className="hidden sm:inline">分享</span>
         </Button>
         <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
-        <AccountMenu isLoggedIn={isLoggedIn} onLogin={onLogin} onLogout={onLogout} />
+        <AccountMenu
+          user={user}
+          authStatus={authStatus}
+          authError={authError}
+          onLogin={onLogin}
+          onRegister={onRegister}
+          onLogout={onLogout}
+        />
       </div>
     </header>
   );

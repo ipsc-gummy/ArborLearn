@@ -27,12 +27,23 @@ def init_db() -> None:
     with connect() as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS users (
+              id TEXT PRIMARY KEY,
+              email TEXT NOT NULL UNIQUE,
+              display_name TEXT NOT NULL,
+              password_hash TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS notebooks (
               id TEXT PRIMARY KEY,
+              owner_user_id TEXT,
               title TEXT NOT NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
-              pinned INTEGER NOT NULL DEFAULT 0
+              pinned INTEGER NOT NULL DEFAULT 0,
+              FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS nodes (
@@ -66,7 +77,13 @@ def init_db() -> None:
               ON messages(node_id, created_at);
             """
         )
-        seed_if_empty(conn)
+        ensure_column(conn, "notebooks", "owner_user_id", "TEXT")
+
+
+def ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, declaration: str) -> None:
+    columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {declaration}")
 
 
 def seed_if_empty(conn: sqlite3.Connection) -> None:
@@ -170,6 +187,65 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     )
 
 
+def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
+    notebook_id = uid("nb")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (notebook_id, user_id, "TreeLearn 入门笔记本", ts, ts),
+    )
+
+    nodes = [
+        (
+            notebook_id,
+            notebook_id,
+            None,
+            "TreeLearn 入门笔记本",
+            "从这里开始创建学习主题、选中文本开支线，并观察树形上下文如何影响 AI 回答。",
+            None,
+            "mainline",
+            0,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "树形上下文调度",
+            "子对话会带上父节点片段、父节点最近对话和根节点摘要，帮助模型聚焦局部问题。",
+            "树形上下文调度",
+            "isolated",
+            0,
+        ),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO nodes(
+          id, notebook_id, parent_id, title, summary, selected_text,
+          context_mode, position, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [(*node, ts, ts) for node in nodes],
+    )
+    conn.execute(
+        """
+        INSERT INTO messages(id, node_id, role, content, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            uid("msg"),
+            notebook_id,
+            "assistant",
+            "欢迎使用 ArborLearn。这个账号下的笔记本、树节点和聊天记录会独立保存，不会和其他用户混在一起。",
+            ts,
+        ),
+    )
+    return notebook_id
+
+
 def row_to_message(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
@@ -245,9 +321,12 @@ def row_to_node(conn: sqlite3.Connection, row: sqlite3.Row, children: Iterable[s
     }
 
 
-def get_notebook_state(conn: sqlite3.Connection, notebook_id: str | None = None) -> dict:
-    params: tuple[str, ...] = (notebook_id,) if notebook_id else ()
-    where = "WHERE notebook_id = ?" if notebook_id else ""
+def get_notebook_state(conn: sqlite3.Connection, user_id: str, notebook_id: str | None = None) -> dict:
+    params: list[str] = [user_id]
+    where = "WHERE notebook_id IN (SELECT id FROM notebooks WHERE owner_user_id = ?)"
+    if notebook_id:
+        where += " AND notebook_id = ?"
+        params.append(notebook_id)
     rows = conn.execute(
         f"""
         SELECT id, notebook_id, parent_id, title, summary, selected_text, context_mode, updated_at, position
@@ -255,7 +334,7 @@ def get_notebook_state(conn: sqlite3.Connection, notebook_id: str | None = None)
         {where}
         ORDER BY position ASC, created_at ASC
         """,
-        params,
+        tuple(params),
     ).fetchall()
 
     children_by_parent: dict[str, list[str]] = {}
@@ -266,19 +345,38 @@ def get_notebook_state(conn: sqlite3.Connection, notebook_id: str | None = None)
 
     nodes = {row["id"]: row_to_node(conn, row, children_by_parent.get(row["id"], [])) for row in rows}
 
-    notebook_query = "SELECT id, pinned FROM notebooks"
-    notebook_params: tuple[str, ...] = ()
+    notebook_query = "SELECT id, pinned FROM notebooks WHERE owner_user_id = ?"
+    notebook_params: list[str] = [user_id]
     if notebook_id:
-        notebook_query += " WHERE id = ?"
-        notebook_params = (notebook_id,)
+        notebook_query += " AND id = ?"
+        notebook_params.append(notebook_id)
     notebook_query += " ORDER BY pinned DESC, updated_at DESC"
-    notebooks = conn.execute(notebook_query, notebook_params).fetchall()
+    notebooks = conn.execute(notebook_query, tuple(notebook_params)).fetchall()
 
     return {
         "nodes": nodes,
         "rootIds": [row["id"] for row in notebooks],
         "pinnedRootIds": [row["id"] for row in notebooks if row["pinned"]],
     }
+
+
+def get_node_for_user(conn: sqlite3.Connection, node_id: str, user_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT nodes.id, nodes.notebook_id, nodes.parent_id
+        FROM nodes
+        JOIN notebooks ON notebooks.id = nodes.notebook_id
+        WHERE nodes.id = ? AND notebooks.owner_user_id = ?
+        """,
+        (node_id, user_id),
+    ).fetchone()
+
+
+def get_notebook_for_user(conn: sqlite3.Connection, notebook_id: str, user_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT id FROM notebooks WHERE id = ? AND owner_user_id = ?",
+        (notebook_id, user_id),
+    ).fetchone()
 
 
 def get_parent_chain(conn: sqlite3.Connection, node_id: str) -> list[sqlite3.Row]:

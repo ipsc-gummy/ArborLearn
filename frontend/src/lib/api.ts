@@ -2,6 +2,18 @@ import type { ChatMessage, KnowledgeNode } from "../types/treelearn";
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
+const TOKEN_KEY = "arborlearn.authToken";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
+interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}
 
 interface TreeStateResponse {
   nodes: Record<string, KnowledgeNode>;
@@ -18,9 +30,11 @@ interface ChatResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
     ...init,
@@ -38,6 +52,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export function getAuthToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearAuthToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function register(payload: { email: string; password: string; displayName?: string }) {
+  return request<AuthResponse>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function login(payload: { email: string; password: string }) {
+  return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchMe() {
+  return request<{ user: AuthUser }>("/api/auth/me");
 }
 
 export function fetchTreeState() {

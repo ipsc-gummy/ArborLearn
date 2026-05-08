@@ -1,4 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
+import { useState, type FormEvent } from "react";
 import {
   Check,
   CircleUserRound,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import type { AuthUser } from "../lib/api";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -24,8 +26,11 @@ interface SettingsMenuProps {
 }
 
 interface AccountMenuProps {
-  isLoggedIn: boolean;
-  onLogin: () => void;
+  user: AuthUser | null;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string | null;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
 }
 
@@ -54,8 +59,30 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   );
 }
 
-// 账号菜单：用本地 isLoggedIn 模拟登录态，后续可替换为真实 auth/session 数据。
-export function AccountMenu({ isLoggedIn, onLogin, onLogout }: AccountMenuProps) {
+// 账号菜单：邮箱密码登录，token 由全局 store 写入 localStorage。
+export function AccountMenu({ user, authStatus, authError, onLogin, onRegister, onLogout }: AccountMenuProps) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const loading = authStatus === "checking";
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLocalError(null);
+    try {
+      if (mode === "register") {
+        await onRegister(email, password, displayName || undefined);
+      } else {
+        await onLogin(email, password);
+      }
+      setPassword("");
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "操作失败");
+    }
+  };
+
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -63,19 +90,18 @@ export function AccountMenu({ isLoggedIn, onLogin, onLogout }: AccountMenuProps)
           className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
           aria-label="打开账号菜单"
         >
-          {isLoggedIn ? "TL" : <CircleUserRound className="h-5 w-5" />}
+          {user ? user.displayName.slice(0, 2).toUpperCase() : <CircleUserRound className="h-5 w-5" />}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          {isLoggedIn ? (
+          {user ? (
             <>
               <div className="tl-panel-soft rounded-lg border p-3">
-                <p className="font-semibold">TreeLearn User</p>
-                <p className="mt-1 text-xs text-muted-foreground">treelearn@example.com</p>
+                <p className="font-semibold">{user.displayName}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
               </div>
               <MenuButton icon={CircleUserRound} label="账号信息" />
-              <MenuButton icon={UserPlus} label="切换账号" />
               <button
                 className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
                 onClick={onLogout}
@@ -87,16 +113,56 @@ export function AccountMenu({ isLoggedIn, onLogin, onLogout }: AccountMenuProps)
           ) : (
             <>
               <div className="tl-panel-soft rounded-lg border p-3">
-                <p className="font-semibold">尚未登录</p>
-                <p className="mt-1 text-xs text-muted-foreground">登录后可同步笔记本、分享与导出记录。</p>
+                <p className="font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">登录后笔记本、节点和聊天记录会独立保存。</p>
               </div>
-              <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onLogin}>
-                <LogIn className="h-4 w-4" />
-                登录
-              </button>
-              <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onLogin}>
-                <UserPlus className="h-4 w-4" />
-                注册
+              <form className="mt-2 space-y-2" onSubmit={submit}>
+                {mode === "register" && (
+                  <input
+                    className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="昵称（可选）"
+                    autoComplete="name"
+                  />
+                )}
+                <input
+                  className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="邮箱"
+                  type="email"
+                  autoComplete="email"
+                  required
+                />
+                <input
+                  className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="密码，至少 8 位"
+                  type="password"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  minLength={8}
+                  required
+                />
+                {(localError || authError) && (
+                  <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {localError || authError}
+                  </p>
+                )}
+                <Button className="w-full" type="submit" disabled={loading}>
+                  {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                  {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
+                </Button>
+              </form>
+              <button
+                className="tl-hover mt-1 flex w-full items-center justify-center rounded-lg px-2 py-2 text-xs text-muted-foreground"
+                onClick={() => {
+                  setLocalError(null);
+                  setMode(mode === "login" ? "register" : "login");
+                }}
+              >
+                {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
               </button>
             </>
           )}
