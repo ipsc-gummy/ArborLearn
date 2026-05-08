@@ -1,0 +1,24 @@
+.DS_Store
+
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+local.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Backend runtime data
+backend/data/
+
+# Frontend dependencies/build output
+node_modules/
+dist/
+
+# Logs and editor metadata
+*.log
+.vscode/
+.idea/

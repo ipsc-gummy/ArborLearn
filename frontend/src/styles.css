@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局设计变量：上方是 Tailwind/shadcn 风格的 HSL token，下方是 TreeLearn 自定义表面色。 */
+:root {
+  --background: 210 17% 98%;
+  --foreground: 220 16% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 16% 14%;
+  --primary: 217 89% 46%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 214 80% 94%;
+  --secondary-foreground: 217 70% 30%;
+  --muted: 220 16% 94%;
+  --muted-foreground: 220 9% 43%;
+  --accent: 215 100% 95%;
+  --accent-foreground: 217 74% 31%;
+  --destructive: 0 70% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 89%;
+  --input: 220 13% 87%;
+  --ring: 217 89% 46%;
+  --tl-app-bg: #f8fafd;
+  --tl-app-bg-elevated: rgba(248, 250, 253, 0.86);
+  --tl-panel: #ffffff;
+  --tl-panel-soft: #f7f9fc;
+  --tl-panel-muted: #fbfcfe;
+  --tl-border: #dfe3eb;
+  --tl-border-soft: #ebedf2;
+  --tl-hover: #f1f4f9;
+  --tl-accent-soft: #e8f0fe;
+  --tl-input: #ffffff;
+  --tl-user-bubble: #e8f0fe;
+  --tl-user-bubble-fg: #1f2937;
+  --tl-user-bubble-border: #d5e3fb;
+  --tl-brand: #1a73e8;
+  --tl-brand-soft: #e8f0fe;
+  --tl-shadow: 0 1px 2px rgba(60, 64, 67, 0.10), 0 2px 8px rgba(60, 64, 67, 0.06);
+  --tl-shadow-strong: 0 8px 24px rgba(60, 64, 67, 0.14);
+}
+
+/* 深色主题变量：App.tsx 会在 html 上切换 .dark，所有组件自动读取这些 CSS 变量。 */
+:root.dark {
+  --background: 220 12% 16%;
+  --foreground: 210 22% 92%;
+  --card: 220 10% 20%;
+  --card-foreground: 210 22% 92%;
+  --primary: 210 20% 92%;
+  --primary-foreground: 220 18% 10%;
+  --secondary: 45 23% 24%;
+  --secondary-foreground: 48 38% 86%;
+  --muted: 220 13% 20%;
+  --muted-foreground: 215 12% 68%;
+  --accent: 184 25% 22%;
+  --accent-foreground: 174 52% 84%;
+  --destructive: 0 70% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 12% 27%;
+  --input: 220 12% 27%;
+  --ring: 210 20% 88%;
+  --tl-app-bg: #242622;
+  --tl-app-bg-elevated: rgba(23, 25, 21, 0.92);
+  --tl-panel: #2b2e29;
+  --tl-panel-soft: #30342e;
+  --tl-panel-muted: #272a25;
+  --tl-border: #44483f;
+  --tl-border-soft: #3a3e36;
+  --tl-hover: #363b33;
+  --tl-accent-soft: #243f3b;
+  --tl-input: #22251f;
+  --tl-user-bubble: #181a17;
+  --tl-user-bubble-fg: #f4f6ef;
+  --tl-user-bubble-border: #11130f;
+  --tl-brand: #8ab4f8;
+  --tl-brand-soft: #1f3556;
+  --tl-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.18);
+  --tl-shadow-strong: 0 14px 34px rgba(0, 0, 0, 0.32);
+}
+
+/* 统一盒模型，降低组件尺寸计算时的心智负担。 */
+* {
+  box-sizing: border-box;
+}
+
+/* 页面基础字体与背景；中文优先兼容 Microsoft YaHei，英文界面优先使用 Google Sans/Inter。 */
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    "Google Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+}
+
+/* 表单控件继承 body 字体，避免 textarea/input 出现系统默认字体跳变。 */
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+/* 用户划选消息文本时的高亮颜色。 */
+::selection {
+  background: rgba(26, 115, 232, 0.18);
+}
+
+/* 自定义滚动条，使长对话、左侧树和导图区域风格一致。 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--tl-border) 72%, #8a929e);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 消息中的子对话链接样式：看起来像正文中的知识点链接，而不是普通按钮。 */
+.tree-link {
+  border-bottom: 1px solid transparent;
+  color: #0645ad;
+  cursor: help;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.tree-link:hover,
+.tree-link:focus {
+  border-bottom-color: currentColor;
+  color: #0b57d0;
+}
+
+:root.dark .tree-link {
+  color: #8ab4f8;
+}
+
+:root.dark .tree-link:hover,
+:root.dark .tree-link:focus {
+  border-bottom-color: currentColor;
+  color: #aecbfa;
+}
+
+@layer components {
+  /* 以下 tl-* 工具类封装项目语义色，业务组件只组合语义类，不直接关心具体色值。 */
+  .tl-app-bg {
+    background: var(--tl-app-bg);
+  }
+
+  .tl-app-bg-elevated {
+    background: var(--tl-app-bg-elevated);
+  }
+
+  .tl-panel {
+    background: var(--tl-panel);
+    border-color: var(--tl-border);
+    box-shadow: var(--tl-shadow);
+  }
+
+  .tl-panel-soft {
+    background: var(--tl-panel-soft);
+    border-color: var(--tl-border-soft);
+  }
+
+  .tl-panel-muted {
+    background: var(--tl-panel-muted);
+    border-color: var(--tl-border);
+  }
+
+  .tl-border {
+    border-color: var(--tl-border);
+  }
+
+  .tl-border-soft {
+    border-color: var(--tl-border-soft);
+  }
+
+  .tl-hover:hover {
+    background: var(--tl-hover);
+  }
+
+  .tl-accent-soft {
+    background: var(--tl-accent-soft);
+  }
+
+  .tl-input {
+    background: var(--tl-input);
+    border-color: var(--tl-border);
+  }
+
+  .tl-brand {
+    color: var(--tl-brand);
+  }
+
+  .tl-brand-bg {
+    background: var(--tl-brand);
+  }
+
+  .tl-brand-soft-bg {
+    background: var(--tl-brand-soft);
+  }
+
+  .tl-surface-shadow {
+    box-shadow: var(--tl-shadow);
+  }
+
+  .tl-surface-shadow-strong {
+    box-shadow: var(--tl-shadow-strong);
+  }
+}

@@ -1,0 +1,31 @@
+node_modules/
+dist/
+
+# 本地环境变量，不要提交密钥、API 地址或个人配置
+.env
+.env.*
+!.env.example
+
+# 日志与包管理器调试输出
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript / Vite 构建缓存
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# 测试、覆盖率和临时缓存
+coverage/
+.vite/
+.cache/
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
