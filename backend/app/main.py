@@ -183,6 +183,68 @@ def maybe_generate_root_title(conn: sqlite3.Connection, node_id: str, user_quest
     return title
 
 
+def clean_generated_summary(raw_summary: str) -> str:
+    summary = " ".join(raw_summary.strip().split())
+    summary = summary.strip("`'\"“”‘’ ")
+    prefixes = ("Summary:", "summary:", "摘要:", "总结:", "概述:")
+    for prefix in prefixes:
+        if summary.startswith(prefix):
+            summary = summary[len(prefix) :].strip()
+    return summary[:180].strip()
+
+
+def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str) -> str | None:
+    node = conn.execute(
+        """
+        SELECT id, parent_id, title, selected_text
+        FROM nodes
+        WHERE id = ?
+        """,
+        (node_id,),
+    ).fetchone()
+    if not node or node["parent_id"] is None:
+        return None
+
+    rows = conn.execute(
+        """
+        SELECT role, content
+        FROM messages
+        WHERE node_id = ? AND role IN ('user', 'assistant')
+        ORDER BY created_at ASC
+        LIMIT 24
+        """,
+        (node_id,),
+    ).fetchall()
+    if not rows:
+        return None
+
+    conversation = "\n".join(f"{row['role']}: {row['content']}" for row in rows)
+    summary_messages = [
+        {
+            "role": "system",
+            "content": (
+                "你正在为一个树形学习产品生成子对话预览摘要。"
+                "请概括整个子对话目前讨论了什么、得出了什么要点。"
+                "只输出摘要正文，不要标题，不要列表，不要使用“围绕”“创建的局部追问”等模板化字样。"
+                "控制在 45 个中文字以内。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"触发片段：{node['selected_text'] or node['title']}\n\n子对话内容：\n{conversation[-4000:]}",
+        },
+    ]
+    try:
+        summary = clean_generated_summary(call_model(summary_messages))
+    except (ModelConfigurationError, ModelProviderError):
+        return None
+    if not summary:
+        return None
+
+    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
+    return summary
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -429,6 +491,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
 
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
         node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
+        node_summary = maybe_generate_branch_summary(conn, payload.nodeId)
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -438,6 +501,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             "message": assistant_message,
             "nodeId": payload.nodeId,
             "nodeTitle": node_title,
+            "nodeSummary": node_summary,
         }
 
 
@@ -477,6 +541,7 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
             with connect() as conn:
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
                 node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
+                node_summary = maybe_generate_branch_summary(conn, payload.nodeId)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
@@ -487,6 +552,7 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
                     "message": assistant_message,
                     "nodeId": payload.nodeId,
                     "nodeTitle": node_title,
+                    "nodeSummary": node_summary,
                 },
                 "done",
             )
