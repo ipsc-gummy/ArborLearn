@@ -36,6 +36,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     let content: Array<string | ReactElement> = [message.content];
 
     children.forEach((child) => {
+      const childSummary = child.summary.trim() || "摘要将在子对话更新后生成。";
       content = content.flatMap((part) => {
         // ReactElement 不再继续切分；没有匹配片段时保持原样。
         if (typeof part !== "string" || !child.selectedText || !part.includes(child.selectedText)) return [part];
@@ -49,12 +50,12 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
               {child.selectedText}
             </button>
             {/* 使用 peer-hover 限定触发区域：只有鼠标真正悬停在超链接按钮上时才显示预览。 */}
-            <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border p-3 text-left text-sm leading-6 shadow-panel peer-hover:block peer-focus:block">
+            <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
               <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
                 <GitBranch className="tl-brand h-4 w-4" />
                 {child.title}
               </span>
-              <span className="block text-muted-foreground">{child.summary}</span>
+              <span className="line-clamp-3 block text-muted-foreground">{childSummary}</span>
             </span>
           </span>,
           rest.join(child.selectedText),

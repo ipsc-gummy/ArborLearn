@@ -9,7 +9,36 @@ import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/Ap
 import { useTreeLearnStore } from "./store/treelearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
+const THEME_MODE_KEY = "arborlearn.themeMode";
 type AppScreen = "restoring" | "dashboard" | "workspace";
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+function themeKeyForUser(userId: string) {
+  return `${THEME_MODE_KEY}.${userId}`;
+}
+
+function getStoredThemeMode(userId?: string): ThemeMode {
+  try {
+    const saved = localStorage.getItem(userId ? themeKeyForUser(userId) : THEME_MODE_KEY);
+    return isThemeMode(saved) ? saved : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function saveThemeMode(mode: ThemeMode, userId?: string) {
+  try {
+    localStorage.setItem(THEME_MODE_KEY, mode);
+    if (userId) {
+      localStorage.setItem(themeKeyForUser(userId), mode);
+    }
+  } catch {
+    // Ignore storage failures; the visual theme has already been applied in memory.
+  }
+}
 
 function getInitialScreen(): AppScreen {
   try {
@@ -37,7 +66,7 @@ export default function App() {
   const register = useTreeLearnStore((state) => state.register);
   const logout = useTreeLearnStore((state) => state.logout);
   const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
   const restoredLocationRef = useRef(false);
@@ -92,6 +121,23 @@ export default function App() {
   }, [apiStatus, authStatus, nodes, setActiveNode]);
 
   useEffect(() => {
+    if (authStatus !== "authenticated" || !user) return;
+    setThemeModeState(getStoredThemeMode(user.id));
+  }, [authStatus, user]);
+
+  const setThemeMode = (mode: ThemeMode) => {
+    setThemeModeState(mode);
+    saveThemeMode(mode, user?.id);
+  };
+
+  const registerWithDefaultTheme = async (email: string, password: string, displayName?: string) => {
+    await register(email, password, displayName);
+    const createdUser = useTreeLearnStore.getState().user;
+    setThemeModeState("light");
+    saveThemeMode("light", createdUser?.id);
+  };
+
+  useEffect(() => {
     if (screen !== "workspace" || !activeNodeId) return;
     localStorage.setItem(
       LAST_LOCATION_KEY,
@@ -127,7 +173,7 @@ export default function App() {
     authStatus,
     authError,
     onLogin: login,
-    onRegister: register,
+    onRegister: registerWithDefaultTheme,
     onLogout: () => {
       logout();
       goHome();
