@@ -44,7 +44,12 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
     if (!scroller) return;
     const hasNewMessage = previousMessageCountRef.current !== node.messages.length;
     previousMessageCountRef.current = node.messages.length;
-    if (!shouldFollowScrollRef.current) return;
+    const recentUserMessage =
+      node.messages[node.messages.length - 1]?.role === "user" ||
+      node.messages[node.messages.length - 2]?.role === "user";
+    const shouldScroll = shouldFollowScrollRef.current || (hasNewMessage && recentUserMessage);
+    if (!shouldScroll) return;
+    if (hasNewMessage && recentUserMessage) shouldFollowScrollRef.current = true;
 
     requestAnimationFrame(() => {
       scroller.scrollTo({

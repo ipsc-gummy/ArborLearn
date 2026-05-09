@@ -45,6 +45,13 @@ class ChatRequest(BaseModel):
     nodeId: str
     message: str = Field(min_length=1)
     userMessageId: str | None = None
+    assistantMessageId: str | None = None
+
+
+class ChatStopRequest(BaseModel):
+    nodeId: str
+    content: str = Field(min_length=1)
+    assistantMessageId: str | None = None
 
 
 class AuthRequest(BaseModel):
@@ -91,6 +98,89 @@ def serialize_user(user: dict) -> dict:
 def sse_event(payload: dict, event: str | None = None) -> str:
     prefix = f"event: {event}\n" if event else ""
     return f"{prefix}data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def stopped_assistant_content(content: str) -> str | None:
+    content = content.strip()
+    if not content:
+        return None
+    return f"{content}\n\n[stopped]"
+    return f"{content}\n\n[已停止]"
+
+
+def save_stopped_assistant(node_id: str, content_parts: list[str], message_id: str | None = None) -> dict | None:
+    content = stopped_assistant_content("".join(content_parts))
+    if not content:
+        return None
+    msg_id = message_id or uid("msg")
+    ts = now_iso()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO messages(id, node_id, role, content, created_at)
+            VALUES (?, ?, 'assistant', ?, ?)
+            """,
+            (msg_id, node_id, content, ts),
+        )
+        touch_node(conn, node_id, ts)
+    return {"id": msg_id, "role": "assistant", "content": content, "selectedText": None, "createdAt": ts}
+
+
+def clean_generated_title(raw_title: str) -> str:
+    title = raw_title.strip().splitlines()[0].strip()
+    title = title.strip("`'\"“”‘’ ")
+    prefixes = ("Title:", "title:", "标题:", "標題:")
+    for prefix in prefixes:
+        if title.startswith(prefix):
+            title = title[len(prefix) :].strip()
+    return title[:32].strip()
+
+
+def maybe_generate_root_title(conn: sqlite3.Connection, node_id: str, user_question: str, assistant_answer: str) -> str | None:
+    node = conn.execute(
+        """
+        SELECT nodes.id, nodes.notebook_id, nodes.parent_id, nodes.title
+        FROM nodes
+        JOIN notebooks ON notebooks.id = nodes.notebook_id
+        WHERE nodes.id = ?
+        """,
+        (node_id,),
+    ).fetchone()
+    if not node or node["parent_id"] is not None or node["title"] != "新的学习主题":
+        return None
+
+    user_message_count = conn.execute(
+        "SELECT COUNT(*) AS count FROM messages WHERE node_id = ? AND role = 'user'",
+        (node_id,),
+    ).fetchone()["count"]
+    if user_message_count != 1:
+        return None
+
+    title_messages = [
+        {
+            "role": "system",
+            "content": (
+                "Generate a concise Chinese title for a learning notebook. "
+                "Return only the title, no quotes, no explanation, no punctuation at the end. "
+                "Keep it under 16 Chinese characters or 8 English words."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"User question:\n{user_question}\n\nAssistant answer:\n{assistant_answer[:1200]}",
+        },
+    ]
+    try:
+        title = clean_generated_title(call_model(title_messages))
+    except (ModelConfigurationError, ModelProviderError):
+        return None
+    if not title:
+        return None
+
+    ts = now_iso()
+    conn.execute("UPDATE nodes SET title = ?, updated_at = ? WHERE id = ?", (title, ts, node_id))
+    conn.execute("UPDATE notebooks SET title = ?, updated_at = ? WHERE id = ?", (title, ts, node["notebook_id"]))
+    return title
 
 
 @app.on_event("startup")
@@ -338,6 +428,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -345,7 +436,20 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             "createdAt": assistant_message["createdAt"],
             "userMessage": user_message,
             "message": assistant_message,
+            "nodeId": payload.nodeId,
+            "nodeTitle": node_title,
         }
+
+
+@app.post("/api/chat/stop")
+def stop_chat(payload: ChatStopRequest, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+    message = save_stopped_assistant(payload.nodeId, [payload.content], payload.assistantMessageId)
+    return {"message": message}
 
 
 @app.post("/api/chat/stream")
@@ -362,14 +466,17 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
 
     def generate():
         content_parts: list[str] = []
+        model_stream = None
         try:
-            for delta in stream_model(model_messages):
+            model_stream = stream_model(model_messages)
+            for delta in model_stream:
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
 
             content = "".join(content_parts).strip() or "模型没有返回内容。"
             with connect() as conn:
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
@@ -378,9 +485,19 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
                     "createdAt": assistant_message["createdAt"],
                     "userMessage": user_message,
                     "message": assistant_message,
+                    "nodeId": payload.nodeId,
+                    "nodeTitle": node_title,
                 },
                 "done",
             )
+        except GeneratorExit:
+            if model_stream is not None:
+                model_stream.close()
+            try:
+                save_stopped_assistant(payload.nodeId, content_parts, payload.assistantMessageId)
+            except Exception:
+                pass
+            raise
         except (ModelConfigurationError, ModelProviderError) as exc:
             yield sse_event({"error": str(exc)}, "error")
         except Exception as exc:

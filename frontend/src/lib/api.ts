@@ -26,6 +26,8 @@ interface ChatResponse {
   role: "assistant";
   content: string;
   createdAt: string;
+  nodeId?: string;
+  nodeTitle?: string | null;
   userMessage?: ChatMessage;
   message?: ChatMessage;
 }
@@ -131,8 +133,20 @@ export function postChat(payload: {
   nodeId: string;
   message: string;
   userMessageId: string;
+  assistantMessageId?: string;
 }) {
   return request<ChatResponse>("/api/chat", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postStoppedChat(payload: {
+  nodeId: string;
+  content: string;
+  assistantMessageId: string;
+}) {
+  return request<{ message: ChatMessage | null }>("/api/chat/stop", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -166,8 +180,10 @@ export async function postChatStream(
     nodeId: string;
     message: string;
     userMessageId: string;
+    assistantMessageId?: string;
   },
   callbacks: ChatStreamCallbacks,
+  signal?: AbortSignal,
 ) {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
@@ -177,6 +193,7 @@ export async function postChatStream(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok) {

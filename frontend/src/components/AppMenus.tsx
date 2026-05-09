@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Check,
   CircleUserRound,
@@ -13,12 +13,14 @@ import {
   Settings,
   Sun,
   UserPlus,
+  X,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import type { AuthUser } from "../lib/api";
 
 export type ThemeMode = "light" | "dark" | "system";
+export type AuthDialogMode = "login" | "register";
 
 interface SettingsMenuProps {
   themeMode: ThemeMode;
@@ -27,14 +29,20 @@ interface SettingsMenuProps {
 
 interface AccountMenuProps {
   user: AuthUser | null;
-  authStatus: "checking" | "authenticated" | "anonymous" | "error";
-  authError: string | null;
-  onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
+  onRequestAuth: (mode?: AuthDialogMode) => void;
 }
 
-// 设置菜单：集中管理帮助、反馈、语言和主题入口；当前只有主题会改变实际状态。
+interface AuthDialogProps {
+  open: boolean;
+  initialMode?: AuthDialogMode;
+  authStatus: "checking" | "authenticated" | "anonymous" | "error";
+  authError: string | null;
+  onClose: () => void;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
+}
+
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
     <Popover.Root>
@@ -59,14 +67,72 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   );
 }
 
-// 账号菜单：邮箱密码登录，token 由全局 store 写入 localStorage。
-export function AccountMenu({ user, authStatus, authError, onLogin, onRegister, onLogout }: AccountMenuProps) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps) {
+  const avatar = (
+    <button
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
+      aria-label={user ? "打开账号菜单" : "登录或注册"}
+      onClick={user ? undefined : () => onRequestAuth("login")}
+    >
+      {user ? user.displayName.slice(0, 2).toUpperCase() : <CircleUserRound className="h-5 w-5" />}
+    </button>
+  );
+
+  if (!user) return avatar;
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>{avatar}</Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
+          <div className="tl-panel-soft rounded-lg border p-3">
+            <p className="font-semibold">{user.displayName}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
+          </div>
+          <MenuButton icon={CircleUserRound} label="账号信息" />
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+            onClick={onLogout}
+          >
+            <LogOut className="h-4 w-4" />
+            退出账号
+          </button>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+export function AuthDialog({
+  open,
+  initialMode = "login",
+  authStatus,
+  authError,
+  onClose,
+  onLogin,
+  onRegister,
+}: AuthDialogProps) {
+  const [mode, setMode] = useState<AuthDialogMode>(initialMode);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const loading = authStatus === "checking";
+
+  useEffect(() => {
+    if (!open) return;
+    setMode(initialMode);
+    setLocalError(null);
+  }, [initialMode, open]);
+
+  useEffect(() => {
+    if (open && authStatus === "authenticated") {
+      setPassword("");
+      onClose();
+    }
+  }, [authStatus, onClose, open]);
+
+  if (!open) return null;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -77,98 +143,87 @@ export function AccountMenu({ user, authStatus, authError, onLogin, onRegister, 
       } else {
         await onLogin(email, password);
       }
-      setPassword("");
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "操作失败");
     }
   };
 
+  const switchMode = () => {
+    setLocalError(null);
+    setMode(mode === "login" ? "register" : "login");
+  };
+
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <button
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
-          aria-label="打开账号菜单"
-        >
-          {user ? user.displayName.slice(0, 2).toUpperCase() : <CircleUserRound className="h-5 w-5" />}
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          {user ? (
-            <>
-              <div className="tl-panel-soft rounded-lg border p-3">
-                <p className="font-semibold">{user.displayName}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
-              </div>
-              <MenuButton icon={CircleUserRound} label="账号信息" />
-              <button
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
-                onClick={onLogout}
-              >
-                <LogOut className="h-4 w-4" />
-                退出账号
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="tl-panel-soft rounded-lg border p-3">
-                <p className="font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">登录后笔记本、节点和聊天记录会独立保存。</p>
-              </div>
-              <form className="mt-2 space-y-2" onSubmit={submit}>
-                {mode === "register" && (
-                  <input
-                    className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                    value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                    placeholder="昵称（可选）"
-                    autoComplete="name"
-                  />
-                )}
-                <input
-                  className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="邮箱"
-                  type="email"
-                  autoComplete="email"
-                  required
-                />
-                <input
-                  className="tl-input h-9 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="密码，至少 8 位"
-                  type="password"
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  minLength={8}
-                  required
-                />
-                {(localError || authError) && (
-                  <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    {localError || authError}
-                  </p>
-                )}
-                <Button className="w-full" type="submit" disabled={loading}>
-                  {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-                  {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
-                </Button>
-              </form>
-              <button
-                className="tl-hover mt-1 flex w-full items-center justify-center rounded-lg px-2 py-2 text-xs text-muted-foreground"
-                onClick={() => {
-                  setLocalError(null);
-                  setMode(mode === "login" ? "register" : "login");
-                }}
-              >
-                {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
-              </button>
-            </>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+      <div className="tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-lg font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              登录后，笔记本、节点和聊天记录会保存在你的账号下。
+            </p>
+          </div>
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭登录窗口">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form className="space-y-3" onSubmit={submit}>
+          {mode === "register" && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">昵称</span>
+              <input
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="可选"
+                autoComplete="name"
+              />
+            </label>
           )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</span>
+            <input
+              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              type="email"
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">密码</span>
+            <input
+              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="至少 8 位"
+              type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              minLength={8}
+              required
+            />
+          </label>
+
+          {(localError || authError) && (
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {localError || authError}
+            </p>
+          )}
+
+          <Button className="h-11 w-full" type="submit" disabled={loading}>
+            {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+            {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
+          </Button>
+        </form>
+
+        <button className="tl-hover mt-3 flex w-full items-center justify-center rounded-lg px-2 py-2 text-sm text-muted-foreground" onClick={switchMode}>
+          {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -181,7 +236,6 @@ function MenuButton({
   label: string;
   trailing?: string;
 }) {
-  // 通用菜单行，trailing 用于展示当前语言等右侧说明。
   return (
     <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left">
       <Icon className="h-4 w-4" />
@@ -204,7 +258,6 @@ function ThemeOption({
   label: string;
   onSelect: (mode: ThemeMode) => void;
 }) {
-  // 单个主题选项；选中项右侧展示 Check，并通过 App 下发到 html 根节点。
   const active = mode === current;
   return (
     <button
