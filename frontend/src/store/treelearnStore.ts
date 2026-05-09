@@ -11,12 +11,16 @@ import {
   patchBackendNode,
   postChat,
   postChatStream,
+  postStoppedChat,
   register as registerRequest,
   setAuthToken,
   type AuthUser,
 } from "../lib/api";
 import type { ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
 import { uid } from "../lib/utils";
+
+type ChatRunStatus = "thinking" | "streaming";
+const activeChatControllers = new Map<string, AbortController>();
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -34,6 +38,7 @@ interface TreeLearnState {
   authStatus: "checking" | "authenticated" | "anonymous" | "error";
   authError: string | null;
   user: AuthUser | null;
+  chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
   skills: SkillTemplate[];
@@ -51,6 +56,7 @@ interface TreeLearnState {
   setSelectionDraft: (draft: SelectionDraft | null) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string) => void;
+  stopMessage: (nodeId: string) => void;
   renameNode: (nodeId: string, title: string) => void;
   togglePinRoot: (nodeId: string) => void;
   deleteNode: (nodeId: string) => void;
@@ -121,6 +127,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   authStatus: "checking",
   authError: null,
   user: null,
+  chatRunStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
   initializeAuth: async () => {
@@ -183,6 +190,8 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   },
   logout: () => {
     clearAuthToken();
+    activeChatControllers.forEach((controller) => controller.abort());
+    activeChatControllers.clear();
     set({
       user: null,
       authStatus: "anonymous",
@@ -190,6 +199,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       nodes: {},
       rootIds: [],
       pinnedRootIds: [],
+      chatRunStatusByNode: {},
       activeNodeId: "",
       compareNodeId: null,
       selectionDraft: null,
@@ -341,10 +351,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   },
   appendMessage: (nodeId, content) => {
     const state = get();
+    if (state.chatRunStatusByNode[nodeId]) return;
+
     const now = new Date().toISOString();
     const notebookId = getNotebookRootId(state.nodes, nodeId);
     const userMessage: ChatMessage = { id: uid("msg"), role: "user", content, createdAt: now };
     const assistantMessageId = uid("msg");
+    const controller = new AbortController();
+    activeChatControllers.set(nodeId, controller);
     const assistantMessage: ChatMessage = {
       id: assistantMessageId,
       role: "assistant",
@@ -362,11 +376,20 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         },
       },
       apiError: null,
+      chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
     }));
 
     let streamedContent = "";
+    const clearRunStatus = () => {
+      activeChatControllers.delete(nodeId);
+      set((current) => {
+        const { [nodeId]: _removed, ...nextStatuses } = current.chatRunStatusByNode;
+        return { chatRunStatusByNode: nextStatuses };
+      });
+    };
+
     void postChatStream(
-      { notebookId, nodeId, message: content, userMessageId: userMessage.id },
+      { notebookId, nodeId, message: content, userMessageId: userMessage.id, assistantMessageId },
       {
         onDelta: (delta) => {
           streamedContent += delta;
@@ -374,6 +397,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             const node = current.nodes[nodeId];
             if (!node) return {};
             return {
+              chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "streaming" },
               nodes: {
                 ...current.nodes,
                 [nodeId]: {
@@ -398,11 +422,13 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           set((current) => {
             const node = current.nodes[nodeId];
             if (!node) return {};
+            const nextTitle = response.nodeTitle?.trim();
             return {
               nodes: {
                 ...current.nodes,
                 [nodeId]: {
                   ...node,
+                  title: nextTitle || node.title,
                   messages: node.messages.map((message) =>
                     message.id === assistantMessageId ? finalAssistantMessage : message,
                   ),
@@ -415,10 +441,83 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           });
         },
       },
+      controller.signal,
     )
       .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          const stoppedAt = new Date().toISOString();
+          const stoppedContent = streamedContent.trim();
+          const stoppedMessage: ChatMessage = {
+            id: assistantMessageId,
+            role: "assistant",
+            content: `${stoppedContent}\n\n[已停止]`,
+            createdAt: stoppedAt,
+          };
+          stoppedMessage.content = `${stoppedContent}\n\n[stopped]`;
+          set((current) => {
+            const node = current.nodes[nodeId];
+            if (!node) return {};
+            const messages = stoppedContent
+              ? node.messages.map((message) => (message.id === assistantMessageId ? stoppedMessage : message))
+              : node.messages.filter((message) => message.id !== assistantMessageId);
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...node,
+                  messages,
+                  updatedAt: stoppedAt,
+                },
+              },
+              apiStatus: "ready",
+              apiError: null,
+            };
+          });
+          if (stoppedContent) {
+            return postStoppedChat({
+              nodeId,
+              content: stoppedContent,
+              assistantMessageId,
+            })
+              .catch((saveError) => {
+                set({
+                  apiStatus: "error",
+                  apiError: saveError instanceof Error ? saveError.message : "保存已停止回复失败",
+                });
+              })
+              .then(() => undefined);
+          }
+          return undefined;
+          /*
+          const stoppedMessage: ChatMessage = {
+            id: assistantMessageId,
+            role: "assistant",
+            content: streamedContent || "已停止回复。",
+            createdAt: new Date().toISOString(),
+          };
+          set((current) => {
+            const node = current.nodes[nodeId];
+            if (!node) return {};
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...node,
+                  messages: node.messages.map((message) =>
+                    message.id === assistantMessageId ? stoppedMessage : message,
+                  ),
+                  updatedAt: stoppedMessage.createdAt,
+                },
+              },
+              apiStatus: "ready",
+              apiError: null,
+            };
+          });
+          return undefined;
+          */
+        }
         if (error instanceof Error && error.message.includes("Not Found")) {
-          return postChat({ notebookId, nodeId, message: content, userMessageId: userMessage.id });
+          return postChat({ notebookId, nodeId, message: content, userMessageId: userMessage.id, assistantMessageId });
         }
         throw error;
       })
@@ -434,11 +533,13 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         set((current) => {
           const node = current.nodes[nodeId];
           if (!node) return {};
+          const nextTitle = response.nodeTitle?.trim();
           return {
             nodes: {
               ...current.nodes,
               [nodeId]: {
                 ...node,
+                title: nextTitle || node.title,
                 messages: node.messages.map((message) =>
                   message.id === assistantMessageId ? fallbackAssistantMessage : message,
                 ),
@@ -475,7 +576,11 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             apiError: message,
           };
         });
-      });
+      })
+      .finally(clearRunStatus);
+  },
+  stopMessage: (nodeId) => {
+    activeChatControllers.get(nodeId)?.abort();
   },
   renameNode: (nodeId, title) => {
     set((state) => ({
