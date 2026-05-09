@@ -28,6 +28,7 @@ interface ChatResponse {
   createdAt: string;
   nodeId?: string;
   nodeTitle?: string | null;
+  nodeSummary?: string | null;
   userMessage?: ChatMessage;
   message?: ChatMessage;
 }

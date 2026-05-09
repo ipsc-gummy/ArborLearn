@@ -310,7 +310,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       parentId: sourceNodeId,
       title,
       kind: "branch",
-      summary: `围绕“${selectedText}”创建的局部追问。`,
+      summary: "",
       selectedText,
       contextWeight: "isolated",
       children: [],
@@ -423,12 +423,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             const node = current.nodes[nodeId];
             if (!node) return {};
             const nextTitle = response.nodeTitle?.trim();
+            const nextSummary = response.nodeSummary?.trim();
             return {
               nodes: {
                 ...current.nodes,
                 [nodeId]: {
                   ...node,
                   title: nextTitle || node.title,
+                  summary: nextSummary || node.summary,
                   messages: node.messages.map((message) =>
                     message.id === assistantMessageId ? finalAssistantMessage : message,
                   ),
@@ -534,12 +536,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           const node = current.nodes[nodeId];
           if (!node) return {};
           const nextTitle = response.nodeTitle?.trim();
+          const nextSummary = response.nodeSummary?.trim();
           return {
             nodes: {
               ...current.nodes,
               [nodeId]: {
                 ...node,
                 title: nextTitle || node.title,
+                summary: nextSummary || node.summary,
                 messages: node.messages.map((message) =>
                   message.id === assistantMessageId ? fallbackAssistantMessage : message,
                 ),

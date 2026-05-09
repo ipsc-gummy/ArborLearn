@@ -23,17 +23,19 @@ function TreeLinkPreview({
   link: TreeLink;
   onTreeLinkClick?: (nodeId: string) => void;
 }) {
+  const summary = link.summary.trim() || "摘要将在子对话更新后生成。";
+
   return (
     <span className="relative inline-flex">
       <button className="tree-link peer" onClick={() => onTreeLinkClick?.(link.id)}>
         {link.text}
       </button>
-      <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border p-3 text-left text-sm leading-6 shadow-panel peer-hover:block peer-focus:block">
+      <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
         <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
           <GitBranch className="tl-brand h-4 w-4" />
           {link.title}
         </span>
-        <span className="block text-muted-foreground">{link.summary}</span>
+        <span className="line-clamp-3 block text-muted-foreground">{summary}</span>
       </span>
     </span>
   );
