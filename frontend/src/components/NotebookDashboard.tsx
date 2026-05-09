@@ -13,7 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { AccountMenu, SettingsMenu, type ThemeMode } from "./AppMenus";
+import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
@@ -29,6 +29,7 @@ interface NotebookDashboardProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
+  onRequestAuth: (mode?: AuthDialogMode) => void;
 }
 
 interface DeleteTarget {
@@ -49,6 +50,7 @@ export function NotebookDashboard({
   onLogin,
   onRegister,
   onLogout,
+  onRequestAuth,
 }: NotebookDashboardProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
   const rootIds = useTreeLearnStore((state) => state.rootIds);
@@ -88,6 +90,10 @@ export function NotebookDashboard({
   }, [editingId]);
 
   const handleCreateNotebook = () => {
+    if (!isLoggedIn) {
+      onRequestAuth("login");
+      return;
+    }
     // 创建根节点后立即打开工作区，让用户从新笔记本继续学习。
     const id = createRootConversation();
     onOpenNotebook(id);
@@ -144,11 +150,8 @@ export function NotebookDashboard({
             <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
             <AccountMenu
               user={user}
-              authStatus={authStatus}
-              authError={authError}
-              onLogin={onLogin}
-              onRegister={onRegister}
               onLogout={onLogout}
+              onRequestAuth={onRequestAuth}
             />
           </div>
         </div>
@@ -230,7 +233,6 @@ export function NotebookDashboard({
               <Button
                 variant="primary"
                 onClick={handleCreateNotebook}
-                disabled={!isLoggedIn}
                 className="border-[#202124] bg-[#202124] text-white hover:bg-[#3c4043] dark:border-[#f1f3f4] dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
               >
                 <Plus className="h-4 w-4" />
@@ -243,7 +245,6 @@ export function NotebookDashboard({
             <button
               className="tl-panel tl-hover flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-5 text-center transition hover:border-primary"
               onClick={handleCreateNotebook}
-              disabled={!isLoggedIn}
             >
               <div className="tl-brand-soft-bg mb-3 flex h-11 w-11 items-center justify-center rounded-full">
                 <Plus className="h-5 w-5" />

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brain, Globe, Paperclip, Send, SlidersHorizontal } from "lucide-react";
+import { Brain, Globe, Paperclip, Send, SlidersHorizontal, Square } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 
@@ -7,15 +7,20 @@ interface ComposerProps {
   nodeId: string;
 }
 
-// 底部输入框：负责收集用户输入，并把消息追加到当前节点。
 export function Composer({ nodeId }: ComposerProps) {
   const [value, setValue] = useState("");
   const appendMessage = useTreeLearnStore((state) => state.appendMessage);
+  const stopMessage = useTreeLearnStore((state) => state.stopMessage);
+  const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
+  const isThinking = chatRunStatus === "thinking";
+  const isStreaming = chatRunStatus === "streaming";
 
   const submit = () => {
-    // 防止空消息进入对话记录；真实后端接入时这里也适合做禁用/加载态。
-    if (!value.trim()) return;
-    // 当前版本先写入 mock 回复；后端联调时 appendMessage 内部会替换为真实流式接口。
+    if (isStreaming) {
+      stopMessage(nodeId);
+      return;
+    }
+    if (!value.trim() || isThinking) return;
     appendMessage(nodeId, value.trim());
     setValue("");
   };
@@ -54,8 +59,15 @@ export function Composer({ nodeId }: ComposerProps) {
               DeepSeek
             </Button>
           </div>
-          <Button size="icon" onClick={submit} aria-label="发送">
-            <Send className="h-4 w-4" />
+          <Button
+            size="icon"
+            variant={isStreaming ? "danger" : "primary"}
+            onClick={submit}
+            disabled={isThinking || (!isStreaming && !value.trim())}
+            aria-label={isStreaming ? "停止回复" : "发送"}
+            title={isStreaming ? "停止回复" : isThinking ? "正在思考" : "发送"}
+          >
+            {isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
       </div>

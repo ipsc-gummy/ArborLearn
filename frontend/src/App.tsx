@@ -1,12 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { KnowledgeTree } from "./components/KnowledgeTree";
 import { NotebookDashboard } from "./components/NotebookDashboard";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { TopBar } from "./components/TopBar";
 import { Workspace } from "./components/Workspace";
-import type { ThemeMode } from "./components/AppMenus";
+import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
 import { useTreeLearnStore } from "./store/treelearnStore";
+
+const LAST_LOCATION_KEY = "arborlearn.lastLocation";
+type AppScreen = "restoring" | "dashboard" | "workspace";
+
+function getInitialScreen(): AppScreen {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as { screen?: string };
+    return saved.screen === "workspace" ? "restoring" : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
 
 // 应用入口组件：负责在「笔记本首页」和「树形对话工作区」之间切换。
 export default function App() {
@@ -15,14 +27,20 @@ export default function App() {
   const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
   const initializeAuth = useTreeLearnStore((state) => state.initializeAuth);
+  const nodes = useTreeLearnStore((state) => state.nodes);
+  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
+  const apiStatus = useTreeLearnStore((state) => state.apiStatus);
   const user = useTreeLearnStore((state) => state.user);
   const authStatus = useTreeLearnStore((state) => state.authStatus);
   const authError = useTreeLearnStore((state) => state.authError);
   const login = useTreeLearnStore((state) => state.login);
   const register = useTreeLearnStore((state) => state.register);
   const logout = useTreeLearnStore((state) => state.logout);
-  const [screen, setScreen] = useState<"dashboard" | "workspace">("dashboard");
+  const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
   const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
+  const restoredLocationRef = useRef(false);
 
   useEffect(() => {
     void initializeAuth();
@@ -42,10 +60,63 @@ export default function App() {
     return () => media.removeEventListener("change", applyTheme);
   }, [themeMode]);
 
+  useEffect(() => {
+    if (restoredLocationRef.current) return;
+    if (authStatus === "anonymous" || authStatus === "error") {
+      restoredLocationRef.current = true;
+      setScreen("dashboard");
+      return;
+    }
+    if (authStatus === "authenticated" && apiStatus === "error") {
+      restoredLocationRef.current = true;
+      setScreen("dashboard");
+      return;
+    }
+    if (authStatus !== "authenticated" || apiStatus !== "ready") return;
+
+    restoredLocationRef.current = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as {
+        screen?: "dashboard" | "workspace";
+        activeNodeId?: string;
+      };
+      if (saved.screen === "workspace" && saved.activeNodeId && nodes[saved.activeNodeId]) {
+        setActiveNode(saved.activeNodeId);
+        setScreen("workspace");
+      } else {
+        setScreen("dashboard");
+      }
+    } catch {
+      setScreen("dashboard");
+    }
+  }, [apiStatus, authStatus, nodes, setActiveNode]);
+
+  useEffect(() => {
+    if (screen !== "workspace" || !activeNodeId) return;
+    localStorage.setItem(
+      LAST_LOCATION_KEY,
+      JSON.stringify({
+        screen,
+        activeNodeId,
+      }),
+    );
+  }, [activeNodeId, screen]);
+
+  const requestAuth = (mode: AuthDialogMode = "login") => {
+    setAuthDialogMode(mode);
+    setAuthDialogOpen(true);
+  };
+
+  const goHome = () => {
+    setScreen("dashboard");
+    localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "dashboard" }));
+  };
+
   // 打开笔记本时，先把目标根节点设为活动节点，再进入工作区。
   const openNotebook = (nodeId: string) => {
     setActiveNode(nodeId);
     setScreen("workspace");
+    localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "workspace", activeNodeId: nodeId }));
   };
 
   // 顶部菜单在首页和工作区共用，统一从这里传递登录态与主题配置。
@@ -59,17 +130,21 @@ export default function App() {
     onRegister: register,
     onLogout: () => {
       logout();
-      setScreen("dashboard");
+      goHome();
     },
+    onRequestAuth: requestAuth,
   };
 
-  if (screen === "dashboard") {
-    return <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />;
-  }
-
-  return (
+  const content =
+    screen === "restoring" ? (
+      <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        正在恢复工作区...
+      </div>
+    ) : screen === "dashboard" ? (
+      <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
+    ) : (
     <div className="tl-app-bg flex h-screen min-h-0 flex-col overflow-hidden">
-      <TopBar onHome={() => setScreen("dashboard")} {...menuProps} />
+      <TopBar onHome={goHome} {...menuProps} />
       <main className="min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">
         <div
           className={
@@ -97,5 +172,20 @@ export default function App() {
       </main>
       <SelectionBubble />
     </div>
+    );
+
+  return (
+    <>
+      {content}
+      <AuthDialog
+        open={authDialogOpen}
+        initialMode={authDialogMode}
+        authStatus={authStatus}
+        authError={authError}
+        onClose={() => setAuthDialogOpen(false)}
+        onLogin={login}
+        onRegister={register}
+      />
+    </>
   );
 }
