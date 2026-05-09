@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from typing import Literal
 
@@ -99,7 +100,11 @@ def startup() -> None:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True}
+    return {
+        "ok": True,
+        "model": os.getenv("MODEL_NAME", "deepseek-v4-flash"),
+        "modelBaseUrl": os.getenv("MODEL_BASE_URL", "https://api.deepseek.com"),
+    }
 
 
 @app.post("/api/auth/register", status_code=201)

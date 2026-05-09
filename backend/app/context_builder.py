@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 
 from .db import get_parent_chain
@@ -9,6 +10,17 @@ SYSTEM_PROMPT = """你是 TreeLearn 的学习助手。
 你的任务不是闲聊，而是根据树状学习上下文回答当前节点的问题。
 优先使用提供的根节点、父节点和当前节点上下文；当上下文不足时，明确说明你在补充通用知识。
 回答要围绕当前局部问题，避免把兄弟分支或无关历史当成主线事实。"""
+
+
+def _model_identity_context() -> str:
+    model_name = os.getenv("MODEL_NAME", "deepseek-v4-flash")
+    base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com")
+    return (
+        "运行配置:\n"
+        f"- 当前后端接入的模型名: {model_name}\n"
+        f"- 当前模型 API base URL: {base_url}\n"
+        "- 当用户询问你使用哪个模型时，按上述后端配置回答；不要猜测或编造更底层的模型身份。"
+    )
 
 
 def _recent_turns(conn: sqlite3.Connection, node_id: str, limit: int) -> list[sqlite3.Row]:
@@ -69,7 +81,7 @@ def build_model_messages(conn: sqlite3.Connection, node_id: str) -> list[dict[st
     messages = [
         {
             "role": "system",
-            "content": f"{SYSTEM_PROMPT}\n\n树状上下文:\n" + "\n".join(context_lines),
+            "content": f"{SYSTEM_PROMPT}\n\n{_model_identity_context()}\n\n树状上下文:\n" + "\n".join(context_lines),
         }
     ]
     messages.extend({"role": row["role"], "content": row["content"]} for row in current_history)
