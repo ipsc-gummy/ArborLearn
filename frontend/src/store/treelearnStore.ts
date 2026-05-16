@@ -10,7 +10,7 @@ import {
   login as loginRequest,
   patchBackendNode,
   postChat,
-  postChatRetry,
+  postChatRetryStream,
   postChatStream,
   postStoppedChat,
   register as registerRequest,
@@ -594,6 +594,8 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     if (!originalMessage || originalMessage.role !== "assistant") return;
 
     const now = new Date().toISOString();
+    const controller = new AbortController();
+    activeChatControllers.set(nodeId, controller);
     set((current) => {
       const currentNode = current.nodes[nodeId];
       if (!currentNode) return {};
@@ -613,39 +615,66 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       };
     });
 
-    void postChatRetry({ nodeId, assistantMessageId })
-      .then((response) => {
-        const replacementMessage: ChatMessage = response.message ?? {
-          id: response.messageId,
-          role: response.role,
-          content: response.content,
-          createdAt: response.createdAt,
-        };
-
-        set((current) => {
-          const currentNode = current.nodes[nodeId];
-          if (!currentNode) return {};
-          const nextTitle = response.nodeTitle?.trim();
-          const nextSummary = response.nodeSummary?.trim();
-          return {
-            nodes: {
-              ...current.nodes,
-              [nodeId]: {
-                ...currentNode,
-                title: nextTitle || currentNode.title,
-                summary: nextSummary || currentNode.summary,
-                messages: currentNode.messages.map((message) =>
-                  message.id === assistantMessageId ? replacementMessage : message,
-                ),
-                updatedAt: new Date().toISOString(),
+    let streamedContent = "";
+    void postChatRetryStream(
+      { nodeId, assistantMessageId },
+      {
+        onDelta: (delta) => {
+          streamedContent += delta;
+          set((current) => {
+            const currentNode = current.nodes[nodeId];
+            if (!currentNode) return {};
+            return {
+              chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "streaming" },
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...currentNode,
+                  messages: currentNode.messages.map((message) =>
+                    message.id === assistantMessageId ? { ...message, content: streamedContent } : message,
+                  ),
+                  updatedAt: new Date().toISOString(),
+                },
               },
-            },
-            apiStatus: "ready",
-            apiError: null,
+            };
+          });
+        },
+        onDone: (response) => {
+          const replacementMessage: ChatMessage = response.message ?? {
+            id: response.messageId,
+            role: response.role,
+            content: response.content,
+            createdAt: response.createdAt,
           };
-        });
-      })
+
+          set((current) => {
+            const currentNode = current.nodes[nodeId];
+            if (!currentNode) return {};
+            const nextTitle = response.nodeTitle?.trim();
+            const nextSummary = response.nodeSummary?.trim();
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...currentNode,
+                  title: nextTitle || currentNode.title,
+                  summary: nextSummary || currentNode.summary,
+                  messages: currentNode.messages.map((message) =>
+                    message.id === assistantMessageId ? replacementMessage : message,
+                  ),
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+              apiStatus: "ready",
+              apiError: null,
+            };
+          });
+        },
+      },
+      controller.signal,
+    )
       .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
         const message = error instanceof Error ? error.message : "重新生成失败";
         set((current) => {
           const currentNode = current.nodes[nodeId];
@@ -666,6 +695,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         });
       })
       .finally(() => {
+        activeChatControllers.delete(nodeId);
         set((current) => {
           const { [nodeId]: _removed, ...nextStatuses } = current.chatRunStatusByNode;
           return { chatRunStatusByNode: nextStatuses };

@@ -658,6 +658,87 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
         }
 
 
+@app.post("/api/chat/retry/stream")
+def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> StreamingResponse:
+    with connect() as conn:
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        target_message = conn.execute(
+            """
+            SELECT id, created_at
+            FROM messages
+            WHERE id = ? AND node_id = ? AND role = 'assistant'
+            """,
+            (payload.assistantMessageId, payload.nodeId),
+        ).fetchone()
+        if not target_message:
+            raise HTTPException(status_code=404, detail="Assistant message not found")
+
+        previous_user_message = conn.execute(
+            """
+            SELECT id, content, created_at
+            FROM messages
+            WHERE node_id = ? AND role = 'user' AND created_at < ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (payload.nodeId, target_message["created_at"]),
+        ).fetchone()
+        if not previous_user_message:
+            raise HTTPException(status_code=400, detail="No user message found to retry")
+
+        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"])
+        previous_user_content = previous_user_message["content"]
+
+    def generate():
+        content_parts: list[str] = []
+        model_stream = None
+        try:
+            model_stream = stream_model(model_messages)
+            for delta in model_stream:
+                content_parts.append(delta)
+                yield sse_event({"content": delta})
+
+            content = "".join(content_parts).strip() or "模型没有返回内容。"
+            with connect() as conn:
+                assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content)
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+            yield sse_event(
+                {
+                    "messageId": assistant_message["id"],
+                    "role": "assistant",
+                    "content": assistant_message["content"],
+                    "createdAt": assistant_message["createdAt"],
+                    "message": assistant_message,
+                    "nodeId": payload.nodeId,
+                    "nodeTitle": node_title,
+                    "nodeSummary": node_summary,
+                },
+                "done",
+            )
+        except GeneratorExit:
+            if model_stream is not None:
+                model_stream.close()
+            raise
+        except (ModelConfigurationError, ModelProviderError) as exc:
+            yield sse_event({"error": str(exc)}, "error")
+        except Exception as exc:
+            yield sse_event({"error": f"Unexpected server error: {exc}"}, "error")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/chat/stream")
 def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:

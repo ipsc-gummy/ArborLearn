@@ -163,6 +163,58 @@ export function postChatRetry(payload: {
   });
 }
 
+export async function postChatRetryStream(
+  payload: {
+    nodeId: string;
+    assistantMessageId: string;
+  },
+  callbacks: ChatStreamCallbacks,
+  signal?: AbortSignal,
+) {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/chat/retry/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {
+      // Keep status text when the backend returns plain text.
+    }
+    throw new Error(detail);
+  }
+
+  if (!response.body) {
+    throw new Error("模型流式响应为空");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\n\n|\r\n\r\n/);
+    buffer = frames.pop() ?? "";
+    frames.forEach((frame) => applySseFrame(frame, callbacks));
+  }
+
+  if (buffer.trim()) {
+    applySseFrame(buffer, callbacks);
+  }
+}
+
 function applySseFrame(frame: string, callbacks: ChatStreamCallbacks) {
   const lines = frame.split(/\r?\n/);
   const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
