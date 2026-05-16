@@ -33,6 +33,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   }, [node, nodes]);
 
   const latestMessageContent = node.messages[node.messages.length - 1]?.content ?? "";
+  const visibleMessages = node.messages.filter((message) => message.role !== "system");
 
   useEffect(() => {
     const isNodeChange = previousNodeIdRef.current !== node.id;
@@ -117,7 +118,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
               <p className="text-muted-foreground">{node.selectedText}</p>
             </div>
           )}
-          {node.messages.map((message) => (
+          {visibleMessages.map((message) => (
             <MessageBlock key={message.id} nodeId={node.id} message={message} />
           ))}
         </div>

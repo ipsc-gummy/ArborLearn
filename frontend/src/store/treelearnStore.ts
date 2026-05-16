@@ -10,6 +10,7 @@ import {
   login as loginRequest,
   patchBackendNode,
   postChat,
+  postChatRetryStream,
   postChatStream,
   postStoppedChat,
   register as registerRequest,
@@ -56,6 +57,7 @@ interface TreeLearnState {
   setSelectionDraft: (draft: SelectionDraft | null) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string) => void;
+  retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
   stopMessage: (nodeId: string) => void;
   renameNode: (nodeId: string, title: string) => void;
   togglePinRoot: (nodeId: string) => void;
@@ -582,6 +584,123 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         });
       })
       .finally(clearRunStatus);
+  },
+  retryAssistantMessage: (nodeId, assistantMessageId) => {
+    const state = get();
+    const node = state.nodes[nodeId];
+    if (!node || state.chatRunStatusByNode[nodeId]) return;
+
+    const originalMessage = node.messages.find((message) => message.id === assistantMessageId);
+    if (!originalMessage || originalMessage.role !== "assistant") return;
+
+    const now = new Date().toISOString();
+    const controller = new AbortController();
+    activeChatControllers.set(nodeId, controller);
+    set((current) => {
+      const currentNode = current.nodes[nodeId];
+      if (!currentNode) return {};
+      return {
+        apiError: null,
+        chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
+        nodes: {
+          ...current.nodes,
+          [nodeId]: {
+            ...currentNode,
+            messages: currentNode.messages.map((message) =>
+              message.id === assistantMessageId ? { ...message, content: "正在重新生成..." } : message,
+            ),
+            updatedAt: now,
+          },
+        },
+      };
+    });
+
+    let streamedContent = "";
+    void postChatRetryStream(
+      { nodeId, assistantMessageId },
+      {
+        onDelta: (delta) => {
+          streamedContent += delta;
+          set((current) => {
+            const currentNode = current.nodes[nodeId];
+            if (!currentNode) return {};
+            return {
+              chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "streaming" },
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...currentNode,
+                  messages: currentNode.messages.map((message) =>
+                    message.id === assistantMessageId ? { ...message, content: streamedContent } : message,
+                  ),
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+            };
+          });
+        },
+        onDone: (response) => {
+          const replacementMessage: ChatMessage = response.message ?? {
+            id: response.messageId,
+            role: response.role,
+            content: response.content,
+            createdAt: response.createdAt,
+          };
+
+          set((current) => {
+            const currentNode = current.nodes[nodeId];
+            if (!currentNode) return {};
+            const nextTitle = response.nodeTitle?.trim();
+            const nextSummary = response.nodeSummary?.trim();
+            return {
+              nodes: {
+                ...current.nodes,
+                [nodeId]: {
+                  ...currentNode,
+                  title: nextTitle || currentNode.title,
+                  summary: nextSummary || currentNode.summary,
+                  messages: currentNode.messages.map((message) =>
+                    message.id === assistantMessageId ? replacementMessage : message,
+                  ),
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+              apiStatus: "ready",
+              apiError: null,
+            };
+          });
+        },
+      },
+      controller.signal,
+    )
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        const message = error instanceof Error ? error.message : "重新生成失败";
+        set((current) => {
+          const currentNode = current.nodes[nodeId];
+          if (!currentNode) return { apiStatus: "error", apiError: message };
+          return {
+            apiStatus: "error",
+            apiError: message,
+            nodes: {
+              ...current.nodes,
+              [nodeId]: {
+                ...currentNode,
+                messages: currentNode.messages.map((item) =>
+                  item.id === assistantMessageId ? originalMessage : item,
+                ),
+              },
+            },
+          };
+        });
+      })
+      .finally(() => {
+        activeChatControllers.delete(nodeId);
+        set((current) => {
+          const { [nodeId]: _removed, ...nextStatuses } = current.chatRunStatusByNode;
+          return { chatRunStatusByNode: nextStatuses };
+        });
+      });
   },
   stopMessage: (nodeId) => {
     activeChatControllers.get(nodeId)?.abort();
