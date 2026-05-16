@@ -54,6 +54,11 @@ class ChatStopRequest(BaseModel):
     assistantMessageId: str | None = None
 
 
+class ChatRetryRequest(BaseModel):
+    nodeId: str
+    assistantMessageId: str
+
+
 class AuthRequest(BaseModel):
     email: str
     password: str = Field(min_length=8)
@@ -124,6 +129,29 @@ def save_stopped_assistant(node_id: str, content_parts: list[str], message_id: s
         )
         touch_node(conn, node_id, ts)
     return {"id": msg_id, "role": "assistant", "content": content, "selectedText": None, "createdAt": ts}
+
+
+def update_assistant_message(conn: sqlite3.Connection, message_id: str, node_id: str, content: str) -> dict:
+    conn.execute(
+        """
+        UPDATE messages
+        SET content = ?
+        WHERE id = ? AND node_id = ? AND role = 'assistant'
+        """,
+        (content, message_id, node_id),
+    )
+    touch_node(conn, node_id)
+    row = conn.execute(
+        "SELECT created_at FROM messages WHERE id = ? AND node_id = ?",
+        (message_id, node_id),
+    ).fetchone()
+    return {
+        "id": message_id,
+        "role": "assistant",
+        "content": content,
+        "selectedText": None,
+        "createdAt": row["created_at"] if row else now_iso(),
+    }
 
 
 def clean_generated_title(raw_title: str) -> str:
@@ -232,6 +260,65 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str) -> str
         {
             "role": "user",
             "content": f"触发片段：{node['selected_text'] or node['title']}\n\n子对话内容：\n{conversation[-4000:]}",
+        },
+    ]
+    try:
+        summary = clean_generated_summary(call_model(summary_messages))
+    except (ModelConfigurationError, ModelProviderError):
+        return None
+    if not summary:
+        return None
+
+    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
+    return summary
+
+
+def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str) -> str | None:
+    node = conn.execute(
+        """
+        SELECT id, parent_id, title, selected_text
+        FROM nodes
+        WHERE id = ?
+        """,
+        (node_id,),
+    ).fetchone()
+    if not node:
+        return None
+
+    rows = conn.execute(
+        """
+        SELECT role, content
+        FROM messages
+        WHERE node_id = ? AND role IN ('user', 'assistant')
+        ORDER BY created_at ASC
+        LIMIT 24
+        """,
+        (node_id,),
+    ).fetchall()
+    if not rows:
+        return None
+
+    conversation = "\n".join(f"{row['role']}: {row['content']}" for row in rows)
+    node_kind = "root notebook node" if node["parent_id"] is None else "branch node"
+    summary_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You generate concise Chinese summaries for ArborLearn tree conversation nodes. "
+                "Summarize what this node has actually discussed and the key conclusion so far. "
+                "Return only the summary text. Do not add a title, bullets, or explanations. "
+                "Do not copy the user's question or the assistant's answer verbatim. "
+                "Keep it within 45 Chinese characters."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Node type: {node_kind}\n"
+                f"Node title: {node['title']}\n"
+                f"Selected text: {node['selected_text'] or 'None'}\n\n"
+                f"Conversation:\n{conversation[-4000:]}"
+            ),
         },
     ]
     try:
@@ -491,7 +578,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
 
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
         node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
-        node_summary = maybe_generate_branch_summary(conn, payload.nodeId)
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId)
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -514,6 +601,142 @@ def stop_chat(payload: ChatStopRequest, user: dict = Depends(require_user)) -> d
 
     message = save_stopped_assistant(payload.nodeId, [payload.content], payload.assistantMessageId)
     return {"message": message}
+
+
+@app.post("/api/chat/retry")
+def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        target_message = conn.execute(
+            """
+            SELECT id, created_at
+            FROM messages
+            WHERE id = ? AND node_id = ? AND role = 'assistant'
+            """,
+            (payload.assistantMessageId, payload.nodeId),
+        ).fetchone()
+        if not target_message:
+            raise HTTPException(status_code=404, detail="Assistant message not found")
+
+        previous_user_message = conn.execute(
+            """
+            SELECT id, content, created_at
+            FROM messages
+            WHERE node_id = ? AND role = 'user' AND created_at < ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (payload.nodeId, target_message["created_at"]),
+        ).fetchone()
+        if not previous_user_message:
+            raise HTTPException(status_code=400, detail="No user message found to retry")
+
+        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"])
+
+        try:
+            content = call_model(model_messages)
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ModelProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_message["content"], content)
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+        return {
+            "messageId": assistant_message["id"],
+            "role": "assistant",
+            "content": assistant_message["content"],
+            "createdAt": assistant_message["createdAt"],
+            "message": assistant_message,
+            "nodeId": payload.nodeId,
+            "nodeTitle": node_title,
+            "nodeSummary": node_summary,
+        }
+
+
+@app.post("/api/chat/retry/stream")
+def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> StreamingResponse:
+    with connect() as conn:
+        node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        target_message = conn.execute(
+            """
+            SELECT id, created_at
+            FROM messages
+            WHERE id = ? AND node_id = ? AND role = 'assistant'
+            """,
+            (payload.assistantMessageId, payload.nodeId),
+        ).fetchone()
+        if not target_message:
+            raise HTTPException(status_code=404, detail="Assistant message not found")
+
+        previous_user_message = conn.execute(
+            """
+            SELECT id, content, created_at
+            FROM messages
+            WHERE node_id = ? AND role = 'user' AND created_at < ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (payload.nodeId, target_message["created_at"]),
+        ).fetchone()
+        if not previous_user_message:
+            raise HTTPException(status_code=400, detail="No user message found to retry")
+
+        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"])
+        previous_user_content = previous_user_message["content"]
+
+    def generate():
+        content_parts: list[str] = []
+        model_stream = None
+        try:
+            model_stream = stream_model(model_messages)
+            for delta in model_stream:
+                content_parts.append(delta)
+                yield sse_event({"content": delta})
+
+            content = "".join(content_parts).strip() or "模型没有返回内容。"
+            with connect() as conn:
+                assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content)
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+            yield sse_event(
+                {
+                    "messageId": assistant_message["id"],
+                    "role": "assistant",
+                    "content": assistant_message["content"],
+                    "createdAt": assistant_message["createdAt"],
+                    "message": assistant_message,
+                    "nodeId": payload.nodeId,
+                    "nodeTitle": node_title,
+                    "nodeSummary": node_summary,
+                },
+                "done",
+            )
+        except GeneratorExit:
+            if model_stream is not None:
+                model_stream.close()
+            raise
+        except (ModelConfigurationError, ModelProviderError) as exc:
+            yield sse_event({"error": str(exc)}, "error")
+        except Exception as exc:
+            yield sse_event({"error": f"Unexpected server error: {exc}"}, "error")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/chat/stream")
@@ -541,7 +764,7 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
             with connect() as conn:
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
                 node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
-                node_summary = maybe_generate_branch_summary(conn, payload.nodeId)
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],

@@ -18,6 +18,7 @@ import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
 import type { AuthUser } from "../lib/api";
+import type { KnowledgeNode } from "../types/treelearn";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
@@ -38,6 +39,29 @@ interface DeleteTarget {
 }
 
 type SortMode = "recent" | "title";
+
+function normalizeSearchText(value: string) {
+  return value.trim().toLocaleLowerCase("zh-Hans-CN");
+}
+
+function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId: string) {
+  const visited = new Set<string>();
+  const textParts: string[] = [];
+
+  const visit = (nodeId: string) => {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+
+    const node = nodes[nodeId];
+    if (!node) return;
+
+    textParts.push(node.title, node.summary, node.selectedText ?? "");
+    node.children.forEach(visit);
+  };
+
+  visit(rootId);
+  return normalizeSearchText(textParts.join(" "));
+}
 
 // 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 TreeLearn 笔记本。
 export function NotebookDashboard({
@@ -64,7 +88,10 @@ export function NotebookDashboard({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("recent");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const editInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // 置顶列表和普通列表都复用同一套排序逻辑，避免置顶项被普通项打散。
   const sortRootIds = (ids: string[]) =>
@@ -81,6 +108,12 @@ export function NotebookDashboard({
     ...sortRootIds(pinnedRootIds.filter((id) => rootIds.includes(id))),
     ...sortRootIds(rootIds.filter((id) => !pinnedRootIds.includes(id))),
   ];
+  const normalizedSearchKeyword = normalizeSearchText(searchKeyword);
+  const filteredRootIds = normalizedSearchKeyword
+    ? orderedRootIds.filter((id) => collectNotebookSearchText(nodes, id).includes(normalizedSearchKeyword))
+    : orderedRootIds;
+  const hasSearchKeyword = normalizedSearchKeyword.length > 0;
+  const hasSearchResults = filteredRootIds.length > 0;
 
   useEffect(() => {
     // 开始编辑标题时自动聚焦输入框，提交逻辑由 blur/Enter 统一处理。
@@ -88,6 +121,11 @@ export function NotebookDashboard({
     editInputRef.current?.focus();
     editInputRef.current?.select();
   }, [editingId]);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    searchInputRef.current?.focus();
+  }, [isSearchOpen]);
 
   const handleCreateNotebook = () => {
     if (!isLoggedIn) {
@@ -133,6 +171,11 @@ export function NotebookDashboard({
     setDeleteTarget({ id, title });
   };
 
+  const openFirstSearchResult = () => {
+    if (!hasSearchKeyword || !filteredRootIds[0]) return;
+    onOpenNotebook(filteredRootIds[0]);
+  };
+
   return (
     <main className="tl-app-bg min-h-screen overflow-auto text-foreground">
       <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur">
@@ -172,14 +215,6 @@ export function NotebookDashboard({
               </p>
             </div>
 
-            <div className="tl-input flex max-w-2xl items-center gap-2 rounded-full border px-4 py-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                className="h-9 flex-1 bg-transparent text-sm outline-none"
-                placeholder="搜索已有学习笔记本、资料主题或分支..."
-              />
-            </div>
-
             <div className="mt-7 grid gap-3 sm:grid-cols-3">
               <FeatureTile icon={FileText} title="导入资料" description="论文、PPT、文档与网页资料入口" />
               <FeatureTile icon={MessageSquareText} title="基于资料提问" description="围绕当前笔记本进行 grounded chat" />
@@ -210,6 +245,59 @@ export function NotebookDashboard({
               <p className="text-sm text-muted-foreground">每个主对话都是一个独立学习空间</p>
             </div>
             <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  "tl-input flex h-9 items-center overflow-hidden rounded-full border transition-all duration-200",
+                  isSearchOpen ? "w-44 px-3 sm:w-64" : "w-9 justify-center px-0",
+                )}
+              >
+                <button
+                  className="tl-hover flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                  onClick={() => setIsSearchOpen(true)}
+                  aria-label="搜索笔记本"
+                  title="搜索笔记本"
+                >
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                </button>
+                {isSearchOpen && (
+                  <>
+                    <input
+                      ref={searchInputRef}
+                      value={searchKeyword}
+                      onChange={(event) => setSearchKeyword(event.target.value)}
+                      onBlur={() => {
+                        if (!searchKeyword.trim()) {
+                          setIsSearchOpen(false);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          openFirstSearchResult();
+                        }
+                        if (event.key === "Escape") {
+                          setSearchKeyword("");
+                          setIsSearchOpen(false);
+                        }
+                      }}
+                      className="h-8 min-w-0 flex-1 bg-transparent px-1 text-sm outline-none"
+                      placeholder="搜索笔记本..."
+                    />
+                    {hasSearchKeyword && (
+                      <button
+                        className="tl-hover flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          setSearchKeyword("");
+                          searchInputRef.current?.focus();
+                        }}
+                        aria-label="清空搜索"
+                      >
+                        <X className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
               <div className="tl-input hidden items-center rounded-full border p-0.5 text-xs sm:flex">
                 <button
                   className={cn(
@@ -240,10 +328,18 @@ export function NotebookDashboard({
               </Button>
             </div>
           </div>
+          {hasSearchKeyword && (
+            <div className="mb-4 text-sm text-muted-foreground">
+              已为“{searchKeyword.trim()}”找到 {filteredRootIds.length} / {orderedRootIds.length} 个笔记本
+            </div>
+          )}
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <button
-              className="tl-panel tl-hover flex min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-5 text-center transition hover:border-primary"
+              className={cn(
+                "tl-panel tl-hover min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-5 text-center transition hover:border-primary",
+                hasSearchKeyword ? "hidden" : "flex",
+              )}
               onClick={handleCreateNotebook}
             >
               <div className="tl-brand-soft-bg mb-3 flex h-11 w-11 items-center justify-center rounded-full">
@@ -255,7 +351,7 @@ export function NotebookDashboard({
               </span>
             </button>
 
-            {orderedRootIds.map((id) => {
+            {filteredRootIds.map((id) => {
               const node = nodes[id];
               if (!node) return null;
               const isPinned = pinnedRootIds.includes(id);
@@ -334,6 +430,17 @@ export function NotebookDashboard({
               );
             })}
           </div>
+          {hasSearchKeyword && !hasSearchResults && (
+            <div className="tl-panel mt-4 rounded-2xl border border-dashed p-8 text-center">
+              <p className="font-medium">没有匹配的笔记本</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                换个关键词试试，或清空搜索查看全部笔记本。
+              </p>
+              <Button variant="outline" className="mt-4" onClick={() => setSearchKeyword("")}>
+                清空搜索
+              </Button>
+            </div>
+          )}
         </section>
       </section>
 

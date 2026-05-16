@@ -23,18 +23,22 @@ def _model_identity_context() -> str:
     )
 
 
-def _recent_turns(conn: sqlite3.Connection, node_id: str, limit: int) -> list[sqlite3.Row]:
+def _recent_turns(conn: sqlite3.Connection, node_id: str, limit: int, before_created_at: str | None = None) -> list[sqlite3.Row]:
+    created_filter = "AND created_at <= ?" if before_created_at else ""
+    params: tuple[str, str, int] | tuple[str, int]
+    params = (node_id, before_created_at, limit) if before_created_at else (node_id, limit)
     return list(
         reversed(
             conn.execute(
-                """
+                f"""
                 SELECT role, content
                 FROM messages
                 WHERE node_id = ? AND role IN ('user', 'assistant')
+                {created_filter}
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (node_id, limit),
+                params,
             ).fetchall()
         )
     )
@@ -47,7 +51,7 @@ def _format_turns(rows: list[sqlite3.Row]) -> str:
     return "\n".join(f"- {labels.get(row['role'], row['role'])}: {row['content']}" for row in rows)
 
 
-def build_model_messages(conn: sqlite3.Connection, node_id: str) -> list[dict[str, str]]:
+def build_model_messages(conn: sqlite3.Connection, node_id: str, before_created_at: str | None = None) -> list[dict[str, str]]:
     chain = get_parent_chain(conn, node_id)
     if not chain:
         raise ValueError(f"Node not found: {node_id}")
@@ -77,7 +81,7 @@ def build_model_messages(conn: sqlite3.Connection, node_id: str) -> list[dict[st
             ]
         )
 
-    current_history = _recent_turns(conn, node_id, 12)
+    current_history = _recent_turns(conn, node_id, 12, before_created_at)
     messages = [
         {
             "role": "system",

@@ -31,6 +31,7 @@ const Y_GAP = 108;
 const PADDING = 56;
 const MIN_ZOOM = 0.45;
 const MAX_ZOOM = 1.8;
+const SUMMARY_FALLBACK = "摘要将在对话更新后生成。";
 
 // 将缩放比例限制在可读范围内，避免用户滚轮过度缩放导致画布不可用。
 function clamp(value: number, min: number, max: number) {
@@ -258,8 +259,8 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
               <span className="min-w-0">
                 <span className="line-clamp-2 block text-sm font-medium leading-5">{node.title}</span>
               </span>
-              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-3 hidden w-64 -translate-y-1/2 rounded-lg border bg-popover p-3 text-xs leading-5 text-popover-foreground shadow-lg group-hover:block group-focus:block">
-                {node.summary || "No summary yet."}
+              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-3 hidden w-64 -translate-y-1/2 rounded-lg border border-border/80 bg-card/88 p-3 text-xs leading-5 text-foreground shadow-panel ring-1 ring-black/5 backdrop-blur-md group-hover:block group-focus:block dark:bg-card/82 dark:ring-white/10">
+                {node.summary || SUMMARY_FALLBACK}
               </span>
             </button>
           );
