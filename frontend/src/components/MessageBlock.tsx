@@ -1,5 +1,6 @@
-import { GitBranch } from "lucide-react";
-import type { ReactElement } from "react";
+import { Check, Copy, GitBranch, RotateCcw, Share2, Volume2, VolumeX } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
+import { useState } from "react";
 import type { ChatMessage } from "../types/treelearn";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
@@ -27,9 +28,52 @@ function ThinkingIndicator() {
 export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
+  const retryAssistantMessage = useTreeLearnStore((state) => state.retryAssistantMessage);
+  const isNodeRunning = Boolean(useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]));
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  const isThinking = !isUser && (message.content === "正在思考..." || message.content === "正在重新生成...");
+  const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const writeToClipboard = async (content: string) => {
+    await navigator.clipboard?.writeText(content);
+  };
+
+  const handleCopy = async () => {
+    await writeToClipboard(message.content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+
+  const handleSpeak = () => {
+    if (!("speechSynthesis" in window)) return;
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    utterance.lang = /[\u4e00-\u9fff]/.test(message.content) ? "zh-CN" : "en-US";
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleShare = async () => {
+    const shareData = { title: "TreeLearn AI 回复", text: message.content };
+    if (navigator.share && navigator.canShare?.(shareData)) {
+      await navigator.share(shareData);
+      return;
+    }
+    await writeToClipboard(message.content);
+    setShared(true);
+    window.setTimeout(() => setShared(false), 1600);
+  };
 
   const renderLinkedContent = () => {
     // 逐个查找当前节点下由 selectedText 创建的子节点，把原文片段替换为链接按钮。
@@ -101,25 +145,70 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
             {isUser ? "用户" : "TreeLearn AI"}
           </span>
         </div>
-        {!isUser && message.content === "正在思考..." ? (
+        {isThinking ? (
           <ThinkingIndicator />
         ) : isUser ? (
           <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
         ) : (
-          <MarkdownContent
-            content={message.content}
-            treeLinks={children
-              .filter((child) => child.selectedText)
-              .map((child) => ({
-                id: child.id,
-                text: child.selectedText ?? "",
-                title: child.title,
-                summary: child.summary,
-              }))}
-            onTreeLinkClick={setActiveNode}
-          />
+          <>
+            <MarkdownContent
+              content={message.content}
+              treeLinks={children
+                .filter((child) => child.selectedText)
+                .map((child) => ({
+                  id: child.id,
+                  text: child.selectedText ?? "",
+                  title: child.title,
+                  summary: child.summary,
+                }))}
+              onTreeLinkClick={setActiveNode}
+            />
+            <div className="mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
+              <MessageActionButton title="复制" onClick={handleCopy}>
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </MessageActionButton>
+              <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
+                {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              </MessageActionButton>
+              <MessageActionButton title={shared ? "已复制分享内容" : "分享"} onClick={handleShare}>
+                {shared ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+              </MessageActionButton>
+              <MessageActionButton
+                title="重试"
+                onClick={() => retryAssistantMessage(nodeId, message.id)}
+                disabled={isNodeRunning}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </MessageActionButton>
+            </div>
+          </>
         )}
       </div>
     </article>
+  );
+}
+
+function MessageActionButton({
+  title,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {children}
+    </button>
   );
 }

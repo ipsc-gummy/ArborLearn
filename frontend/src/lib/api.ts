@@ -153,6 +153,16 @@ export function postStoppedChat(payload: {
   });
 }
 
+export function postChatRetry(payload: {
+  nodeId: string;
+  assistantMessageId: string;
+}) {
+  return request<ChatResponse>("/api/chat/retry", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 function applySseFrame(frame: string, callbacks: ChatStreamCallbacks) {
   const lines = frame.split(/\r?\n/);
   const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
