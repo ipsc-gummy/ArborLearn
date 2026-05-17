@@ -1,4 +1,4 @@
-import { Check, Copy, GitBranch, RotateCcw, Share2, Volume2, VolumeX } from "lucide-react";
+import { Check, Copy, GitBranch, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
 import type { ChatMessage } from "../types/treelearn";
@@ -35,7 +35,6 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const isSystem = message.role === "system";
   const isThinking = !isUser && (message.content === "正在思考..." || message.content === "正在重新生成...");
   const [copied, setCopied] = useState(false);
-  const [shared, setShared] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const writeToClipboard = async (content: string) => {
@@ -62,17 +61,6 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     utterance.onerror = () => setIsSpeaking(false);
     setIsSpeaking(true);
     window.speechSynthesis.speak(utterance);
-  };
-
-  const handleShare = async () => {
-    const shareData = { title: "TreeLearn AI 回复", text: message.content };
-    if (navigator.share && navigator.canShare?.(shareData)) {
-      await navigator.share(shareData);
-      return;
-    }
-    await writeToClipboard(message.content);
-    setShared(true);
-    window.setTimeout(() => setShared(false), 1600);
   };
 
   const renderLinkedContent = () => {
@@ -169,9 +157,6 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
               </MessageActionButton>
               <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
                 {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              </MessageActionButton>
-              <MessageActionButton title={shared ? "已复制分享内容" : "分享"} onClick={handleShare}>
-                {shared ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
               </MessageActionButton>
               <MessageActionButton
                 title="重试"

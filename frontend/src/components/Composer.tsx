@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brain, Globe, Paperclip, Send, SlidersHorizontal, Square } from "lucide-react";
+import { Globe, Paperclip, Send, SlidersHorizontal, Square } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 
@@ -43,10 +43,6 @@ export function Composer({ nodeId }: ComposerProps) {
         />
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
-            <Button variant="ghost" size="sm" title="思考模式">
-              <Brain className="h-4 w-4" />
-              思考
-            </Button>
             <Button variant="ghost" size="sm" title="联网搜索">
               <Globe className="h-4 w-4" />
               搜索
