@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { KnowledgeTree } from "./components/KnowledgeTree";
 import { AmbientBackdrop } from "./components/AmbientBackdrop";
 import { LandingPage } from "./components/LandingPage";
@@ -13,7 +14,11 @@ import { useTreeLearnStore } from "./store/treelearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const THEME_MODE_KEY = "arborlearn.themeMode";
-type AppScreen = "restoring" | "dashboard" | "workspace";
+
+type AppRoute =
+  | { kind: "landing" }
+  | { kind: "dashboard" }
+  | { kind: "workspace"; notebookId: string; nodeId?: string };
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
@@ -43,18 +48,41 @@ function saveThemeMode(mode: ThemeMode, userId?: string) {
   }
 }
 
-function getInitialScreen(): AppScreen {
-  try {
-    const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as { screen?: string };
-    return saved.screen === "workspace" ? "restoring" : "dashboard";
-  } catch {
-    return "dashboard";
+function parseRoute(pathname: string): AppRoute {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments[0] === "notebooks" && segments[1]) {
+    return {
+      kind: "workspace",
+      notebookId: segments[1],
+      nodeId: segments[2] === "nodes" ? segments[3] : undefined,
+    };
   }
+  if (segments[0] === "notebooks") return { kind: "dashboard" };
+  return { kind: "landing" };
 }
 
-// 应用入口组件：负责在「笔记本首页」和「树形对话工作区」之间切换。
+function routeToPath(route: AppRoute) {
+  if (route.kind === "dashboard") return "/notebooks";
+  if (route.kind === "workspace") {
+    const notebookPath = `/notebooks/${encodeURIComponent(route.notebookId)}`;
+    return route.nodeId ? `${notebookPath}/nodes/${encodeURIComponent(route.nodeId)}` : notebookPath;
+  }
+  return "/";
+}
+
+function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string) {
+  let current = nodes[nodeId];
+  const seen = new Set<string>();
+  while (current?.parentId && !seen.has(current.id)) {
+    seen.add(current.id);
+    current = nodes[current.parentId];
+  }
+  return current?.id ?? nodeId;
+}
+
 export default function App() {
-  // 侧边栏开关和当前节点归 Zustand 管理，保证多个组件读取到同一份学习树状态。
+  const location = useLocation();
+  const navigate = useNavigate();
   const sidebarOpen = useTreeLearnStore((state) => state.sidebarOpen);
   const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
@@ -68,18 +96,16 @@ export default function App() {
   const login = useTreeLearnStore((state) => state.login);
   const register = useTreeLearnStore((state) => state.register);
   const logout = useTreeLearnStore((state) => state.logout);
-  const [screen, setScreen] = useState<AppScreen>(getInitialScreen);
+  const route = parseRoute(location.pathname);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
-  const restoredLocationRef = useRef(false);
 
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
 
   useEffect(() => {
-    // 主题只通过 html 根节点上的 class/data 属性下发，避免各组件重复处理明暗色。
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
       const shouldUseDark = themeMode === "dark" || (themeMode === "system" && media.matches);
@@ -93,40 +119,68 @@ export default function App() {
   }, [themeMode]);
 
   useEffect(() => {
-    if (restoredLocationRef.current) return;
-    if (authStatus === "anonymous" || authStatus === "error") {
-      restoredLocationRef.current = true;
-      setScreen("dashboard");
-      return;
+    if (authStatus === "authenticated" && route.kind === "landing") {
+      const nextRoute: AppRoute = { kind: "dashboard" };
+      navigate(routeToPath(nextRoute), { replace: true });
     }
-    if (authStatus === "authenticated" && apiStatus === "error") {
-      restoredLocationRef.current = true;
-      setScreen("dashboard");
-      return;
+    if ((authStatus === "anonymous" || authStatus === "error") && route.kind !== "landing") {
+      const nextRoute: AppRoute = { kind: "landing" };
+      navigate(routeToPath(nextRoute), { replace: true });
     }
-    if (authStatus !== "authenticated" || apiStatus !== "ready") return;
+  }, [authStatus, navigate, route.kind]);
 
-    restoredLocationRef.current = true;
-    try {
-      const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as {
-        screen?: "dashboard" | "workspace";
-        activeNodeId?: string;
-      };
-      if (saved.screen === "workspace" && saved.activeNodeId && nodes[saved.activeNodeId]) {
-        setActiveNode(saved.activeNodeId);
-        setScreen("workspace");
-      } else {
-        setScreen("dashboard");
-      }
-    } catch {
-      setScreen("dashboard");
+  useEffect(() => {
+    if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace") return;
+
+    const targetNodeId = route.nodeId && nodes[route.nodeId] ? route.nodeId : route.notebookId;
+    const targetNode = nodes[targetNodeId];
+    if (!targetNode) {
+      const nextRoute: AppRoute = { kind: "dashboard" };
+      navigate(routeToPath(nextRoute), { replace: true });
+      return;
     }
-  }, [apiStatus, authStatus, nodes, setActiveNode]);
+
+    const rootId = getNotebookRootId(nodes, targetNodeId);
+    if (rootId !== route.notebookId) {
+      const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId, nodeId: targetNodeId };
+      navigate(routeToPath(nextRoute), { replace: true });
+      return;
+    }
+
+    if (activeNodeId !== targetNodeId) {
+      setActiveNode(targetNodeId);
+    }
+  }, [activeNodeId, apiStatus, authStatus, navigate, nodes, route, setActiveNode]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !user) return;
     setThemeModeState(getStoredThemeMode(user.id));
   }, [authStatus, user]);
+
+  useEffect(() => {
+    if (route.kind !== "workspace" || !activeNodeId) return;
+    localStorage.setItem(
+      LAST_LOCATION_KEY,
+      JSON.stringify({
+        screen: "workspace",
+        activeNodeId,
+      }),
+    );
+  }, [activeNodeId, route.kind]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace" || !activeNodeId || !nodes[activeNodeId]) return;
+
+    const rootId = getNotebookRootId(nodes, activeNodeId);
+    const nextRoute: AppRoute = {
+      kind: "workspace",
+      notebookId: rootId,
+      nodeId: activeNodeId === rootId ? undefined : activeNodeId,
+    };
+    if (routeToPath(route) !== routeToPath(nextRoute)) {
+      navigate(routeToPath(nextRoute), { replace: true });
+    }
+  }, [activeNodeId, apiStatus, authStatus, navigate, nodes, route]);
 
   const setThemeMode = (mode: ThemeMode) => {
     setThemeModeState(mode);
@@ -140,35 +194,25 @@ export default function App() {
     saveThemeMode("light", createdUser?.id);
   };
 
-  useEffect(() => {
-    if (screen !== "workspace" || !activeNodeId) return;
-    localStorage.setItem(
-      LAST_LOCATION_KEY,
-      JSON.stringify({
-        screen,
-        activeNodeId,
-      }),
-    );
-  }, [activeNodeId, screen]);
-
   const requestAuth = (mode: AuthDialogMode = "login") => {
     setAuthDialogMode(mode);
     setAuthDialogOpen(true);
   };
 
   const goHome = () => {
-    setScreen("dashboard");
+    const nextRoute: AppRoute = authStatus === "authenticated" ? { kind: "dashboard" } : { kind: "landing" };
+    navigate(routeToPath(nextRoute));
     localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "dashboard" }));
   };
 
-  // 打开笔记本时，先把目标根节点设为活动节点，再进入工作区。
   const openNotebook = (nodeId: string) => {
     setActiveNode(nodeId);
-    setScreen("workspace");
+    const rootId = getNotebookRootId(nodes, nodeId);
+    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId, nodeId: nodeId === rootId ? undefined : nodeId };
+    navigate(routeToPath(nextRoute));
     localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "workspace", activeNodeId: nodeId }));
   };
 
-  // 顶部菜单在首页和工作区共用，统一从这里传递登录态与主题配置。
   const menuProps = {
     themeMode,
     onThemeChange: setThemeMode,
@@ -184,26 +228,25 @@ export default function App() {
     onRequestAuth: requestAuth,
   };
 
-  const pageVariant =
-    screen === "restoring"
-      ? "restoring"
-      : screen === "workspace"
-        ? "workspace"
-        : authStatus !== "authenticated"
-          ? "landing"
-          : "dashboard";
-  const pageTransitionKey = `${pageVariant}-${screen}`;
+  const isRestoring = authStatus === "checking" || (authStatus === "authenticated" && apiStatus === "loading");
+  const pageVariant = isRestoring
+    ? "restoring"
+    : route.kind === "workspace"
+      ? "workspace"
+      : route.kind === "landing" || authStatus !== "authenticated"
+        ? "landing"
+        : "dashboard";
+  const pageTransitionKey = `${pageVariant}-${routeToPath(route)}`;
 
-  const content =
-    screen === "restoring" ? (
-      <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-        正在恢复工作区...
-      </div>
-    ) : screen === "dashboard" && authStatus !== "authenticated" ? (
-      <LandingPage themeMode={themeMode} onThemeChange={setThemeMode} onRequestAuth={requestAuth} />
-    ) : screen === "dashboard" ? (
-      <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
-    ) : (
+  const content = isRestoring ? (
+    <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+      正在恢复工作区...
+    </div>
+  ) : route.kind === "landing" || authStatus !== "authenticated" ? (
+    <LandingPage themeMode={themeMode} onThemeChange={setThemeMode} onRequestAuth={requestAuth} />
+  ) : route.kind === "dashboard" ? (
+    <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
+  ) : (
     <div className="tl-app-bg relative flex h-screen min-h-0 flex-col overflow-hidden">
       <AmbientBackdrop variant="workspace" />
       <div className="tl-workspace-stagger tl-workspace-stagger-topbar">
@@ -217,28 +260,28 @@ export default function App() {
               : "grid h-full min-h-0 gap-3 lg:grid-cols-[52px_minmax(420px,1fr)]"
           }
         >
-            {sidebarOpen ? (
-              <div className="tl-workspace-stagger tl-workspace-stagger-sidebar min-h-0">
-                <KnowledgeTree />
-              </div>
-            ) : (
-              <aside className="tl-panel tl-workspace-stagger tl-workspace-stagger-sidebar flex h-full min-h-0 flex-col items-center rounded-[1.25rem] border py-3">
-                <button className="tl-hover flex h-9 w-9 items-center justify-center rounded-full" onClick={toggleSidebar} aria-label="展开 Nodes">
-                  <PanelLeftOpen className="h-4 w-4" />
-                </button>
-                <div className="mt-4 flex flex-1 items-center">
-                  <span className="rotate-[-90deg] whitespace-nowrap text-xs font-semibold tracking-wide text-muted-foreground">Nodes</span>
-                </div>
-              </aside>
-            )}
-            <div className="tl-workspace-stagger tl-workspace-stagger-main min-h-0 overflow-hidden">
-              <Workspace />
+          {sidebarOpen ? (
+            <div className="tl-workspace-stagger tl-workspace-stagger-sidebar min-h-0">
+              <KnowledgeTree />
             </div>
+          ) : (
+            <aside className="tl-panel tl-workspace-stagger tl-workspace-stagger-sidebar flex h-full min-h-0 flex-col items-center rounded-[1.25rem] border py-3">
+              <button className="tl-hover flex h-9 w-9 items-center justify-center rounded-full" onClick={toggleSidebar} aria-label="展开 Nodes">
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+              <div className="mt-4 flex flex-1 items-center">
+                <span className="rotate-[-90deg] whitespace-nowrap text-xs font-semibold tracking-wide text-muted-foreground">Nodes</span>
+              </div>
+            </aside>
+          )}
+          <div className="tl-workspace-stagger tl-workspace-stagger-main min-h-0 overflow-hidden">
+            <Workspace />
+          </div>
         </div>
       </main>
       <SelectionBubble />
     </div>
-    );
+  );
 
   return (
     <>
