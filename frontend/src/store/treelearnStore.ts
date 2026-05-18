@@ -22,6 +22,7 @@ import { uid } from "../lib/utils";
 
 type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
+const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -115,6 +116,18 @@ function isDescendantOf(nodes: Record<string, KnowledgeNode>, nodeId: string, ca
   const children = nodes[nodeId]?.children ?? [];
   if (children.includes(candidateParentId)) return true;
   return children.some((childId) => isDescendantOf(nodes, childId, candidateParentId));
+}
+
+function getSavedActiveNodeId(nodes: Record<string, KnowledgeNode>) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as {
+      screen?: string;
+      activeNodeId?: string;
+    };
+    return saved.screen === "workspace" && saved.activeNodeId && nodes[saved.activeNodeId] ? saved.activeNodeId : null;
+  } catch {
+    return null;
+  }
 }
 
 export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
@@ -215,7 +228,12 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     set({ apiStatus: "loading", apiError: null });
     try {
       const state = await fetchTreeState();
-      const activeNodeId = state.rootIds[0] ?? "";
+      const previousActiveNodeId = get().activeNodeId;
+      const activeNodeId =
+        (previousActiveNodeId && state.nodes[previousActiveNodeId] ? previousActiveNodeId : null) ??
+        getSavedActiveNodeId(state.nodes) ??
+        state.rootIds[0] ??
+        "";
       set({
         nodes: state.nodes,
         rootIds: state.rootIds,

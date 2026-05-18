@@ -22,8 +22,9 @@ export function Workspace() {
   if (!activeNode) return null;
 
   return (
-    <section className="tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border">
-      <div className="tl-border-soft flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
+    <section className="tl-panel relative flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
+      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent dark:via-white/12" />
+      <div className="tl-border-soft flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4 backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2">
           {showChat ? <MessageSquareText className="tl-brand h-4 w-4" /> : <GitBranch className="tl-brand h-4 w-4" />}
           <div className="min-w-0">
@@ -36,7 +37,7 @@ export function Workspace() {
 
         <div className="flex shrink-0 items-center gap-3">
           <div
-            className="flex rounded-lg border p-0.5"
+            className="flex rounded-full border p-0.5 shadow-sm"
             style={{ borderColor: "var(--tl-border-soft)", background: "var(--tl-panel-soft)" }}
           >
             {(["chat", "diagram"] as const).map((item) => (
@@ -45,7 +46,7 @@ export function Workspace() {
                 type="button"
                 onClick={() => setView(item)}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-medium capitalize transition",
+                  "rounded-full px-3 py-1.5 text-xs font-medium capitalize transition",
                   view === item ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >

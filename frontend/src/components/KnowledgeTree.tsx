@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,7 +14,6 @@ import {
   Pencil,
   Pin,
   Plus,
-  Share2,
   Trash2,
   X,
 } from "lucide-react";
@@ -77,22 +77,6 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   const isRootConversation = node.parentId === null;
   const isPinned = pinnedRootIds.includes(node.id);
 
-  const shareNode = async () => {
-    // 当前分享先复制节点元信息；后续可以替换为后端分享链接或 .tree 导出。
-    const payload = JSON.stringify(
-      {
-        id: node.id,
-        title: node.title,
-        summary: node.summary,
-        kind: node.kind,
-        contextWeight: node.contextWeight,
-      },
-      null,
-      2,
-    );
-    await navigator.clipboard?.writeText(payload);
-  };
-
   const beginRename = () => {
     setDraftTitle(node.title);
     setIsRenaming(true);
@@ -118,13 +102,13 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
         ref={setDragRef}
         style={{ transform: CSS.Translate.toString(transform), paddingLeft: 8 + depth * 14 }}
         className={cn(
-          "group flex min-h-9 items-center gap-1 rounded-full pr-1 text-sm transition",
-          activeNodeId === node.id ? "tl-accent-soft font-medium text-foreground" : "tl-hover",
+          "tl-tree-item group relative z-10 flex min-h-9 items-center gap-1 rounded-lg pr-1 text-sm before:absolute before:left-1 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary before:opacity-0",
+          activeNodeId === node.id ? "tl-tree-item-active font-medium text-foreground before:opacity-100" : "",
           isOver && "ring-2 ring-primary/35",
         )}
       >
         <button
-          className="tl-hover flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+          className="tl-hover flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition group-hover:text-primary"
           onClick={() => (hasChildren ? toggleNode(node.id) : setActiveNode(node.id))}
           aria-label="展开或折叠节点"
         >
@@ -148,7 +132,7 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
             className="tl-input min-w-0 flex-1 rounded border px-1.5 py-1 text-sm outline-none ring-2 ring-primary/15"
           />
         ) : (
-          <button className="min-w-0 flex-1 truncate text-left" onClick={() => setActiveNode(node.id)}>
+          <button className="min-w-0 flex-1 truncate text-left transition group-hover:translate-x-0.5" onClick={() => setActiveNode(node.id)}>
             {isPinned && isRootConversation && <Pin className="mr-1 inline h-3 w-3" />}
             {node.title}
           </button>
@@ -157,7 +141,7 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
         <Popover.Root open={openMenuId === node.id} onOpenChange={(open) => onOpenMenuChange(node.id, open)}>
           <Popover.Trigger asChild>
             <button
-              className="tl-hover flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-70 transition hover:opacity-100"
+              className="tl-hover tl-reveal-actions flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
               aria-label="打开节点菜单"
               onClick={(event) => event.stopPropagation()}
             >
@@ -166,10 +150,6 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
           </Popover.Trigger>
           <Popover.Portal>
             <Popover.Content side="right" align="start" className="tl-panel z-50 w-40 rounded-xl border p-1 text-sm shadow-panel">
-              <button className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left" onClick={shareNode}>
-                <Share2 className="h-4 w-4" />
-                分享
-              </button>
               <button className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left" onClick={beginRename}>
                 <Pencil className="h-4 w-4" />
                 重命名
@@ -252,8 +232,9 @@ export function KnowledgeTree() {
   };
 
   return (
-    <aside className="tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border">
-      <div className="tl-border-soft border-b p-3">
+    <>
+    <aside className="tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
+      <div className="tl-border-soft border-b bg-background/30 p-3 backdrop-blur-xl">
         <div className="mb-3 flex items-center justify-between gap-2 px-1">
           <div>
             <p className="text-sm font-medium">Nodes</p>
@@ -271,7 +252,7 @@ export function KnowledgeTree() {
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <div className="space-y-1">
+          <div className="relative space-y-1 before:absolute before:bottom-2 before:left-3 before:top-2 before:w-px before:bg-border/70">
             {nodes[notebookRootId] && (
               <TreeItem
                 key={notebookRootId}
@@ -286,9 +267,12 @@ export function KnowledgeTree() {
         </DndContext>
       </div>
 
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
-          <div className="tl-panel w-full max-w-md rounded-xl border p-5 shadow-panel">
+    </aside>
+
+      {deleteTarget && typeof document !== "undefined" &&
+        createPortal(
+        <div className="tl-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+          <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold">删除对话节点？</h3>
@@ -309,8 +293,9 @@ export function KnowledgeTree() {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </aside>
+    </>
   );
 }

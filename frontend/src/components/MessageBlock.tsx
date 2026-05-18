@@ -113,7 +113,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     <article className={cn("flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "group max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-7 md:max-w-[72%]",
+          "group max-w-[82%] rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md md:max-w-[72%]",
           isUser
             ? "rounded-br-md border"
             : "tl-panel rounded-bl-md border text-card-foreground",
@@ -151,7 +151,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
                 }))}
               onTreeLinkClick={setActiveNode}
             />
-            <div className="mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
+            <div className="tl-reveal-actions mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
               <MessageActionButton title="复制" onClick={handleCopy}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </MessageActionButton>

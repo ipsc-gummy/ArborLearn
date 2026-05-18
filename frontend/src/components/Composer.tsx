@@ -26,8 +26,8 @@ export function Composer({ nodeId }: ComposerProps) {
   };
 
   return (
-    <div className="shrink-0 border-t border-border px-3 py-3 backdrop-blur" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 84%, transparent)" }}>
-      <div className="tl-panel mx-auto max-w-3xl rounded-2xl border p-2">
+    <div className="shrink-0 border-t border-border/70 px-3 py-3 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 78%, transparent)" }}>
+      <div className="tl-panel tl-focus-ring mx-auto max-w-3xl rounded-[1.15rem] border p-2 ring-1 ring-white/35 transition duration-200 dark:ring-white/5">
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
