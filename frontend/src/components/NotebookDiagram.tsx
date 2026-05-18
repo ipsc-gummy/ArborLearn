@@ -183,8 +183,12 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
 
   return (
     <div
-      className="h-full min-h-0 cursor-grab overflow-hidden active:cursor-grabbing"
-      style={{ background: "var(--tl-panel-muted)" }}
+      className="relative h-full min-h-0 cursor-grab overflow-hidden active:cursor-grabbing"
+      style={{
+        background:
+          "radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--tl-brand) 8%, transparent), transparent 24rem), linear-gradient(color-mix(in srgb, var(--tl-border) 32%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--tl-border) 32%, transparent) 1px, transparent 1px), var(--tl-panel-muted)",
+        backgroundSize: "auto, 28px 28px, 28px 28px, auto",
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={stopDragging}
@@ -222,8 +226,9 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
                 toY: link.toY + PADDING,
               })}
               fill="none"
-              stroke="var(--tl-border)"
-              strokeWidth="2"
+              stroke={link.id.includes(activeNodeId) ? "color-mix(in srgb, var(--tl-brand) 72%, var(--tl-border))" : "var(--tl-border)"}
+              strokeWidth={link.id.includes(activeNodeId) ? "2.5" : "1.6"}
+              strokeLinecap="round"
               markerEnd="url(#diagram-arrow)"
             />
           ))}
@@ -238,8 +243,8 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
               onClick={() => openNode(node.id)}
               onPointerDown={(event) => event.stopPropagation()}
               className={cn(
-                "group absolute flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/30",
-                isActive ? "border-primary/45 bg-primary/10" : "tl-panel hover:bg-accent/45",
+                "group absolute z-10 flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-left shadow-sm transition duration-200 hover:z-30 hover:-translate-y-0.5 hover:shadow-md focus:z-30 focus:outline-none focus:ring-2 focus:ring-primary/25",
+                isActive ? "border-primary/50 bg-primary/8 shadow-panel ring-4 ring-primary/8" : "border-border/70 bg-card/78 backdrop-blur-md hover:border-primary/30 hover:bg-card/92",
               )}
               style={{
                 left: PADDING + node.x,
@@ -250,7 +255,7 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
             >
               <span
                 className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition duration-200 group-hover:scale-110",
                   isActive ? "bg-primary text-primary-foreground" : "tl-brand-soft-bg tl-brand",
                 )}
               >
@@ -259,7 +264,9 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
               <span className="min-w-0">
                 <span className="line-clamp-2 block text-sm font-medium leading-5">{node.title}</span>
               </span>
-              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-3 hidden w-64 -translate-y-1/2 rounded-lg border border-border/80 bg-card/88 p-3 text-xs leading-5 text-foreground shadow-panel ring-1 ring-black/5 backdrop-blur-md group-hover:block group-focus:block dark:bg-card/82 dark:ring-white/10">
+              <span
+                className="tl-diagram-summary-popover pointer-events-none absolute left-full top-1/2 z-40 ml-3 hidden w-72 -translate-y-1/2 rounded-xl p-3 text-xs leading-5 text-foreground group-hover:block group-focus:block"
+              >
                 {node.summary || SUMMARY_FALLBACK}
               </span>
             </button>
