@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { KnowledgeTree } from "./components/KnowledgeTree";
+import { AmbientBackdrop } from "./components/AmbientBackdrop";
+import { LandingPage } from "./components/LandingPage";
 import { NotebookDashboard } from "./components/NotebookDashboard";
+import { PageTransition } from "./components/PageTransition";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { TopBar } from "./components/TopBar";
 import { Workspace } from "./components/Workspace";
@@ -181,17 +184,32 @@ export default function App() {
     onRequestAuth: requestAuth,
   };
 
+  const pageVariant =
+    screen === "restoring"
+      ? "restoring"
+      : screen === "workspace"
+        ? "workspace"
+        : authStatus !== "authenticated"
+          ? "landing"
+          : "dashboard";
+  const pageTransitionKey = `${pageVariant}-${screen}`;
+
   const content =
     screen === "restoring" ? (
       <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
         正在恢复工作区...
       </div>
+    ) : screen === "dashboard" && authStatus !== "authenticated" ? (
+      <LandingPage themeMode={themeMode} onThemeChange={setThemeMode} onRequestAuth={requestAuth} />
     ) : screen === "dashboard" ? (
       <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
     ) : (
-    <div className="tl-app-bg flex h-screen min-h-0 flex-col overflow-hidden">
-      <TopBar onHome={goHome} {...menuProps} />
-      <main className="min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">
+    <div className="tl-app-bg relative flex h-screen min-h-0 flex-col overflow-hidden">
+      <AmbientBackdrop variant="workspace" />
+      <div className="tl-workspace-stagger tl-workspace-stagger-topbar">
+        <TopBar onHome={goHome} {...menuProps} />
+      </div>
+      <main className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">
         <div
           className={
             sidebarOpen
@@ -200,9 +218,11 @@ export default function App() {
           }
         >
             {sidebarOpen ? (
-              <KnowledgeTree />
+              <div className="tl-workspace-stagger tl-workspace-stagger-sidebar min-h-0">
+                <KnowledgeTree />
+              </div>
             ) : (
-              <aside className="tl-panel flex h-full min-h-0 flex-col items-center rounded-2xl border py-3">
+              <aside className="tl-panel tl-workspace-stagger tl-workspace-stagger-sidebar flex h-full min-h-0 flex-col items-center rounded-[1.25rem] border py-3">
                 <button className="tl-hover flex h-9 w-9 items-center justify-center rounded-full" onClick={toggleSidebar} aria-label="展开 Nodes">
                   <PanelLeftOpen className="h-4 w-4" />
                 </button>
@@ -211,7 +231,7 @@ export default function App() {
                 </div>
               </aside>
             )}
-            <div className="min-h-0 overflow-hidden">
+            <div className="tl-workspace-stagger tl-workspace-stagger-main min-h-0 overflow-hidden">
               <Workspace />
             </div>
         </div>
@@ -222,7 +242,9 @@ export default function App() {
 
   return (
     <>
-      {content}
+      <PageTransition transitionKey={pageTransitionKey} variant={pageVariant}>
+        {content}
+      </PageTransition>
       <AuthDialog
         open={authDialogOpen}
         initialMode={authDialogMode}

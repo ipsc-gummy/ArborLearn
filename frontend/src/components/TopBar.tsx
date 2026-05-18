@@ -19,13 +19,13 @@ interface TopBarProps {
 // 工作区顶部栏：只保留页面级操作，具体节点操作放在左侧树和聊天面板中。
 export function TopBar({ onHome, themeMode, onThemeChange, user, onLogout, onRequestAuth }: TopBarProps) {
   return (
-    <header className="tl-app-bg-elevated flex h-16 shrink-0 items-center justify-between border-b tl-border px-3 backdrop-blur md:px-5">
+    <header className="tl-app-bg-elevated relative z-20 flex h-16 shrink-0 items-center justify-between border-b tl-border px-3 backdrop-blur-xl md:px-5">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" onClick={onHome} aria-label="返回首页">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-base font-medium leading-tight">TreeLearn Notebook</h1>
+        <div className="rounded-xl px-1 transition duration-150">
+          <h1 className="text-base font-semibold leading-tight">TreeLearn Notebook</h1>
           <p className="hidden text-xs text-muted-foreground sm:block">Nodes · Chat · Diagram</p>
         </div>
       </div>

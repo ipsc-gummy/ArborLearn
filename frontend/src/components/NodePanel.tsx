@@ -80,14 +80,15 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden" style={{ background: "var(--tl-panel-muted)" }}>
-      <div className="border-b border-border px-5 py-4" style={{ background: "var(--tl-panel)" }}>
+      <div className="relative border-b border-border/70 px-5 py-4 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tl-panel) 86%, transparent)" }}>
+        <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/65 to-transparent dark:via-white/10" />
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <Route className="h-4 w-4" />
           <span className="truncate">{path.map((item) => item.title).join(" / ")}</span>
         </div>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className={compact ? "truncate text-base font-medium" : "text-xl font-medium"}>
+            <h2 className={compact ? "truncate text-base font-semibold" : "text-xl font-semibold"}>
               {node.title}
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
@@ -110,7 +111,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
       >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
           {node.selectedText && (
-            <div className="mx-auto w-full max-w-3xl rounded-xl border border-primary/20 bg-accent/55 p-3 text-sm">
+            <div className="mx-auto w-full max-w-3xl rounded-xl border border-primary/20 bg-accent/55 p-3 text-sm shadow-sm backdrop-blur transition duration-200 hover:border-primary/35 hover:shadow-md">
               <div className="mb-1 flex items-center gap-2 font-medium text-accent-foreground">
                 <GitPullRequest className="h-4 w-4" />
                 局部追问片段

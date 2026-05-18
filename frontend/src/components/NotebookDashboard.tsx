@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import * as Popover from "@radix-ui/react-popover";
 import {
   BookOpen,
@@ -16,6 +17,7 @@ import {
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
+import { DIAGRAM_NODE_HEIGHT, DIAGRAM_NODE_WIDTH, DIAGRAM_PADDING, buildDiagram, linkPath } from "../lib/diagramLayout";
 import { cn } from "../lib/utils";
 import type { AuthUser } from "../lib/api";
 import type { KnowledgeNode } from "../types/treelearn";
@@ -177,11 +179,11 @@ export function NotebookDashboard({
   };
 
   return (
-    <main className="tl-app-bg min-h-screen overflow-auto text-foreground">
-      <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur">
+    <main className="tl-app-bg relative min-h-screen overflow-auto text-foreground">
+      <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="tl-panel flex h-9 w-9 items-center justify-center rounded-full border">
+            <div className="tl-panel flex h-10 w-10 items-center justify-center rounded-full border ring-1 ring-white/45">
               <GitBranch className="tl-brand h-5 w-5" />
             </div>
             <div>
@@ -200,29 +202,35 @@ export function NotebookDashboard({
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-5 py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="tl-panel rounded-2xl border p-7">
-            <div className="mb-7 max-w-3xl">
-              <p className="tl-accent-soft mb-3 inline-flex rounded-full px-3 py-1 text-xs font-medium text-foreground">
+      <section className="relative z-10 mx-auto max-w-7xl px-5 pb-8 pt-14 md:pt-20">
+        <div className="hidden">
+          <div className="relative overflow-visible rounded-none border-0 bg-transparent p-0">
+            <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[color-mix(in_srgb,var(--tl-brand)_18%,transparent)] blur-3xl" />
+            <div className="pointer-events-none absolute bottom-0 right-10 h-24 w-48 rounded-full bg-[color-mix(in_srgb,var(--tl-brand-3)_14%,transparent)] blur-2xl" />
+            <div className="mb-7 max-w-4xl">
+              <p className="tl-accent-soft mb-4 inline-flex rounded-full border border-white/45 px-3 py-1 text-xs font-medium text-foreground shadow-sm">
                 Nodes / Chat / Tree Diagram
               </p>
-              <h2 className="text-3xl font-medium leading-tight md:text-4xl">
+              <h2 className="max-w-5xl text-4xl font-semibold leading-[1.05] tracking-normal md:text-6xl">
                 把资料变成可展开、可追问、可复盘的学习笔记本
               </h2>
-              <p className="mt-3 text-sm leading-7 text-muted-foreground">
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
                 先为论文、课件或技术文档创建一个独立 TreeLearn 笔记本，再进入树形对话空间管理主线、支线和上下文调度。
               </p>
             </div>
 
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <FeatureTile icon={FileText} title="导入资料" description="论文、PPT、文档与网页资料入口" />
               <FeatureTile icon={MessageSquareText} title="基于资料提问" description="围绕当前笔记本进行 grounded chat" />
               <FeatureTile icon={Sparkles} title="生成复习产物" description="同步树形思维导图便于复盘" />
             </div>
+
+            <HeroCanvasPreview />
           </div>
 
-          <aside className="tl-panel rounded-2xl border p-5">
+          <aside className="tl-panel relative overflow-hidden rounded-[1.35rem] border p-5">
+            <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/65 to-transparent opacity-70 dark:via-white/14" />
+            <div className="pointer-events-none absolute -right-12 -top-14 h-36 w-36 rounded-full bg-[color-mix(in_srgb,var(--tl-brand-2)_14%,transparent)] blur-2xl" />
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h3 className="font-medium">快速开始</h3>
@@ -238,17 +246,17 @@ export function NotebookDashboard({
           </aside>
         </div>
 
-        <section className="mt-8">
-          <div className="mb-4 flex items-center justify-between">
+        <section className="mt-0">
+          <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <h3 className="text-lg font-medium">我的 TreeLearn 笔记本</h3>
+              <h3 className="text-xl font-semibold">我的 TreeLearn 笔记本</h3>
               <p className="text-sm text-muted-foreground">每个主对话都是一个独立学习空间</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div
                 className={cn(
-                  "tl-input flex h-9 items-center overflow-hidden rounded-full border transition-all duration-200",
-                  isSearchOpen ? "w-44 px-3 sm:w-64" : "w-9 justify-center px-0",
+                  "tl-input tl-focus-ring flex h-9 items-center overflow-hidden rounded-full border transition-all duration-200",
+                  isSearchOpen ? "w-44 px-3 shadow-md sm:w-64" : "w-9 justify-center px-0",
                 )}
               >
                 <button
@@ -321,7 +329,7 @@ export function NotebookDashboard({
               <Button
                 variant="primary"
                 onClick={handleCreateNotebook}
-                className="border-[#202124] bg-[#202124] text-white hover:bg-[#3c4043] dark:border-[#f1f3f4] dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
+                className="border-[#111827] bg-[#111827] text-white shadow-[0_14px_34px_rgba(17,24,39,0.22)] hover:bg-[#111827] hover:brightness-110 dark:border-primary dark:bg-primary dark:text-primary-foreground dark:shadow-[0_14px_34px_rgba(119,220,210,0.16)] dark:hover:bg-primary"
               >
                 <Plus className="h-4 w-4" />
                 新建 TreeLearn 笔记本
@@ -337,7 +345,7 @@ export function NotebookDashboard({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <button
               className={cn(
-                "tl-panel tl-hover min-h-40 flex-col items-center justify-center rounded-2xl border border-dashed p-5 text-center transition hover:border-primary",
+                "tl-panel tl-lift tl-hover min-h-40 flex-col items-center justify-center rounded-[1.1rem] border border-dashed p-5 text-center",
                 hasSearchKeyword ? "hidden" : "flex",
               )}
               onClick={handleCreateNotebook}
@@ -359,15 +367,16 @@ export function NotebookDashboard({
               return (
                 <div
                   key={id}
-                  className="tl-panel relative min-h-40 rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:border-primary/45"
+                  className="tl-panel tl-lift group relative min-h-40 overflow-hidden rounded-[1.1rem] border p-5 text-left"
                 >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-70 dark:via-white/12" />
                   {!isEditing && (
-                    <button className="absolute inset-0 rounded-2xl" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
+                    <button className="absolute inset-0 rounded-[1.1rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
                   )}
                   <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
                     <Popover.Trigger asChild>
                       <button
-                        className="tl-hover absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full"
+                        className="tl-hover tl-reveal-actions absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full"
                         aria-label="打开笔记本菜单"
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -398,7 +407,7 @@ export function NotebookDashboard({
                   </Popover.Root>
 
                   <div className="pointer-events-none mb-4 flex items-start justify-between gap-3 pr-8">
-                    <div className="tl-brand-soft-bg flex h-10 w-10 items-center justify-center rounded-full">
+                    <div className="tl-brand-soft-bg flex h-10 w-10 items-center justify-center rounded-full transition duration-200 group-hover:scale-105 group-hover:shadow-md">
                       <GitBranch className="tl-brand h-5 w-5" />
                     </div>
                     <span
@@ -426,6 +435,7 @@ export function NotebookDashboard({
                     <h4 className="pointer-events-none line-clamp-1 font-medium">{node.title}</h4>
                   )}
                   <p className="pointer-events-none mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">{node.summary}</p>
+                  <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
                 </div>
               );
             })}
@@ -444,9 +454,10 @@ export function NotebookDashboard({
         </section>
       </section>
 
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
-          <div className="tl-panel w-full max-w-md rounded-xl border p-5 shadow-panel">
+      {deleteTarget && typeof document !== "undefined" &&
+        createPortal(
+        <div className="tl-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+          <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold">删除笔记本？</h3>
@@ -454,7 +465,7 @@ export function NotebookDashboard({
                   “{deleteTarget.title}”及其所有子对话都会被删除。此操作当前无法撤销。
                 </p>
               </div>
-              <button className="rounded-full p-1 hover:bg-muted" onClick={() => setDeleteTarget(null)} aria-label="关闭">
+              <button className="tl-hover rounded-full p-2" onClick={() => setDeleteTarget(null)} aria-label="关闭">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -467,9 +478,124 @@ export function NotebookDashboard({
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </main>
+  );
+}
+
+function HeroCanvasPreview() {
+  return (
+    <div className="mt-9 overflow-hidden rounded-[1.4rem] border border-white/45 bg-white/34 p-3 shadow-panel backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+      <div className="relative h-72 overflow-hidden rounded-2xl border border-border/60 bg-[radial-gradient(circle_at_24%_18%,color-mix(in_srgb,var(--tl-brand)_10%,transparent),transparent_18rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_38%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_38%,transparent)_1px,transparent_1px)] bg-[size:auto,28px_28px,28px_28px]">
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 360 220" aria-hidden="true">
+          <path d="M76 72 C132 44, 176 54, 218 94" fill="none" stroke="var(--tl-border)" strokeWidth="2" strokeLinecap="round" />
+          <path d="M218 94 C252 112, 274 132, 302 164" fill="none" stroke="var(--tl-border)" strokeWidth="2" strokeLinecap="round" />
+          <path d="M218 94 C172 132, 146 150, 108 168" fill="none" stroke="var(--tl-border)" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <PreviewNode className="left-6 top-10" title="Source" meta="paper.pdf" />
+        <PreviewNode className="left-[46%] top-[35%]" title="Core idea" meta="context" active />
+        <PreviewNode className="bottom-8 left-16" title="Follow-up" meta="branch" />
+        <PreviewNode className="bottom-6 right-6" title="Review" meta="diagram" />
+      </div>
+    </div>
+  );
+}
+
+function PreviewNode({ className, title, meta, active }: { className: string; title: string; meta: string; active?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "absolute w-28 rounded-xl border bg-card/82 px-3 py-2 text-left shadow-sm backdrop-blur-md",
+        active ? "border-primary/45 ring-4 ring-primary/10" : "border-border/70",
+        className,
+      )}
+    >
+      <p className="truncate text-xs font-semibold">{title}</p>
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">{meta}</p>
+    </div>
+  );
+}
+
+function splitPreviewTitle(title: string) {
+  const normalized = title.trim() || "Untitled";
+  const maxLineLength = 10;
+  const firstLine = normalized.slice(0, maxLineLength);
+  const secondLine = normalized.slice(maxLineLength, maxLineLength * 2);
+  return secondLine ? [firstLine, secondLine] : [firstLine];
+}
+
+function NotebookHoverDiagram({ nodes, rootId }: { nodes: Record<string, KnowledgeNode>; rootId: string }) {
+  const diagram = buildDiagram(nodes, rootId);
+  const previewWidth = 220;
+  const previewHeight = 112;
+  const scale = Math.min(previewWidth / diagram.width, previewHeight / diagram.height);
+  const offsetX = (previewWidth - diagram.width * scale) / 2;
+  const offsetY = (previewHeight - diagram.height * scale) / 2;
+
+  return (
+    <div className="pointer-events-none max-h-0 overflow-hidden opacity-0 transition-all duration-300 ease-out group-hover:mt-4 group-hover:max-h-32 group-hover:opacity-100">
+      <div className="relative h-28 overflow-hidden rounded-xl border border-border/55 bg-[radial-gradient(circle_at_24%_20%,color-mix(in_srgb,var(--tl-brand)_10%,transparent),transparent_11rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px]">
+        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${previewWidth} ${previewHeight}`} aria-hidden="true">
+          <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
+            {diagram.links.map((link) => (
+            <path
+              key={link.id}
+              d={linkPath({
+                ...link,
+                fromX: link.fromX + DIAGRAM_PADDING,
+                fromY: link.fromY + DIAGRAM_PADDING,
+                toX: link.toX + DIAGRAM_PADDING,
+                toY: link.toY + DIAGRAM_PADDING,
+              })}
+              fill="none"
+              stroke="var(--tl-border)"
+              strokeWidth="6"
+              strokeLinecap="round"
+            />
+          ))}
+            {diagram.nodes.map((node) => {
+              const x = DIAGRAM_PADDING + node.x;
+              const y = DIAGRAM_PADDING + node.y;
+              const titleLines = splitPreviewTitle(node.title);
+              return (
+                <g key={node.id}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={DIAGRAM_NODE_WIDTH}
+                    height={DIAGRAM_NODE_HEIGHT}
+                    rx="16"
+                    fill="var(--tl-panel-solid)"
+                    stroke={node.id === rootId ? "color-mix(in srgb, var(--tl-brand) 44%, var(--tl-border))" : "var(--tl-border)"}
+                    strokeWidth={node.id === rootId ? "4" : "3"}
+                  />
+                  <text
+                    x={x + DIAGRAM_NODE_WIDTH / 2}
+                    y={y + (titleLines.length === 1 ? 36 : 29)}
+                    fill="currentColor"
+                    fontSize="20"
+                    fontWeight="650"
+                    dominantBaseline="middle"
+                    textAnchor="middle"
+                  >
+                    {titleLines.map((line, index) => (
+                      <tspan key={`${node.id}-${index}`} x={x + DIAGRAM_NODE_WIDTH / 2} dy={index === 0 ? 0 : 24}>
+                        {line}
+                      </tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+        <div className="absolute bottom-2 left-3 rounded-full border border-border/60 bg-card/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
+          {diagram.nodes.length} nodes
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -484,8 +610,10 @@ function FeatureTile({
 }) {
   // 顶部功能卡片只做能力提示，不承载业务状态。
   return (
-    <div className="tl-panel-soft rounded-xl border p-4">
-      <Icon className="tl-brand mb-3 h-5 w-5" />
+    <div className="tl-panel-soft rounded-xl border p-4 shadow-sm">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--tl-brand)_12%,transparent)]">
+        <Icon className="tl-brand h-5 w-5" />
+      </div>
       <p className="font-medium">{title}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
@@ -495,7 +623,9 @@ function FeatureTile({
 function QuickAction({ title, description }: { title: string; description: string }) {
   // 快速开始步骤用于引导当前 mock 阶段的产品路径。
   return (
-    <div className="tl-panel-soft rounded-xl border p-3">
+    <div className="tl-panel-soft relative overflow-hidden rounded-xl border p-3 shadow-sm">
+      <div className="pointer-events-none absolute inset-y-3 left-0 w-1 rounded-r-full bg-[color-mix(in_srgb,var(--tl-brand)_36%,transparent)]" />
+      <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/55 to-transparent opacity-60 dark:via-white/10" />
       <p className="text-sm font-medium">{title}</p>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
     </div>
