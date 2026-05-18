@@ -179,7 +179,16 @@ export function NotebookDashboard({
   };
 
   return (
-    <main className="tl-app-bg relative min-h-screen overflow-auto text-foreground">
+    <main className="tl-app-bg tl-notebooks-page relative min-h-screen overflow-auto text-foreground">
+      <div className="tl-notebooks-forest-bg" aria-hidden="true">
+        <div className="tl-notebooks-aurora tl-notebooks-aurora-main" />
+        <div className="tl-notebooks-aurora tl-notebooks-aurora-soft" />
+        <div className="tl-notebooks-mist" />
+        <div className="tl-notebooks-plant" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-a" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-b" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-c" />
+      </div>
       <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -249,8 +258,11 @@ export function NotebookDashboard({
         <section className="mt-0">
           <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <h3 className="text-xl font-semibold">我的 TreeLearn 笔记本</h3>
-              <p className="text-sm text-muted-foreground">每个主对话都是一个独立学习空间</p>
+              <h3 className="tl-notebooks-title">
+                我的 <span>TreeLearn</span> 笔记本
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">每个卡片都是一个放大思考的空间</p>
+              <div className="tl-notebooks-title-mark" aria-hidden="true" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div
