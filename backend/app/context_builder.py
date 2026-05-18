@@ -12,8 +12,8 @@ SYSTEM_PROMPT = """你是 TreeLearn 的学习助手。
 回答要围绕当前局部问题，避免把兄弟分支或无关历史当成主线事实。"""
 
 
-def _model_identity_context() -> str:
-    model_name = os.getenv("MODEL_NAME", "deepseek-v4-flash")
+def _model_identity_context(model_name: str | None = None) -> str:
+    model_name = model_name or os.getenv("MODEL_NAME", "deepseek-v4-flash")
     base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com")
     return (
         "运行配置:\n"
@@ -51,7 +51,12 @@ def _format_turns(rows: list[sqlite3.Row]) -> str:
     return "\n".join(f"- {labels.get(row['role'], row['role'])}: {row['content']}" for row in rows)
 
 
-def build_model_messages(conn: sqlite3.Connection, node_id: str, before_created_at: str | None = None) -> list[dict[str, str]]:
+def build_model_messages(
+    conn: sqlite3.Connection,
+    node_id: str,
+    before_created_at: str | None = None,
+    model_name: str | None = None,
+) -> list[dict[str, str]]:
     chain = get_parent_chain(conn, node_id)
     if not chain:
         raise ValueError(f"Node not found: {node_id}")
@@ -85,7 +90,7 @@ def build_model_messages(conn: sqlite3.Connection, node_id: str, before_created_
     messages = [
         {
             "role": "system",
-            "content": f"{SYSTEM_PROMPT}\n\n{_model_identity_context()}\n\n树状上下文:\n" + "\n".join(context_lines),
+            "content": f"{SYSTEM_PROMPT}\n\n{_model_identity_context(model_name)}\n\n树状上下文:\n" + "\n".join(context_lines),
         }
     ]
     messages.extend({"role": row["role"], "content": row["content"]} for row in current_history)

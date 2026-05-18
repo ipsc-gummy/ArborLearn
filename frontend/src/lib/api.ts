@@ -1,4 +1,5 @@
 import type { ChatMessage, KnowledgeNode } from "../types/treelearn";
+import type { DeepSeekModelId } from "./models";
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
@@ -135,6 +136,7 @@ export function postChat(payload: {
   message: string;
   userMessageId: string;
   assistantMessageId?: string;
+  modelName?: DeepSeekModelId;
 }) {
   return request<ChatResponse>("/api/chat", {
     method: "POST",
@@ -156,6 +158,7 @@ export function postStoppedChat(payload: {
 export function postChatRetry(payload: {
   nodeId: string;
   assistantMessageId: string;
+  modelName?: DeepSeekModelId;
 }) {
   return request<ChatResponse>("/api/chat/retry", {
     method: "POST",
@@ -167,6 +170,7 @@ export async function postChatRetryStream(
   payload: {
     nodeId: string;
     assistantMessageId: string;
+    modelName?: DeepSeekModelId;
   },
   callbacks: ChatStreamCallbacks,
   signal?: AbortSignal,
@@ -244,6 +248,7 @@ export async function postChatStream(
     message: string;
     userMessageId: string;
     assistantMessageId?: string;
+    modelName?: DeepSeekModelId;
   },
   callbacks: ChatStreamCallbacks,
   signal?: AbortSignal,
