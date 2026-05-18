@@ -18,7 +18,7 @@ const THEME_MODE_KEY = "arborlearn.themeMode";
 type AppRoute =
   | { kind: "landing" }
   | { kind: "dashboard" }
-  | { kind: "workspace"; notebookId: string; nodeId?: string };
+  | { kind: "workspace"; notebookId: string };
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
@@ -54,7 +54,6 @@ function parseRoute(pathname: string): AppRoute {
     return {
       kind: "workspace",
       notebookId: segments[1],
-      nodeId: segments[2] === "nodes" ? segments[3] : undefined,
     };
   }
   if (segments[0] === "notebooks") return { kind: "dashboard" };
@@ -63,10 +62,7 @@ function parseRoute(pathname: string): AppRoute {
 
 function routeToPath(route: AppRoute) {
   if (route.kind === "dashboard") return "/notebooks";
-  if (route.kind === "workspace") {
-    const notebookPath = `/notebooks/${encodeURIComponent(route.notebookId)}`;
-    return route.nodeId ? `${notebookPath}/nodes/${encodeURIComponent(route.nodeId)}` : notebookPath;
-  }
+  if (route.kind === "workspace") return `/notebooks/${encodeURIComponent(route.notebookId)}`;
   return "/";
 }
 
@@ -78,6 +74,23 @@ function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>[
     current = nodes[current.parentId];
   }
   return current?.id ?? nodeId;
+}
+
+function getStoredActiveNodeId() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as {
+      screen?: string;
+      activeNodeId?: string;
+    };
+    return saved.screen === "workspace" ? saved.activeNodeId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getNodeInNotebook(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], notebookId: string, nodeId?: string) {
+  if (!nodeId || !nodes[nodeId]) return null;
+  return getNotebookRootId(nodes, nodeId) === notebookId ? nodeId : null;
 }
 
 export default function App() {
@@ -132,25 +145,28 @@ export default function App() {
   useEffect(() => {
     if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace") return;
 
-    const targetNodeId = route.nodeId && nodes[route.nodeId] ? route.nodeId : route.notebookId;
-    const targetNode = nodes[targetNodeId];
-    if (!targetNode) {
+    const notebookRoot = nodes[route.notebookId];
+    if (!notebookRoot || notebookRoot.parentId !== null) {
       const nextRoute: AppRoute = { kind: "dashboard" };
       navigate(routeToPath(nextRoute), { replace: true });
       return;
     }
 
-    const rootId = getNotebookRootId(nodes, targetNodeId);
-    if (rootId !== route.notebookId) {
-      const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId, nodeId: targetNodeId };
+    if (routeToPath(route) !== location.pathname) {
+      const nextRoute: AppRoute = { kind: "workspace", notebookId: route.notebookId };
       navigate(routeToPath(nextRoute), { replace: true });
       return;
     }
 
+    const targetNodeId =
+      getNodeInNotebook(nodes, route.notebookId, activeNodeId) ??
+      getNodeInNotebook(nodes, route.notebookId, getStoredActiveNodeId()) ??
+      route.notebookId;
+
     if (activeNodeId !== targetNodeId) {
       setActiveNode(targetNodeId);
     }
-  }, [activeNodeId, apiStatus, authStatus, navigate, nodes, route, setActiveNode]);
+  }, [activeNodeId, apiStatus, authStatus, location.pathname, navigate, nodes, route, setActiveNode]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !user) return;
@@ -167,20 +183,6 @@ export default function App() {
       }),
     );
   }, [activeNodeId, route.kind]);
-
-  useEffect(() => {
-    if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace" || !activeNodeId || !nodes[activeNodeId]) return;
-
-    const rootId = getNotebookRootId(nodes, activeNodeId);
-    const nextRoute: AppRoute = {
-      kind: "workspace",
-      notebookId: rootId,
-      nodeId: activeNodeId === rootId ? undefined : activeNodeId,
-    };
-    if (routeToPath(route) !== routeToPath(nextRoute)) {
-      navigate(routeToPath(nextRoute), { replace: true });
-    }
-  }, [activeNodeId, apiStatus, authStatus, navigate, nodes, route]);
 
   const setThemeMode = (mode: ThemeMode) => {
     setThemeModeState(mode);
@@ -208,7 +210,7 @@ export default function App() {
   const openNotebook = (nodeId: string) => {
     setActiveNode(nodeId);
     const rootId = getNotebookRootId(nodes, nodeId);
-    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId, nodeId: nodeId === rootId ? undefined : nodeId };
+    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId };
     navigate(routeToPath(nextRoute));
     localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "workspace", activeNodeId: nodeId }));
   };
