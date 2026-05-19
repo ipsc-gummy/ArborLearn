@@ -40,6 +40,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
   return (
     <main className="tl-app-bg tl-landing-page relative min-h-screen overflow-x-clip text-foreground">
       <LandingAtmosphere />
+      <LowerPageAtmosphere />
       <header className="relative z-20 mx-auto flex max-w-7xl items-center justify-between px-5 py-5">
         <div className="flex items-center gap-3">
           <div className="tl-panel flex h-10 w-10 items-center justify-center rounded-full border">
@@ -96,6 +97,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
         eyebrow="01 / Notebook dashboard"
         title="从“我的 TreeLearn 笔记本”开始管理每个学习主题"
         description="每个笔记本都是一个独立的学习空间。你可以按最近更新或标题整理主题，搜索已有内容，也可以从这里创建新的知识树。"
+        softTop
       >
         <NotebookDashboardMock />
       </ProductShowcase>
@@ -154,14 +156,19 @@ function ProductShowcase({
   title,
   description,
   children,
+  softTop = false,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   children: ReactNode;
+  softTop?: boolean;
 }) {
   return (
-    <section className="tl-product-showcase tl-scroll-reveal relative z-10 mx-auto max-w-7xl px-5 pb-24 text-center" data-scroll-reveal>
+    <section
+      className={`tl-product-showcase tl-scroll-reveal relative z-10 mx-auto max-w-7xl px-5 pb-24 text-center${softTop ? " tl-product-showcase-soft-top" : ""}`}
+      data-scroll-reveal
+    >
       <div className="mx-auto max-w-3xl">
         <p className="mb-3 text-sm font-semibold text-primary">{eyebrow}</p>
         <h2 className="text-3xl font-semibold leading-tight md:text-5xl">{title}</h2>
@@ -183,6 +190,20 @@ function LandingAtmosphere() {
       <div className="tl-landing-orbit tl-landing-orbit-b" />
       {Array.from({ length: 28 }).map((_, index) => (
         <span key={index} className={`tl-landing-particle tl-landing-particle-${index + 1}`} />
+      ))}
+    </div>
+  );
+}
+
+function LowerPageAtmosphere() {
+  return (
+    <div className="tl-landing-lower-atmosphere" aria-hidden="true">
+      <div className="tl-lower-mist tl-lower-mist-a" />
+      <div className="tl-lower-mist tl-lower-mist-b" />
+      <div className="tl-lower-aurora tl-lower-aurora-a" />
+      <div className="tl-lower-aurora tl-lower-aurora-b" />
+      {Array.from({ length: 70 }).map((_, index) => (
+        <span key={index} className={`tl-lower-particle tl-lower-particle-${index + 1}`} />
       ))}
     </div>
   );
