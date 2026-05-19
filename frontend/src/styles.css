@@ -181,10 +181,17 @@ input {
   }
 
   .tl-notebooks-page {
+    overflow-x: clip !important;
+    overflow-y: auto;
+    scrollbar-gutter: stable both-edges;
     background:
       radial-gradient(circle at 16% 92%, rgba(216, 151, 65, 0.12) 0, transparent 18rem),
       radial-gradient(circle at 74% 16%, rgba(15, 125, 160, 0.13) 0, transparent 33rem),
       linear-gradient(180deg, #f7fbfa 0%, #eef8f5 46%, #f4f8f2 100%);
+  }
+
+  .tl-notebooks-page > section {
+    padding-bottom: max(5rem, env(safe-area-inset-bottom));
   }
 
   :root.dark .tl-notebooks-page {
@@ -485,6 +492,541 @@ input {
     width: 0.28rem;
     height: 0.28rem;
     border-radius: 999px;
+  }
+
+  .tl-notebook-primary-action,
+  .tl-sort-option.is-active {
+    color: #101516 !important;
+    background:
+      linear-gradient(135deg, rgba(183, 238, 231, 0.98), rgba(108, 211, 203, 0.94));
+    border-color: rgba(78, 186, 178, 0.56);
+    box-shadow:
+      0 12px 28px rgba(49, 137, 132, 0.18),
+      0 1px 0 rgba(255, 255, 255, 0.58) inset;
+  }
+
+  .tl-notebook-primary-action:hover,
+  .tl-sort-option.is-active:hover {
+    color: #101516 !important;
+    background:
+      linear-gradient(135deg, rgba(197, 246, 239, 1), rgba(119, 220, 211, 0.98));
+    border-color: rgba(67, 178, 170, 0.66);
+    box-shadow:
+      0 14px 32px rgba(49, 137, 132, 0.22),
+      0 1px 0 rgba(255, 255, 255, 0.66) inset;
+  }
+
+  .tl-sort-option:not(.is-active):hover {
+    background: color-mix(in srgb, var(--tl-brand) 9%, transparent);
+    color: hsl(var(--foreground));
+  }
+
+  :root.dark .tl-notebook-primary-action,
+  :root.dark .tl-sort-option.is-active {
+    color: hsl(var(--primary-foreground)) !important;
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    box-shadow: 0 14px 34px rgba(119, 220, 210, 0.16);
+  }
+
+  :root.dark .tl-notebook-primary-action:hover,
+  :root.dark .tl-sort-option.is-active:hover {
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
+    filter: brightness(1.05);
+  }
+
+  .tl-notebook-book {
+    --tl-notebook-cover: var(--tl-notebook-cover-light);
+    --tl-notebook-spine: var(--tl-notebook-spine-light);
+    --tl-notebook-ink: rgba(238, 246, 242, 0.94);
+    --tl-notebook-muted: rgba(190, 211, 207, 0.68);
+    --tl-notebook-page-text: rgba(48, 43, 34, 0.82);
+    --tl-notebook-page-muted: rgba(88, 76, 57, 0.7);
+    --tl-notebook-page-line: rgba(129, 111, 78, 0.18);
+    isolation: isolate;
+    perspective: 1400px;
+    transform-style: preserve-3d;
+  }
+
+  .tl-new-notebook-dropzone {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--tl-brand) 42%, var(--tl-border));
+    color: hsl(var(--foreground));
+    box-shadow: none;
+    transition:
+      border-color 180ms ease,
+      background 180ms ease,
+      transform 180ms ease;
+  }
+
+  .tl-new-notebook-dropzone:hover,
+  .tl-new-notebook-dropzone:focus-visible {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--tl-brand) 72%, var(--tl-border));
+    background: color-mix(in srgb, var(--tl-brand) 5%, transparent);
+  }
+
+  :root.dark .tl-new-notebook-dropzone {
+    border-color: color-mix(in srgb, var(--tl-brand) 48%, rgba(255, 255, 255, 0.18));
+  }
+
+  :root.dark .tl-new-notebook-dropzone:hover,
+  :root.dark .tl-new-notebook-dropzone:focus-visible {
+    border-color: color-mix(in srgb, var(--tl-brand) 76%, rgba(255, 255, 255, 0.2));
+    background: color-mix(in srgb, var(--tl-brand) 7%, transparent);
+  }
+
+  .tl-new-notebook-plus {
+    color: var(--tl-brand);
+    background: color-mix(in srgb, var(--tl-brand) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tl-brand) 24%, transparent);
+  }
+
+  :root.dark .tl-notebook-book {
+    --tl-notebook-cover: var(--tl-notebook-cover-dark);
+    --tl-notebook-spine: var(--tl-notebook-spine-dark);
+    --tl-notebook-ink: rgba(244, 250, 247, 0.94);
+    --tl-notebook-muted: rgba(219, 236, 231, 0.66);
+    --tl-notebook-page-text: rgba(40, 35, 28, 0.88);
+    --tl-notebook-page-muted: rgba(86, 74, 54, 0.72);
+    --tl-notebook-page-line: rgba(113, 94, 62, 0.19);
+  }
+
+  .tl-notebook-book::after {
+    content: "";
+    position: absolute;
+    inset: auto 7% 0.05rem 6%;
+    height: 1.45rem;
+    border-radius: 999px;
+    background: rgba(5, 18, 19, 0.36);
+    filter: blur(16px);
+    opacity: 0.62;
+    transition:
+      opacity 240ms ease,
+      transform 240ms ease;
+    z-index: -1;
+  }
+
+  .tl-notebook-pages,
+  .tl-notebook-paper,
+  .tl-notebook-cover {
+    position: absolute;
+    inset: 0.2rem 0 0;
+    border-radius: 0.58rem;
+  }
+
+  .tl-notebook-pages {
+    transform: translate(0.38rem, 0.48rem);
+    background:
+      linear-gradient(90deg, rgba(103, 86, 54, 0.28) 0 0.18rem, transparent 0.18rem 1.05rem, rgba(103, 86, 54, 0.12) 1.05rem 1.12rem, transparent 1.12rem),
+      repeating-linear-gradient(180deg, #efe4ca 0 0.33rem, #d8c9a9 0.35rem 0.42rem);
+    border: 1px solid rgba(81, 65, 39, 0.28);
+    box-shadow:
+      0 22px 42px rgba(4, 22, 22, 0.22),
+      -0.5rem 0 1.1rem rgba(0, 0, 0, 0.12) inset;
+  }
+
+  :root.dark .tl-notebook-pages {
+    background:
+      linear-gradient(90deg, rgba(103, 86, 54, 0.3) 0 0.18rem, transparent 0.18rem 1.05rem, rgba(103, 86, 54, 0.16) 1.05rem 1.12rem, transparent 1.12rem),
+      repeating-linear-gradient(180deg, #e0d2b5 0 0.33rem, #bcae8e 0.35rem 0.42rem);
+    border-color: rgba(178, 149, 96, 0.2);
+    box-shadow:
+      0 24px 58px rgba(0, 0, 0, 0.38),
+      -0.5rem 0 1.1rem rgba(0, 0, 0, 0.14) inset;
+  }
+
+  .tl-notebook-paper {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.75rem;
+    overflow: hidden;
+    padding: 2.15rem 1.15rem 1.05rem 2rem;
+    background:
+      linear-gradient(90deg, rgba(151, 82, 62, 0.24) 0 1px, transparent 1px) 1.35rem 0 / 1px 100% no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 1.42rem, var(--tl-notebook-page-line) 1.47rem 1.52rem),
+      radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.38), transparent 7.5rem),
+      radial-gradient(circle at 18% 78%, rgba(98, 75, 42, 0.1), transparent 8rem),
+      linear-gradient(110deg, rgba(255, 255, 255, 0.22), transparent 34%),
+      var(--tl-notebook-paper);
+    border: 1px solid rgba(102, 82, 48, 0.28);
+    color: rgba(29, 49, 47, 0.92);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.72) inset,
+      -0.42rem 0 1.2rem rgba(95, 72, 42, 0.14) inset,
+      0 22px 48px rgba(4, 22, 22, 0.16);
+    transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .tl-notebook-paper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 24%, rgba(116, 88, 53, 0.16) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 72% 64%, rgba(116, 88, 53, 0.11) 0 1px, transparent 1.4px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.32), transparent 12%, transparent 88%, rgba(92, 69, 41, 0.1));
+    background-size: 18px 18px, 23px 23px, auto;
+    mix-blend-mode: multiply;
+    opacity: 0.42;
+  }
+
+  .tl-notebook-paper::after {
+    content: "";
+    position: absolute;
+    inset: 0.45rem 0.45rem 0.45rem auto;
+    width: 0.35rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(88, 67, 39, 0.14));
+    opacity: 0.65;
+  }
+
+  :root.dark .tl-notebook-paper {
+    background:
+      linear-gradient(90deg, rgba(151, 82, 62, 0.24) 0 1px, transparent 1px) 1.35rem 0 / 1px 100% no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 1.42rem, var(--tl-notebook-page-line) 1.47rem 1.52rem),
+      radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.24), transparent 7.5rem),
+      radial-gradient(circle at 18% 78%, rgba(98, 75, 42, 0.14), transparent 8rem),
+      linear-gradient(110deg, rgba(255, 255, 255, 0.16), transparent 34%),
+      color-mix(in srgb, var(--tl-notebook-paper) 78%, #172326);
+    border-color: rgba(178, 149, 96, 0.22);
+    color: rgba(30, 42, 40, 0.94);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.26) inset,
+      -0.42rem 0 1.2rem rgba(95, 72, 42, 0.16) inset,
+      0 24px 62px rgba(0, 0, 0, 0.34);
+  }
+
+  .tl-notebook-paper-rule {
+    position: absolute;
+    left: 1.25rem;
+    top: 1.15rem;
+    bottom: 1.05rem;
+    width: 1px;
+    background: rgba(151, 82, 62, 0.26);
+  }
+
+  .tl-notebook-summary {
+    position: relative;
+    z-index: 1;
+    color: var(--tl-notebook-page-text);
+    font-family:
+      "LXGW WenKai", "STKaiti", "KaiTi", "Noto Serif SC", "Microsoft YaHei", serif;
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1.72;
+    text-indent: 2em;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.34);
+  }
+
+  .tl-notebook-paper .tl-notebook-diagram > div {
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-notebook-accent) 12%, transparent), transparent 8rem),
+      linear-gradient(var(--tl-notebook-page-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--tl-notebook-page-line) 1px, transparent 1px),
+      rgba(255, 252, 242, 0.36) !important;
+    border-color: rgba(112, 92, 56, 0.2);
+    color: var(--tl-notebook-page-text);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(84, 63, 34, 0.08) inset,
+      0 1px 0 rgba(255, 255, 255, 0.34);
+  }
+
+  .tl-notebook-paper svg path {
+    stroke: rgba(96, 82, 55, 0.42);
+  }
+
+  .tl-notebook-paper svg rect {
+    fill: rgba(255, 248, 229, 0.78);
+    stroke: rgba(87, 73, 48, 0.28);
+  }
+
+  .tl-notebook-paper svg text {
+    fill: rgba(47, 42, 33, 0.78);
+  }
+
+  .tl-notebook-node-count {
+    color: rgba(70, 58, 40, 0.74);
+    background:
+      linear-gradient(135deg, rgba(255, 248, 224, 0.78), rgba(223, 204, 159, 0.48));
+    border-color: rgba(117, 93, 54, 0.24);
+    font-family:
+      "LXGW WenKai", "STKaiti", "KaiTi", "Noto Serif SC", "Microsoft YaHei", serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.44) inset,
+      0 0.4rem 0.8rem rgba(84, 63, 34, 0.08);
+  }
+
+  .tl-notebook-paper .tl-notebook-diagram .text-muted-foreground {
+    color: var(--tl-notebook-page-muted);
+  }
+
+  .tl-notebook-cover {
+    overflow: hidden;
+    pointer-events: none;
+    transform-origin: left center;
+    transform: rotateY(0deg) translateZ(1px);
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 7%, rgba(58, 45, 30, 0.12) 88%, rgba(255, 255, 255, 0.12)),
+      radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--tl-notebook-accent) 12%, transparent), transparent 7rem),
+      radial-gradient(circle at 76% 28%, rgba(255, 255, 255, 0.1), transparent 6.5rem),
+      linear-gradient(135deg, color-mix(in srgb, var(--tl-notebook-cover) 88%, white), color-mix(in srgb, var(--tl-notebook-cover) 70%, #3b3122)),
+      url("/textures/leather-grain-light.png");
+    background-blend-mode: soft-light, screen, overlay, multiply, normal;
+    background-size: auto, auto, auto, auto, 19rem 19rem;
+    background-position: center, center, center, center, center;
+    border: 1px solid color-mix(in srgb, var(--tl-notebook-accent) 18%, rgba(255, 255, 255, 0.16));
+    box-shadow:
+      0 26px 58px rgba(0, 0, 0, 0.28),
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      -0.8rem 0 1.1rem rgba(0, 0, 0, 0.22) inset;
+    transition:
+      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 240ms ease,
+      filter 240ms ease;
+    z-index: 3;
+  }
+
+  .tl-notebook-cover .tl-input {
+    pointer-events: auto;
+  }
+
+  :root.dark .tl-notebook-cover {
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 7%, rgba(0, 0, 0, 0.2) 88%, rgba(255, 255, 255, 0.08)),
+      radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--tl-notebook-accent) 16%, transparent), transparent 7rem),
+      radial-gradient(circle at 76% 28%, rgba(255, 255, 255, 0.1), transparent 6.5rem),
+      linear-gradient(135deg, color-mix(in srgb, var(--tl-notebook-cover) 80%, transparent), color-mix(in srgb, var(--tl-notebook-cover) 58%, #000)),
+      url("/textures/leather-grain.png");
+    background-blend-mode: soft-light, screen, overlay, color, normal;
+    background-size: auto, auto, auto, auto, 19rem 19rem;
+    background-position: center, center, center, center, center;
+  }
+
+  .tl-notebook-cover::before {
+    pointer-events: none;
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.24), transparent 9%, transparent 84%, rgba(255, 255, 255, 0.08)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 18%, transparent 78%, rgba(0, 0, 0, 0.18)),
+      url("/textures/leather-grain-light.png");
+    background-size: auto, auto, 9rem 9rem;
+    background-position: center;
+    opacity: 0.42;
+    mix-blend-mode: multiply;
+  }
+
+  :root.dark .tl-notebook-cover::before {
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.24), transparent 9%, transparent 84%, rgba(255, 255, 255, 0.08)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 18%, transparent 78%, rgba(0, 0, 0, 0.18)),
+      url("/textures/leather-grain.png");
+    background-size: auto, auto, 9rem 9rem;
+    background-position: center;
+  }
+
+  .tl-notebook-cover::after {
+    content: "";
+    position: absolute;
+    inset: 0.48rem;
+    border-radius: 0.45rem;
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.22),
+      0 0 1.2rem rgba(0, 0, 0, 0.2) inset,
+      0.12rem 0.12rem 0.18rem rgba(255, 255, 255, 0.035) inset,
+      -0.1rem -0.1rem 0.18rem rgba(0, 0, 0, 0.26) inset;
+    pointer-events: none;
+  }
+
+  .tl-notebook-spine {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 1.4rem;
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.42), transparent 28%, rgba(255, 255, 255, 0.15) 48%, rgba(0, 0, 0, 0.2)),
+      var(--tl-notebook-spine);
+    box-shadow:
+      1px 0 0 rgba(255, 255, 255, 0.12) inset,
+      -1px 0 0 rgba(0, 0, 0, 0.36) inset,
+      0.45rem 0 0.75rem rgba(0, 0, 0, 0.22);
+  }
+
+  .tl-notebook-elastic {
+    position: absolute;
+    inset: 0.9rem auto 0.9rem 1.78rem;
+    width: 0.12rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--tl-notebook-accent) 66%, transparent);
+    opacity: 0.7;
+    box-shadow: 0 0 16px color-mix(in srgb, var(--tl-notebook-accent) 34%, transparent);
+  }
+
+  .tl-notebook-cover-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    padding: 1.05rem 1rem 1.35rem 2.35rem;
+  }
+
+  .tl-notebook-cover-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+  }
+
+  .tl-notebook-badge {
+    width: 2.1rem;
+    height: 2.1rem;
+    color: var(--tl-notebook-accent);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid color-mix(in srgb, var(--tl-notebook-accent) 42%, rgba(255, 255, 255, 0.12));
+    box-shadow:
+      0 0 18px color-mix(in srgb, var(--tl-notebook-accent) 12%, transparent),
+      0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  }
+
+  .tl-notebook-status {
+    border-radius: 999px;
+    padding: 0.24rem 0.5rem;
+    color: var(--tl-notebook-muted);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 0.64rem;
+    font-weight: 650;
+  }
+
+  .tl-notebook-status.is-pinned {
+    color: color-mix(in srgb, var(--tl-notebook-accent) 84%, #ffffff);
+    background: color-mix(in srgb, var(--tl-notebook-accent) 12%, rgba(255, 255, 255, 0.045));
+  }
+
+  .tl-notebook-menu-button {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-2px) scale(0.94);
+    color: rgba(246, 252, 249, 0.84);
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.18), transparent 52%),
+      rgba(5, 18, 19, 0.52);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 0.7rem 1.3rem rgba(0, 0, 0, 0.26),
+      0 1px 0 rgba(255, 255, 255, 0.1) inset;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition:
+      background 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      opacity 160ms ease,
+      transform 160ms ease;
+  }
+
+  .tl-notebook-menu-button:hover,
+  .tl-notebook-menu-button:focus-visible {
+    color: #ffffff;
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.22), transparent 52%),
+      color-mix(in srgb, var(--tl-notebook-accent) 24%, rgba(5, 18, 19, 0.62));
+    border-color: color-mix(in srgb, var(--tl-notebook-accent) 42%, rgba(255, 255, 255, 0.18));
+    transform: translateY(-1px);
+  }
+
+  .tl-notebook-book:hover .tl-notebook-menu-button,
+  .tl-notebook-book:focus-within .tl-notebook-menu-button {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+    color: rgba(72, 59, 39, 0.82);
+    background:
+      linear-gradient(135deg, rgba(255, 248, 224, 0.88), rgba(219, 199, 151, 0.62));
+    border-color: rgba(117, 93, 54, 0.28);
+    box-shadow:
+      0 0.45rem 0.9rem rgba(84, 63, 34, 0.13),
+      0 1px 0 rgba(255, 255, 255, 0.5) inset;
+  }
+
+  .tl-notebook-emboss {
+    position: absolute;
+    left: 50%;
+    bottom: 1.65rem;
+    width: 3.4rem;
+    height: 3.4rem;
+    color: rgba(255, 255, 255, 0.05);
+    filter:
+      drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.06))
+      drop-shadow(0 2px 1px rgba(0, 0, 0, 0.55));
+    transform: translateX(-50%);
+    z-index: 1;
+  }
+
+  .tl-notebook-title-block {
+    margin-top: auto;
+    padding-right: 0.35rem;
+    transform: translateY(-1.15rem);
+  }
+
+  .tl-notebook-title-block h4 {
+    font-family:
+      "Songti SC", "STSong", "Noto Serif SC", "Microsoft YaHei", serif;
+    font-size: 1.28rem;
+    font-weight: 700;
+    line-height: 1.22;
+    letter-spacing: 0;
+    text-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0.75rem 1.4rem rgba(0, 0, 0, 0.38);
+  }
+
+  .tl-notebook-title-block p {
+    margin-top: 0.6rem;
+    font-size: 0.76rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    text-shadow: 0 0.55rem 1rem rgba(0, 0, 0, 0.34);
+  }
+
+  .tl-notebook-book:hover,
+  .tl-notebook-book:focus-within {
+    z-index: 5;
+  }
+
+  .tl-notebook-book:hover::after,
+  .tl-notebook-book:focus-within::after {
+    opacity: 0.72;
+    transform: translateY(0.28rem) scaleX(1.04);
+  }
+
+  .tl-notebook-book:hover .tl-notebook-cover,
+  .tl-notebook-book:focus-within .tl-notebook-cover {
+    transform: rotateY(-112deg) translateZ(1px);
+    box-shadow:
+      0 30px 64px rgba(0, 0, 0, 0.34),
+      -0.8rem 0 1.1rem rgba(0, 0, 0, 0.26) inset;
+    filter: saturate(1.04);
+  }
+
+  .tl-notebook-book:hover .tl-notebook-paper,
+  .tl-notebook-book:focus-within .tl-notebook-paper {
+    transform: translateX(0.12rem);
+  }
+
+  .tl-notebook-book .tl-notebook-paper .tl-notebook-diagram {
+    margin-top: 0.95rem;
+    max-height: 8.35rem;
+    opacity: 1;
   }
 
   .tl-landing-page {
@@ -2116,6 +2658,8 @@ input {
   .tl-modal-backdrop,
   .tl-modal-panel,
   .tl-panel[data-state="open"],
+  .tl-notebook-book::after,
+  .tl-notebook-diagram,
   .tl-scroll-reveal,
   .tl-page-enter,
   .tl-workspace-stagger {
@@ -2123,5 +2667,9 @@ input {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .tl-notebook-cover {
+    transition: none;
   }
 }
