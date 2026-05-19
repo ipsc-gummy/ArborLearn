@@ -19,10 +19,12 @@ import {
 } from "../lib/api";
 import type { ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
 import { uid } from "../lib/utils";
+import { DEFAULT_DEEPSEEK_MODEL_ID, isDeepSeekModelId, type DeepSeekModelId } from "../lib/models";
 
 type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
+const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -40,6 +42,7 @@ interface TreeLearnState {
   authStatus: "checking" | "authenticated" | "anonymous" | "error";
   authError: string | null;
   user: AuthUser | null;
+  selectedModel: DeepSeekModelId;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
@@ -56,6 +59,7 @@ interface TreeLearnState {
   toggleSidebar: () => void;
   toggleNode: (nodeId: string) => void;
   setSelectionDraft: (draft: SelectionDraft | null) => void;
+  setSelectedModel: (modelName: DeepSeekModelId) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
@@ -139,6 +143,23 @@ function getSavedActiveNodeId(nodes: Record<string, KnowledgeNode>) {
   }
 }
 
+function getStoredModelSelection(): DeepSeekModelId {
+  try {
+    const saved = localStorage.getItem(MODEL_SELECTION_KEY);
+    return isDeepSeekModelId(saved) ? saved : DEFAULT_DEEPSEEK_MODEL_ID;
+  } catch {
+    return DEFAULT_DEEPSEEK_MODEL_ID;
+  }
+}
+
+function saveModelSelection(modelName: DeepSeekModelId) {
+  try {
+    localStorage.setItem(MODEL_SELECTION_KEY, modelName);
+  } catch {
+    // Ignore storage failures; the in-memory selection still applies.
+  }
+}
+
 export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   nodes: {},
   rootIds: [],
@@ -151,6 +172,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   authStatus: "checking",
   authError: null,
   user: null,
+  selectedModel: getStoredModelSelection(),
   chatRunStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
@@ -330,6 +352,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       },
     })),
   setSelectionDraft: (draft) => set({ selectionDraft: draft }),
+  setSelectedModel: (modelName) => {
+    saveModelSelection(modelName);
+    set({ selectedModel: modelName });
+  },
   createChildConversation: (sourceNodeId, selectedText) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
     const id = uid("node");
@@ -420,7 +446,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     };
 
     void postChatStream(
-      { notebookId, nodeId, message: content, userMessageId: userMessage.id, assistantMessageId },
+      {
+        notebookId,
+        nodeId,
+        message: content,
+        userMessageId: userMessage.id,
+        assistantMessageId,
+        modelName: state.selectedModel,
+      },
       {
         onDelta: (delta) => {
           streamedContent += delta;
@@ -552,7 +585,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           */
         }
         if (error instanceof Error && error.message.includes("Not Found")) {
-          return postChat({ notebookId, nodeId, message: content, userMessageId: userMessage.id, assistantMessageId });
+          return postChat({
+            notebookId,
+            nodeId,
+            message: content,
+            userMessageId: userMessage.id,
+            assistantMessageId,
+            modelName: state.selectedModel,
+          });
         }
         throw error;
       })
@@ -649,7 +689,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
     let streamedContent = "";
     void postChatRetryStream(
-      { nodeId, assistantMessageId },
+      { nodeId, assistantMessageId, modelName: state.selectedModel },
       {
         onDelta: (delta) => {
           streamedContent += delta;

@@ -5,6 +5,9 @@ import os
 import urllib.error
 import urllib.request
 
+DEEPSEEK_MODEL_NAMES = {"deepseek-v4-flash", "deepseek-v4-pro"}
+DEFAULT_MODEL_NAME = "deepseek-v4-flash"
+
 
 class ModelConfigurationError(RuntimeError):
     pass
@@ -22,7 +25,17 @@ def _chat_completions_url() -> str:
     return f"{base_url}/chat/completions"
 
 
-def call_model(messages: list[dict[str, str]]) -> str:
+def resolve_model_name(model_name: str | None = None) -> str:
+    if model_name is None:
+        return os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
+    if model_name not in DEEPSEEK_MODEL_NAMES:
+        raise ModelConfigurationError(
+            f"Unsupported model '{model_name}'. Choose one of: {', '.join(sorted(DEEPSEEK_MODEL_NAMES))}."
+        )
+    return model_name
+
+
+def call_model(messages: list[dict[str, str]], model_name: str | None = None) -> str:
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
@@ -30,7 +43,7 @@ def call_model(messages: list[dict[str, str]]) -> str:
         )
 
     payload = {
-        "model": os.getenv("MODEL_NAME", "deepseek-v4-flash"),
+        "model": resolve_model_name(model_name),
         "messages": messages,
         "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.3")),
     }
@@ -61,7 +74,7 @@ def call_model(messages: list[dict[str, str]]) -> str:
         raise ModelProviderError(f"Unexpected model provider response: {body[:500]}") from exc
 
 
-def stream_model(messages: list[dict[str, str]]):
+def stream_model(messages: list[dict[str, str]], model_name: str | None = None):
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
@@ -69,7 +82,7 @@ def stream_model(messages: list[dict[str, str]]):
         )
 
     payload = {
-        "model": os.getenv("MODEL_NAME", "deepseek-v4-flash"),
+        "model": resolve_model_name(model_name),
         "messages": messages,
         "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.3")),
         "stream": True,

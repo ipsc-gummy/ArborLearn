@@ -26,7 +26,14 @@ from .db import (
     touch_node,
     uid,
 )
-from .model_client import ModelConfigurationError, ModelProviderError, call_model, stream_model
+from .model_client import (
+    DEFAULT_MODEL_NAME,
+    DEEPSEEK_MODEL_NAMES,
+    ModelConfigurationError,
+    ModelProviderError,
+    call_model,
+    stream_model,
+)
 from .settings import get_cors_origins
 
 
@@ -46,6 +53,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     userMessageId: str | None = None
     assistantMessageId: str | None = None
+    modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
 
 
 class ChatStopRequest(BaseModel):
@@ -57,6 +65,7 @@ class ChatStopRequest(BaseModel):
 class ChatRetryRequest(BaseModel):
     nodeId: str
     assistantMessageId: str
+    modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
 
 
 class AuthRequest(BaseModel):
@@ -164,7 +173,13 @@ def clean_generated_title(raw_title: str) -> str:
     return title[:32].strip()
 
 
-def maybe_generate_root_title(conn: sqlite3.Connection, node_id: str, user_question: str, assistant_answer: str) -> str | None:
+def maybe_generate_root_title(
+    conn: sqlite3.Connection,
+    node_id: str,
+    user_question: str,
+    assistant_answer: str,
+    model_name: str | None = None,
+) -> str | None:
     node = conn.execute(
         """
         SELECT nodes.id, nodes.notebook_id, nodes.parent_id, nodes.title
@@ -199,7 +214,7 @@ def maybe_generate_root_title(conn: sqlite3.Connection, node_id: str, user_quest
         },
     ]
     try:
-        title = clean_generated_title(call_model(title_messages))
+        title = clean_generated_title(call_model(title_messages, model_name))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not title:
@@ -221,7 +236,7 @@ def clean_generated_summary(raw_summary: str) -> str:
     return summary[:180].strip()
 
 
-def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str) -> str | None:
+def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_name: str | None = None) -> str | None:
     node = conn.execute(
         """
         SELECT id, parent_id, title, selected_text
@@ -263,7 +278,7 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str) -> str
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages))
+        summary = clean_generated_summary(call_model(summary_messages, model_name))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
@@ -273,7 +288,7 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str) -> str
     return summary
 
 
-def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str) -> str | None:
+def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_name: str | None = None) -> str | None:
     node = conn.execute(
         """
         SELECT id, parent_id, title, selected_text
@@ -322,7 +337,7 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str) -> str |
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages))
+        summary = clean_generated_summary(call_model(summary_messages, model_name))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
@@ -341,8 +356,9 @@ def startup() -> None:
 def health() -> dict:
     return {
         "ok": True,
-        "model": os.getenv("MODEL_NAME", "deepseek-v4-flash"),
+        "model": os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME),
         "modelBaseUrl": os.getenv("MODEL_BASE_URL", "https://api.deepseek.com"),
+        "availableModels": sorted(DEEPSEEK_MODEL_NAMES),
     }
 
 
@@ -567,18 +583,18 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
-        model_messages = build_model_messages(conn, payload.nodeId)
+        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName)
 
         try:
-            content = call_model(model_messages)
+            content = call_model(model_messages, payload.modelName)
         except ModelConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
-        node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
-        node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -634,18 +650,18 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
         if not previous_user_message:
             raise HTTPException(status_code=400, detail="No user message found to retry")
 
-        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"])
+        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
 
         try:
-            content = call_model(model_messages)
+            content = call_model(model_messages, payload.modelName)
         except ModelConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
-        node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_message["content"], content)
-        node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_message["content"], content, payload.modelName)
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -689,14 +705,14 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
         if not previous_user_message:
             raise HTTPException(status_code=400, detail="No user message found to retry")
 
-        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"])
+        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
         previous_user_content = previous_user_message["content"]
 
     def generate():
         content_parts: list[str] = []
         model_stream = None
         try:
-            model_stream = stream_model(model_messages)
+            model_stream = stream_model(model_messages, payload.modelName)
             for delta in model_stream:
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
@@ -704,8 +720,8 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
             content = "".join(content_parts).strip() or "模型没有返回内容。"
             with connect() as conn:
                 assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
-                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content)
-                node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content, payload.modelName)
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
@@ -749,13 +765,13 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
-        model_messages = build_model_messages(conn, payload.nodeId)
+        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName)
 
     def generate():
         content_parts: list[str] = []
         model_stream = None
         try:
-            model_stream = stream_model(model_messages)
+            model_stream = stream_model(model_messages, payload.modelName)
             for delta in model_stream:
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
@@ -763,8 +779,8 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
             content = "".join(content_parts).strip() or "模型没有返回内容。"
             with connect() as conn:
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
-                node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content)
-                node_summary = maybe_generate_node_summary(conn, payload.nodeId)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
