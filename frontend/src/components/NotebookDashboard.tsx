@@ -42,8 +42,67 @@ interface DeleteTarget {
 
 type SortMode = "recent" | "title";
 
+const notebookCoverPalettes = [
+  {
+    lightCover: "#b8d4ce",
+    lightSpine: "#7eb1aa",
+    darkCover: "#102324",
+    darkSpine: "#16484d",
+    accent: "#25c6bd",
+    paper: "#f4ead1",
+  },
+  {
+    lightCover: "#c9bea2",
+    lightSpine: "#9f8f68",
+    darkCover: "#191f20",
+    darkSpine: "#3e5352",
+    accent: "#7fb8a8",
+    paper: "#f1e5ca",
+  },
+  {
+    lightCover: "#b5cad2",
+    lightSpine: "#7fa1ae",
+    darkCover: "#142123",
+    darkSpine: "#23585e",
+    accent: "#42bac7",
+    paper: "#efe3c7",
+  },
+  {
+    lightCover: "#c0caa8",
+    lightSpine: "#90a36e",
+    darkCover: "#1e211f",
+    darkSpine: "#4b574b",
+    accent: "#93b977",
+    paper: "#f5ecd4",
+  },
+  {
+    lightCover: "#c4bfd0",
+    lightSpine: "#968dad",
+    darkCover: "#171b20",
+    darkSpine: "#3c5265",
+    accent: "#76b9d6",
+    paper: "#eee4ca",
+  },
+];
+
 function normalizeSearchText(value: string) {
   return value.trim().toLocaleLowerCase("zh-Hans-CN");
+}
+
+function formatNotebookUpdatedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "最近编辑时间未知";
+  const diffMs = Date.now() - date.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diffMs < minute) return "最近编辑 刚刚";
+  if (diffMs < hour) return `最近编辑 ${Math.floor(diffMs / minute)} 分钟前`;
+  if (diffMs < day) return `最近编辑 ${Math.floor(diffMs / hour)} 小时前`;
+  return `最近编辑 ${date.toLocaleDateString("zh-Hans-CN", {
+    month: "short",
+    day: "numeric",
+  })}`;
 }
 
 function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId: string) {
@@ -179,7 +238,20 @@ export function NotebookDashboard({
   };
 
   return (
-    <main className="tl-app-bg relative min-h-screen overflow-auto text-foreground">
+    <main className="tl-app-bg tl-notebooks-page relative min-h-screen overflow-auto text-foreground">
+      <div className="tl-notebooks-forest-bg" aria-hidden="true">
+        <div className="tl-notebooks-aurora tl-notebooks-aurora-main" />
+        <div className="tl-notebooks-aurora tl-notebooks-aurora-soft" />
+        <div className="tl-notebooks-mist" />
+        <div className="tl-notebooks-plant" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-a" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-b" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-c" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-d" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-e" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-f" />
+        <div className="tl-notebooks-spark-field" />
+      </div>
       <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -249,8 +321,11 @@ export function NotebookDashboard({
         <section className="mt-0">
           <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <h3 className="text-xl font-semibold">我的 TreeLearn 笔记本</h3>
-              <p className="text-sm text-muted-foreground">每个主对话都是一个独立学习空间</p>
+              <h3 className="tl-notebooks-title">
+                我的 <span>TreeLearn</span> 笔记本
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">每个笔记本都是一个放大思考的空间</p>
+              <div className="tl-notebooks-title-mark" aria-hidden="true" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div
@@ -309,8 +384,8 @@ export function NotebookDashboard({
               <div className="tl-input hidden items-center rounded-full border p-0.5 text-xs sm:flex">
                 <button
                   className={cn(
-                    "h-8 rounded-full px-3 font-medium text-muted-foreground transition hover:bg-muted",
-                    sortMode === "recent" && "bg-foreground text-background hover:bg-foreground",
+                    "tl-sort-option h-8 rounded-full px-3 font-medium text-muted-foreground transition",
+                    sortMode === "recent" && "is-active",
                   )}
                   onClick={() => setSortMode("recent")}
                 >
@@ -318,8 +393,8 @@ export function NotebookDashboard({
                 </button>
                 <button
                   className={cn(
-                    "h-8 rounded-full px-3 font-medium text-muted-foreground transition hover:bg-muted",
-                    sortMode === "title" && "bg-foreground text-background hover:bg-foreground",
+                    "tl-sort-option h-8 rounded-full px-3 font-medium text-muted-foreground transition",
+                    sortMode === "title" && "is-active",
                   )}
                   onClick={() => setSortMode("title")}
                 >
@@ -329,7 +404,7 @@ export function NotebookDashboard({
               <Button
                 variant="primary"
                 onClick={handleCreateNotebook}
-                className="border-[#111827] bg-[#111827] text-white shadow-[0_14px_34px_rgba(17,24,39,0.22)] hover:bg-[#111827] hover:brightness-110 dark:border-primary dark:bg-primary dark:text-primary-foreground dark:shadow-[0_14px_34px_rgba(119,220,210,0.16)] dark:hover:bg-primary"
+                className="tl-notebook-primary-action"
               >
                 <Plus className="h-4 w-4" />
                 新建 TreeLearn 笔记本
@@ -345,12 +420,12 @@ export function NotebookDashboard({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <button
               className={cn(
-                "tl-panel tl-lift tl-hover min-h-40 flex-col items-center justify-center rounded-[1.1rem] border border-dashed p-5 text-center",
+                "tl-new-notebook-dropzone min-h-40 flex-col items-center justify-center rounded-[1.1rem] border border-dashed p-5 text-center",
                 hasSearchKeyword ? "hidden" : "flex",
               )}
               onClick={handleCreateNotebook}
             >
-              <div className="tl-brand-soft-bg mb-3 flex h-11 w-11 items-center justify-center rounded-full">
+              <div className="tl-new-notebook-plus mb-3 flex h-11 w-11 items-center justify-center rounded-full">
                 <Plus className="h-5 w-5" />
               </div>
               <span className="font-medium">新建笔记本</span>
@@ -359,24 +434,75 @@ export function NotebookDashboard({
               </span>
             </button>
 
-            {filteredRootIds.map((id) => {
+            {filteredRootIds.map((id, index) => {
               const node = nodes[id];
               if (!node) return null;
               const isPinned = pinnedRootIds.includes(id);
               const isEditing = editingId === id;
+              const coverPalette = notebookCoverPalettes[index % notebookCoverPalettes.length];
               return (
                 <div
                   key={id}
-                  className="tl-panel tl-lift group relative min-h-40 overflow-hidden rounded-[1.1rem] border p-5 text-left"
+                  className="tl-notebook-book group relative min-h-[18.5rem] text-left"
+                  style={{
+                    "--tl-notebook-cover-light": coverPalette.lightCover,
+                    "--tl-notebook-spine-light": coverPalette.lightSpine,
+                    "--tl-notebook-cover-dark": coverPalette.darkCover,
+                    "--tl-notebook-spine-dark": coverPalette.darkSpine,
+                    "--tl-notebook-accent": coverPalette.accent,
+                    "--tl-notebook-paper": coverPalette.paper,
+                  } as React.CSSProperties}
                 >
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-70 dark:via-white/12" />
                   {!isEditing && (
-                    <button className="absolute inset-0 rounded-[1.1rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
+                    <button className="absolute inset-0 z-10 rounded-[1.2rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
                   )}
+                  <div className="tl-notebook-pages" aria-hidden="true" />
+                  <div className="tl-notebook-paper">
+                    <div className="tl-notebook-paper-rule" aria-hidden="true" />
+                    <p className="tl-notebook-summary pointer-events-none line-clamp-4">{node.summary}</p>
+                    <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
+                  </div>
+                  <div className="tl-notebook-cover">
+                    <div className="tl-notebook-spine" />
+                    <div className="tl-notebook-elastic" />
+                    <div className="tl-notebook-cover-content">
+                      <div className="tl-notebook-cover-top pointer-events-none">
+                        <div className="tl-notebook-badge flex items-center justify-center rounded-full">
+                          <BookOpen className="h-4 w-4" />
+                        </div>
+                        <span className={cn("tl-notebook-status", isPinned && "is-pinned")}>
+                          {isPinned ? "已置顶" : `${node.children.length} 分支`}
+                        </span>
+                      </div>
+                      {isEditing ? (
+                        <input
+                          ref={editInputRef}
+                          value={editingTitle}
+                          onChange={(event) => setEditingTitle(event.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") commitRename();
+                            if (event.key === "Escape") cancelRename();
+                          }}
+                          className="tl-input relative z-20 ml-5 w-[calc(100%-3.25rem)] rounded-md border px-2 py-1 text-sm font-semibold outline-none ring-2 ring-primary/15"
+                        />
+                      ) : (
+                        <div className="tl-notebook-title-block pointer-events-none">
+                          <h4 className="line-clamp-2 text-[color:var(--tl-notebook-ink)]">
+                            {node.title}
+                          </h4>
+                          <p className="text-[color:var(--tl-notebook-muted)]">
+                            {formatNotebookUpdatedAt(node.updatedAt)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <GitBranch className="tl-notebook-emboss" aria-hidden="true" />
+                  </div>
                   <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
                     <Popover.Trigger asChild>
                       <button
-                        className="tl-hover tl-reveal-actions absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full"
+                        className="tl-notebook-menu-button absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full"
                         aria-label="打开笔记本菜单"
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -405,37 +531,6 @@ export function NotebookDashboard({
                       </Popover.Content>
                     </Popover.Portal>
                   </Popover.Root>
-
-                  <div className="pointer-events-none mb-4 flex items-start justify-between gap-3 pr-8">
-                    <div className="tl-brand-soft-bg flex h-10 w-10 items-center justify-center rounded-full transition duration-200 group-hover:scale-105 group-hover:shadow-md">
-                      <GitBranch className="tl-brand h-5 w-5" />
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-1 text-[11px]",
-                        isPinned ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {isPinned ? "已置顶" : `${node.children.length} 分支`}
-                    </span>
-                  </div>
-                  {isEditing ? (
-                    <input
-                      ref={editInputRef}
-                      value={editingTitle}
-                      onChange={(event) => setEditingTitle(event.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") commitRename();
-                        if (event.key === "Escape") cancelRename();
-                      }}
-                      className="tl-input relative z-10 w-full rounded-md border px-2 py-1 text-sm font-semibold outline-none ring-2 ring-primary/15"
-                    />
-                  ) : (
-                    <h4 className="pointer-events-none line-clamp-1 font-medium">{node.title}</h4>
-                  )}
-                  <p className="pointer-events-none mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">{node.summary}</p>
-                  <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
                 </div>
               );
             })}
@@ -528,15 +623,15 @@ function splitPreviewTitle(title: string) {
 
 function NotebookHoverDiagram({ nodes, rootId }: { nodes: Record<string, KnowledgeNode>; rootId: string }) {
   const diagram = buildDiagram(nodes, rootId);
-  const previewWidth = 220;
-  const previewHeight = 112;
+  const previewWidth = 260;
+  const previewHeight = 140;
   const scale = Math.min(previewWidth / diagram.width, previewHeight / diagram.height);
   const offsetX = (previewWidth - diagram.width * scale) / 2;
   const offsetY = (previewHeight - diagram.height * scale) / 2;
 
   return (
-    <div className="pointer-events-none max-h-0 overflow-hidden opacity-0 transition-all duration-300 ease-out group-hover:mt-4 group-hover:max-h-32 group-hover:opacity-100">
-      <div className="relative h-28 overflow-hidden rounded-xl border border-border/55 bg-[radial-gradient(circle_at_24%_20%,color-mix(in_srgb,var(--tl-brand)_10%,transparent),transparent_11rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px]">
+    <div className="tl-notebook-diagram pointer-events-none max-h-0 overflow-hidden opacity-0 transition-all duration-300 ease-out group-hover:mt-4 group-hover:max-h-32 group-hover:opacity-100">
+      <div className="relative h-32 overflow-hidden rounded-xl border border-border/55 bg-[radial-gradient(circle_at_24%_20%,color-mix(in_srgb,var(--tl-brand)_10%,transparent),transparent_11rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px]">
         <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${previewWidth} ${previewHeight}`} aria-hidden="true">
           <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
             {diagram.links.map((link) => (
@@ -575,7 +670,7 @@ function NotebookHoverDiagram({ nodes, rootId }: { nodes: Record<string, Knowled
                     x={x + DIAGRAM_NODE_WIDTH / 2}
                     y={y + (titleLines.length === 1 ? 36 : 29)}
                     fill="currentColor"
-                    fontSize="20"
+                    fontSize="24"
                     fontWeight="650"
                     dominantBaseline="middle"
                     textAnchor="middle"
@@ -591,7 +686,7 @@ function NotebookHoverDiagram({ nodes, rootId }: { nodes: Record<string, Knowled
             })}
           </g>
         </svg>
-        <div className="absolute bottom-2 left-3 rounded-full border border-border/60 bg-card/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
+        <div className="tl-notebook-node-count absolute bottom-2 left-3 rounded-full border px-2.5 py-1">
           {diagram.nodes.length} nodes
         </div>
       </div>
