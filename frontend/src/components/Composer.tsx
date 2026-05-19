@@ -1,6 +1,6 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useState } from "react";
-import { Check, ChevronDown, Globe, Paperclip, Send, Square } from "lucide-react";
+import { BrainCircuit, Check, ChevronDown, Globe, Paperclip, Send, Square } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { DEFAULT_DEEPSEEK_MODEL_ID, DEEPSEEK_MODELS, type DeepSeekModelId } from "../lib/models";
@@ -48,6 +48,10 @@ export function Composer({ nodeId }: ComposerProps) {
         />
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
+            <Button variant="ghost" size="sm" title="深度思考">
+              <BrainCircuit className="h-4 w-4" />
+              深度思考
+            </Button>
             <Button variant="ghost" size="sm" title="联网搜索">
               <Globe className="h-4 w-4" />
               搜索
