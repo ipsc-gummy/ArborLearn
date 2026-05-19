@@ -6,7 +6,14 @@ import urllib.error
 import urllib.request
 
 DEEPSEEK_MODEL_NAMES = {"deepseek-v4-flash", "deepseek-v4-pro"}
+DEEPSEEK_THINKING_MODES = {"fast", "deep", "challenge"}
 DEFAULT_MODEL_NAME = "deepseek-v4-flash"
+DEFAULT_THINKING_MODE = "deep"
+THINKING_MODE_CONFIG = {
+    "fast": {"type": "disabled"},
+    "deep": {"type": "enabled", "reasoning_effort": "high"},
+    "challenge": {"type": "enabled", "reasoning_effort": "max"},
+}
 
 
 class ModelConfigurationError(RuntimeError):
@@ -35,18 +42,46 @@ def resolve_model_name(model_name: str | None = None) -> str:
     return model_name
 
 
-def call_model(messages: list[dict[str, str]], model_name: str | None = None) -> str:
+def resolve_thinking_mode(thinking_mode: str | None = None) -> str:
+    if thinking_mode is None:
+        return os.getenv("MODEL_THINKING_MODE", DEFAULT_THINKING_MODE)
+    if thinking_mode not in DEEPSEEK_THINKING_MODES:
+        raise ModelConfigurationError(
+            f"Unsupported thinking mode '{thinking_mode}'. Choose one of: {', '.join(sorted(DEEPSEEK_THINKING_MODES))}."
+        )
+    return thinking_mode
+
+
+def build_model_payload(
+    messages: list[dict[str, str]],
+    model_name: str | None = None,
+    thinking_mode: str | None = None,
+    stream: bool = False,
+) -> dict:
+    resolved_thinking_mode = resolve_thinking_mode(thinking_mode)
+    thinking_config = THINKING_MODE_CONFIG[resolved_thinking_mode]
+    payload = {
+        "model": resolve_model_name(model_name),
+        "messages": messages,
+        "thinking": {"type": thinking_config["type"]},
+    }
+    if stream:
+        payload["stream"] = True
+    if thinking_config["type"] == "enabled":
+        payload["reasoning_effort"] = thinking_config["reasoning_effort"]
+    else:
+        payload["temperature"] = float(os.getenv("MODEL_TEMPERATURE", "0.3"))
+    return payload
+
+
+def call_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None) -> str:
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
             "MODEL_API_KEY is not configured. Copy backend/.env.example to backend/.env and set a real OpenAI-compatible API key."
         )
 
-    payload = {
-        "model": resolve_model_name(model_name),
-        "messages": messages,
-        "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.3")),
-    }
+    payload = build_model_payload(messages, model_name, thinking_mode)
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         _chat_completions_url(),
@@ -74,19 +109,14 @@ def call_model(messages: list[dict[str, str]], model_name: str | None = None) ->
         raise ModelProviderError(f"Unexpected model provider response: {body[:500]}") from exc
 
 
-def stream_model(messages: list[dict[str, str]], model_name: str | None = None):
+def stream_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None):
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
             "MODEL_API_KEY is not configured. Copy backend/.env.example to backend/.env and set a real OpenAI-compatible API key."
         )
 
-    payload = {
-        "model": resolve_model_name(model_name),
-        "messages": messages,
-        "temperature": float(os.getenv("MODEL_TEMPERATURE", "0.3")),
-        "stream": True,
-    }
+    payload = build_model_payload(messages, model_name, thinking_mode, stream=True)
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         _chat_completions_url(),

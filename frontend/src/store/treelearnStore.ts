@@ -19,12 +19,20 @@ import {
 } from "../lib/api";
 import type { ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
 import { uid } from "../lib/utils";
-import { DEFAULT_DEEPSEEK_MODEL_ID, isDeepSeekModelId, type DeepSeekModelId } from "../lib/models";
+import {
+  DEFAULT_DEEPSEEK_MODEL_ID,
+  DEFAULT_DEEPSEEK_THINKING_MODE_ID,
+  isDeepSeekModelId,
+  isDeepSeekThinkingModeId,
+  type DeepSeekModelId,
+  type DeepSeekThinkingModeId,
+} from "../lib/models";
 
 type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
+const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -43,6 +51,7 @@ interface TreeLearnState {
   authError: string | null;
   user: AuthUser | null;
   selectedModel: DeepSeekModelId;
+  selectedThinkingMode: DeepSeekThinkingModeId;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
@@ -60,6 +69,7 @@ interface TreeLearnState {
   toggleNode: (nodeId: string) => void;
   setSelectionDraft: (draft: SelectionDraft | null) => void;
   setSelectedModel: (modelName: DeepSeekModelId) => void;
+  setSelectedThinkingMode: (thinkingMode: DeepSeekThinkingModeId) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
@@ -160,6 +170,23 @@ function saveModelSelection(modelName: DeepSeekModelId) {
   }
 }
 
+function getStoredThinkingModeSelection(): DeepSeekThinkingModeId {
+  try {
+    const saved = localStorage.getItem(THINKING_MODE_SELECTION_KEY);
+    return isDeepSeekThinkingModeId(saved) ? saved : DEFAULT_DEEPSEEK_THINKING_MODE_ID;
+  } catch {
+    return DEFAULT_DEEPSEEK_THINKING_MODE_ID;
+  }
+}
+
+function saveThinkingModeSelection(thinkingMode: DeepSeekThinkingModeId) {
+  try {
+    localStorage.setItem(THINKING_MODE_SELECTION_KEY, thinkingMode);
+  } catch {
+    // Ignore storage failures; the in-memory selection still applies.
+  }
+}
+
 export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   nodes: {},
   rootIds: [],
@@ -173,6 +200,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   authError: null,
   user: null,
   selectedModel: getStoredModelSelection(),
+  selectedThinkingMode: getStoredThinkingModeSelection(),
   chatRunStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
@@ -356,6 +384,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     saveModelSelection(modelName);
     set({ selectedModel: modelName });
   },
+  setSelectedThinkingMode: (thinkingMode) => {
+    saveThinkingModeSelection(thinkingMode);
+    set({ selectedThinkingMode: thinkingMode });
+  },
   createChildConversation: (sourceNodeId, selectedText) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
     const id = uid("node");
@@ -453,6 +485,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         userMessageId: userMessage.id,
         assistantMessageId,
         modelName: state.selectedModel,
+        thinkingMode: state.selectedThinkingMode,
       },
       {
         onDelta: (delta) => {
@@ -592,6 +625,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             userMessageId: userMessage.id,
             assistantMessageId,
             modelName: state.selectedModel,
+            thinkingMode: state.selectedThinkingMode,
           });
         }
         throw error;
@@ -689,7 +723,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
     let streamedContent = "";
     void postChatRetryStream(
-      { nodeId, assistantMessageId, modelName: state.selectedModel },
+      { nodeId, assistantMessageId, modelName: state.selectedModel, thinkingMode: state.selectedThinkingMode },
       {
         onDelta: (delta) => {
           streamedContent += delta;

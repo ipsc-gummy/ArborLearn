@@ -54,6 +54,7 @@ class ChatRequest(BaseModel):
     userMessageId: str | None = None
     assistantMessageId: str | None = None
     modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
+    thinkingMode: Literal["fast", "deep", "challenge"] | None = None
 
 
 class ChatStopRequest(BaseModel):
@@ -66,6 +67,7 @@ class ChatRetryRequest(BaseModel):
     nodeId: str
     assistantMessageId: str
     modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
+    thinkingMode: Literal["fast", "deep", "challenge"] | None = None
 
 
 class AuthRequest(BaseModel):
@@ -214,7 +216,7 @@ def maybe_generate_root_title(
         },
     ]
     try:
-        title = clean_generated_title(call_model(title_messages, model_name))
+        title = clean_generated_title(call_model(title_messages, model_name, "fast"))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not title:
@@ -278,7 +280,7 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages, model_name))
+        summary = clean_generated_summary(call_model(summary_messages, model_name, "fast"))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
@@ -337,7 +339,7 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages, model_name))
+        summary = clean_generated_summary(call_model(summary_messages, model_name, "fast"))
     except (ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
@@ -586,7 +588,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
         model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName)
 
         try:
-            content = call_model(model_messages, payload.modelName)
+            content = call_model(model_messages, payload.modelName, payload.thinkingMode)
         except ModelConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
@@ -653,7 +655,7 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
         model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
 
         try:
-            content = call_model(model_messages, payload.modelName)
+            content = call_model(model_messages, payload.modelName, payload.thinkingMode)
         except ModelConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
@@ -712,7 +714,7 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
         content_parts: list[str] = []
         model_stream = None
         try:
-            model_stream = stream_model(model_messages, payload.modelName)
+            model_stream = stream_model(model_messages, payload.modelName, payload.thinkingMode)
             for delta in model_stream:
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
@@ -771,7 +773,7 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
         content_parts: list[str] = []
         model_stream = None
         try:
-            model_stream = stream_model(model_messages, payload.modelName)
+            model_stream = stream_model(model_messages, payload.modelName, payload.thinkingMode)
             for delta in model_stream:
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
