@@ -66,6 +66,36 @@ function routeToPath(route: AppRoute) {
   return "/";
 }
 
+function getNotebookCreatedAt(node: ReturnType<typeof useTreeLearnStore.getState>["nodes"][string]) {
+  const messageTimes = node.messages
+    .map((message) => new Date(message.createdAt).getTime())
+    .filter((time) => Number.isFinite(time));
+  const createdTime = messageTimes.length ? Math.min(...messageTimes) : new Date(node.updatedAt).getTime();
+  return Number.isFinite(createdTime) ? new Date(createdTime) : new Date();
+}
+
+function formatNotebookSlugDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function getNotebookSlug(node: ReturnType<typeof useTreeLearnStore.getState>["nodes"][string]) {
+  const titleSlug = node.title
+    .trim()
+    .replace(/[\\/#?&%:]+/g, "")
+    .replace(/\s+/g, "")
+    .slice(0, 40);
+  return `${titleSlug || "notebook"}${formatNotebookSlugDate(getNotebookCreatedAt(node))}`;
+}
+
+function resolveNotebookRouteRef(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], ref: string) {
+  const directNode = nodes[ref];
+  if (directNode?.parentId === null) return ref;
+  return Object.values(nodes).find((node) => node.parentId === null && getNotebookSlug(node) === ref)?.id ?? null;
+}
+
 function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string) {
   let current = nodes[nodeId];
   const seen = new Set<string>();
@@ -145,23 +175,26 @@ export default function App() {
   useEffect(() => {
     if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace") return;
 
-    const notebookRoot = nodes[route.notebookId];
-    if (!notebookRoot || notebookRoot.parentId !== null) {
+    const activeNotebookId = nodes[activeNodeId] ? getNotebookRootId(nodes, activeNodeId) : null;
+    const notebookId = resolveNotebookRouteRef(nodes, route.notebookId) ?? activeNotebookId;
+    const notebookRoot = notebookId ? nodes[notebookId] : null;
+    if (!notebookId || !notebookRoot || notebookRoot.parentId !== null) {
       const nextRoute: AppRoute = { kind: "dashboard" };
       navigate(routeToPath(nextRoute), { replace: true });
       return;
     }
 
-    if (routeToPath(route) !== location.pathname) {
-      const nextRoute: AppRoute = { kind: "workspace", notebookId: route.notebookId };
+    const canonicalPath = routeToPath({ kind: "workspace", notebookId: getNotebookSlug(notebookRoot) });
+    if (canonicalPath !== location.pathname) {
+      const nextRoute: AppRoute = { kind: "workspace", notebookId: getNotebookSlug(notebookRoot) };
       navigate(routeToPath(nextRoute), { replace: true });
       return;
     }
 
     const targetNodeId =
-      getNodeInNotebook(nodes, route.notebookId, activeNodeId) ??
-      getNodeInNotebook(nodes, route.notebookId, getStoredActiveNodeId()) ??
-      route.notebookId;
+      getNodeInNotebook(nodes, notebookId, activeNodeId) ??
+      getNodeInNotebook(nodes, notebookId, getStoredActiveNodeId()) ??
+      notebookId;
 
     if (activeNodeId !== targetNodeId) {
       setActiveNode(targetNodeId);
@@ -210,7 +243,8 @@ export default function App() {
   const openNotebook = (nodeId: string) => {
     setActiveNode(nodeId);
     const rootId = getNotebookRootId(nodes, nodeId);
-    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId };
+    const rootNode = nodes[rootId];
+    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootNode ? getNotebookSlug(rootNode) : rootId };
     navigate(routeToPath(nextRoute));
     localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "workspace", activeNodeId: nodeId }));
   };

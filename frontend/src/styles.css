@@ -1993,7 +1993,8 @@ input {
 .tl-notebooks-aurora,
 .tl-notebooks-mist,
 .tl-notebooks-plant,
-.tl-notebooks-glow {
+.tl-notebooks-glow,
+.tl-notebooks-spark-field {
   position: absolute;
 }
 
@@ -2108,6 +2109,57 @@ input {
   right: 16%;
   top: 22%;
   animation-delay: -4.2s;
+}
+
+.tl-notebooks-glow-d {
+  left: 38%;
+  top: 34%;
+  width: 0.28rem;
+  height: 0.28rem;
+  animation-delay: -1.4s;
+}
+
+.tl-notebooks-glow-e {
+  right: 8%;
+  bottom: 30%;
+  width: 0.34rem;
+  height: 0.34rem;
+  animation-delay: -5.6s;
+}
+
+.tl-notebooks-glow-f {
+  left: 58%;
+  bottom: 18%;
+  width: 0.22rem;
+  height: 0.22rem;
+  animation-delay: -3.3s;
+}
+
+.tl-notebooks-spark-field {
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(126, 228, 218, 0.34) 0 1px, transparent 1.7px),
+    radial-gradient(circle, rgba(247, 209, 130, 0.28) 0 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.24) 0 0.8px, transparent 1.3px);
+  background-position:
+    18px 42px,
+    96px 12px,
+    48px 88px;
+  background-size:
+    210px 180px,
+    280px 240px,
+    150px 130px;
+  mask-image: radial-gradient(circle at 50% 34%, black 0 62%, transparent 88%);
+  opacity: 0.34;
+  animation: notebooks-spark-drift 38s linear infinite;
+}
+
+:root.dark .tl-notebooks-spark-field {
+  opacity: 0.46;
+  background-image:
+    radial-gradient(circle, rgba(126, 228, 218, 0.46) 0 1px, transparent 1.8px),
+    radial-gradient(circle, rgba(247, 209, 130, 0.36) 0 1px, transparent 1.7px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.3) 0 0.8px, transparent 1.3px);
 }
 
 .ambient-backdrop {
@@ -2467,6 +2519,15 @@ input {
   }
 }
 
+@keyframes notebooks-spark-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-120px, 76px, 0);
+  }
+}
+
 @keyframes notebooks-plant {
   from {
     transform: rotate(-1.2deg);
@@ -2654,6 +2715,7 @@ input {
   .tl-notebooks-mist,
   .tl-notebooks-plant,
   .tl-notebooks-glow,
+  .tl-notebooks-spark-field,
   .tl-notebooks-forest-bg::before,
   .tl-modal-backdrop,
   .tl-modal-panel,

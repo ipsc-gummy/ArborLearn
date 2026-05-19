@@ -247,6 +247,10 @@ export function NotebookDashboard({
         <div className="tl-notebooks-glow tl-notebooks-glow-a" />
         <div className="tl-notebooks-glow tl-notebooks-glow-b" />
         <div className="tl-notebooks-glow tl-notebooks-glow-c" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-d" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-e" />
+        <div className="tl-notebooks-glow tl-notebooks-glow-f" />
+        <div className="tl-notebooks-spark-field" />
       </div>
       <header className="tl-app-bg-elevated tl-border sticky top-0 z-20 border-b px-5 py-4 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
@@ -320,7 +324,7 @@ export function NotebookDashboard({
               <h3 className="tl-notebooks-title">
                 我的 <span>TreeLearn</span> 笔记本
               </h3>
-              <p className="mt-2 text-sm text-muted-foreground">每个卡片都是一个放大思考的空间</p>
+              <p className="mt-2 text-sm text-muted-foreground">每个笔记本都是一个放大思考的空间</p>
               <div className="tl-notebooks-title-mark" aria-hidden="true" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
