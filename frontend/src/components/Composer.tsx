@@ -1,9 +1,15 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useState } from "react";
-import { BrainCircuit, Check, ChevronDown, Globe, Paperclip, Send, Square } from "lucide-react";
+import { Brain, Check, ChevronDown, Globe, Hammer, Paperclip, Send, Square, Zap } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
-import { DEFAULT_DEEPSEEK_MODEL_ID, DEEPSEEK_MODELS, type DeepSeekModelId } from "../lib/models";
+import {
+  DEFAULT_DEEPSEEK_MODEL_ID,
+  DEEPSEEK_MODELS,
+  DEEPSEEK_THINKING_MODES,
+  type DeepSeekModelId,
+  type DeepSeekThinkingModeId,
+} from "../lib/models";
 import { cn } from "../lib/utils";
 
 interface ComposerProps {
@@ -16,6 +22,8 @@ export function Composer({ nodeId }: ComposerProps) {
   const stopMessage = useTreeLearnStore((state) => state.stopMessage);
   const selectedModel = useTreeLearnStore((state) => state.selectedModel);
   const setSelectedModel = useTreeLearnStore((state) => state.setSelectedModel);
+  const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
+  const setSelectedThinkingMode = useTreeLearnStore((state) => state.setSelectedThinkingMode);
   const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
   const isThinking = chatRunStatus === "thinking";
   const isStreaming = chatRunStatus === "streaming";
@@ -48,10 +56,7 @@ export function Composer({ nodeId }: ComposerProps) {
         />
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
-            <Button variant="ghost" size="sm" title="深度思考">
-              <BrainCircuit className="h-4 w-4" />
-              深度思考
-            </Button>
+            <ThinkingModeSelector selectedMode={selectedThinkingMode} onSelect={setSelectedThinkingMode} />
             <Button variant="ghost" size="sm" title="联网搜索">
               <Globe className="h-4 w-4" />
               搜索
@@ -74,6 +79,88 @@ export function Composer({ nodeId }: ComposerProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+const thinkingModeIcons = {
+  fast: Zap,
+  deep: Brain,
+  challenge: Hammer,
+} satisfies Record<DeepSeekThinkingModeId, React.ComponentType<{ className?: string }>>;
+
+function ThinkingModeSelector({
+  selectedMode,
+  onSelect,
+}: {
+  selectedMode: DeepSeekThinkingModeId;
+  onSelect: (thinkingMode: DeepSeekThinkingModeId) => void;
+}) {
+  const activeMode = DEEPSEEK_THINKING_MODES.find((mode) => mode.id === selectedMode) ?? DEEPSEEK_THINKING_MODES[0];
+  const ActiveIcon = thinkingModeIcons[activeMode.id];
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className="flex h-9 items-center gap-1.5 rounded-full bg-foreground/5 px-3 text-sm font-medium text-foreground transition hover:bg-foreground/10 focus:outline-none focus:ring-2 focus:ring-primary/25 dark:bg-white/10 dark:hover:bg-white/15"
+          aria-label="选择思考模式"
+          title="选择思考模式"
+        >
+          <ActiveIcon className="h-4 w-4 text-muted-foreground" />
+          <span>{activeMode.label}</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          align="start"
+          sideOffset={10}
+          className="tl-panel z-50 w-[20rem] rounded-2xl border p-2 text-sm shadow-panel outline-none"
+        >
+          <div className="px-3 pb-2 pt-1">
+            <p className="text-base font-semibold leading-6">思考模式</p>
+            <p className="text-xs text-muted-foreground">控制 DeepSeek 的推理强度</p>
+          </div>
+
+          <div className="overflow-hidden rounded-xl">
+            {DEEPSEEK_THINKING_MODES.map((mode) => {
+              const active = selectedMode === mode.id;
+              const Icon = thinkingModeIcons[mode.id];
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={cn(
+                    "flex min-h-[4.25rem] w-full items-center gap-3 px-4 py-3 text-left transition",
+                    active
+                      ? "bg-primary/10 ring-1 ring-inset ring-primary/45"
+                      : "hover:bg-foreground/5 dark:hover:bg-white/10",
+                  )}
+                  onClick={() => onSelect(mode.id)}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-muted-foreground dark:bg-white/10">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-lg font-semibold leading-6">{mode.label}</span>
+                    <span className="mt-1 block text-sm leading-5 text-muted-foreground">{mode.description}</span>
+                  </span>
+                  {active && (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="h-4 w-4" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
