@@ -63,7 +63,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
         </div>
       </header>
 
-      <section className="relative z-10 mx-auto flex min-h-[calc(100vh-88px)] max-w-7xl flex-col items-center justify-center px-5 pb-16 pt-10 text-center">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-88px)] max-w-7xl flex-col items-center justify-center px-5 pb-16 pt-10 text-center">
         <p className="tl-landing-pill mb-5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium shadow-sm">
           <Sparkles className="h-3.5 w-3.5" />
           AI 知识树学习平台
@@ -91,7 +91,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
             </span>
           ))}
         </div>
-      </section>
+      </div>
 
       <ProductShowcase
         eyebrow="01 / Notebook dashboard"
