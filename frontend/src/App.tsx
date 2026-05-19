@@ -14,6 +14,7 @@ import { useTreeLearnStore } from "./store/treelearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const THEME_MODE_KEY = "arborlearn.themeMode";
+const THEME_TRANSITION_CLASS = "tl-theme-transitioning";
 
 type AppRoute =
   | { kind: "landing" }
@@ -218,6 +219,10 @@ export default function App() {
   }, [activeNodeId, route.kind]);
 
   const setThemeMode = (mode: ThemeMode) => {
+    document.documentElement.classList.add(THEME_TRANSITION_CLASS);
+    window.setTimeout(() => {
+      document.documentElement.classList.remove(THEME_TRANSITION_CLASS);
+    }, 520);
     setThemeModeState(mode);
     saveThemeMode(mode, user?.id);
   };

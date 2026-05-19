@@ -116,6 +116,27 @@ body {
   text-rendering: geometricPrecision;
 }
 
+.tl-theme-transitioning,
+.tl-theme-transitioning body,
+.tl-theme-transitioning .tl-app-bg,
+.tl-theme-transitioning .tl-app-bg-elevated,
+.tl-theme-transitioning .tl-panel,
+.tl-theme-transitioning .tl-panel-soft,
+.tl-theme-transitioning .tl-input,
+.tl-theme-transitioning .tl-border,
+.tl-theme-transitioning .tl-border-soft,
+.tl-theme-transitioning button,
+.tl-theme-transitioning input,
+.tl-theme-transitioning textarea {
+  transition:
+    background-color 420ms ease,
+    background 420ms ease,
+    border-color 420ms ease,
+    color 420ms ease,
+    box-shadow 420ms ease,
+    opacity 420ms ease;
+}
+
 /* 表单控件继承 body 字体，避免 textarea/input 出现系统默认字体跳变。 */
 button,
 textarea,
@@ -581,6 +602,22 @@ input {
     color: var(--tl-brand);
     background: color-mix(in srgb, var(--tl-brand) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--tl-brand) 24%, transparent);
+  }
+
+  .tl-child-conversation-layout {
+    animation: tl-child-layout-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .tl-child-parent-panel {
+    animation: tl-child-parent-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .tl-child-active-panel {
+    animation: tl-child-active-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .tl-child-resize-handle {
+    animation: tl-child-handle-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 
   :root.dark .tl-notebook-book {
@@ -2619,6 +2656,50 @@ input {
   }
 }
 
+@keyframes tl-child-layout-in {
+  from {
+    opacity: 0.96;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tl-child-parent-in {
+  from {
+    filter: brightness(1.04);
+    opacity: 1;
+    transform: translate3d(10px, 0, 0) scale(1.01);
+  }
+  to {
+    filter: brightness(0.98);
+    opacity: 0.98;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tl-child-active-in {
+  from {
+    opacity: 0;
+    transform: translate3d(22px, 0, 0) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tl-child-handle-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
 @keyframes tl-workspace-stagger {
   from {
     opacity: 0;
@@ -2722,6 +2803,10 @@ input {
   .tl-panel[data-state="open"],
   .tl-notebook-book::after,
   .tl-notebook-diagram,
+  .tl-child-conversation-layout,
+  .tl-child-parent-panel,
+  .tl-child-active-panel,
+  .tl-child-resize-handle,
   .tl-scroll-reveal,
   .tl-page-enter,
   .tl-workspace-stagger {
