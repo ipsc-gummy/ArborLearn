@@ -66,15 +66,22 @@ export function Workspace() {
           <NotebookDiagram onOpenChat={() => setView("chat")} />
         ) : parentNode ? (
           // 子对话模式：左侧保留父节点上下文，右侧展示当前支线，比例约为 3:7。
-          <PanelGroup direction="horizontal" className="h-full min-h-0 overflow-hidden">
+          <PanelGroup
+            key={`${parentNode.id}-${activeNode.id}`}
+            direction="horizontal"
+            className="tl-child-conversation-layout h-full min-h-0 overflow-hidden"
+          >
             <Panel defaultSize={30} minSize={22}>
-              <div className="tl-border-soft h-full min-h-0 overflow-hidden border-r">
+              <div className="tl-child-parent-panel tl-border-soft h-full min-h-0 overflow-hidden border-r">
                 <NodePanel node={parentNode} compact />
               </div>
             </Panel>
-            <PanelResizeHandle className="w-1 transition hover:bg-primary/40" style={{ background: "var(--tl-border-soft)" }} />
+            <PanelResizeHandle
+              className="tl-child-resize-handle w-1 transition hover:bg-primary/40"
+              style={{ background: "var(--tl-border-soft)" }}
+            />
             <Panel defaultSize={70} minSize={38}>
-              <div className="h-full min-h-0 overflow-hidden">
+              <div className="tl-child-active-panel h-full min-h-0 overflow-hidden">
                 <NodePanel node={activeNode} showCloseChild />
               </div>
             </Panel>

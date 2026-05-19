@@ -116,6 +116,15 @@ function getNotebookRootId(nodes: Record<string, KnowledgeNode>, nodeId: string)
   return current?.id ?? nodeId;
 }
 
+function touchNotebookRoot(nodes: Record<string, KnowledgeNode>, nodeId: string, updatedAt: string) {
+  const rootId = getNotebookRootId(nodes, nodeId);
+  if (!nodes[rootId] || rootId === nodeId) return nodes;
+  return {
+    ...nodes,
+    [rootId]: { ...nodes[rootId], updatedAt },
+  };
+}
+
 function isDescendantOf(nodes: Record<string, KnowledgeNode>, nodeId: string, candidateParentId: string): boolean {
   const children = nodes[nodeId]?.children ?? [];
   if (children.includes(candidateParentId)) return true;
@@ -297,17 +306,19 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const parent = state.nodes[parentId];
     const newNode = createNode(parentId, "新的对话节点", `“${parent?.title ?? "当前节点"}”下的新子节点。`);
 
+    const now = newNode.updatedAt;
+
     set((current) => ({
-      nodes: {
+      nodes: touchNotebookRoot({
         ...current.nodes,
         [parentId]: {
           ...current.nodes[parentId],
           children: [...current.nodes[parentId].children, newNode.id],
           expanded: true,
-          updatedAt: new Date().toISOString(),
+          updatedAt: now,
         },
         [newNode.id]: newNode,
-      },
+      }, parentId, now),
       activeNodeId: newNode.id,
       compareNodeId: parentId,
       selectionDraft: null,
@@ -375,7 +386,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     };
 
     set((state) => ({
-      nodes: {
+      nodes: touchNotebookRoot({
         ...state.nodes,
         [sourceNodeId]: {
           ...state.nodes[sourceNodeId],
@@ -384,7 +395,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           updatedAt: now,
         },
         [id]: newNode,
-      },
+      }, sourceNodeId, now),
       activeNodeId: id,
       compareNodeId: sourceNodeId,
       selectionDraft: null,
@@ -413,14 +424,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     };
 
     set((current) => ({
-      nodes: {
+      nodes: touchNotebookRoot({
         ...current.nodes,
         [nodeId]: {
           ...current.nodes[nodeId],
           messages: [...current.nodes[nodeId].messages, userMessage, assistantMessage],
           updatedAt: now,
         },
-      },
+      }, nodeId, now),
       apiError: null,
       chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
     }));
@@ -449,18 +460,19 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           set((current) => {
             const node = current.nodes[nodeId];
             if (!node) return {};
+            const updatedAt = new Date().toISOString();
             return {
               chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "streaming" },
-              nodes: {
+              nodes: touchNotebookRoot({
                 ...current.nodes,
                 [nodeId]: {
                   ...node,
                   messages: node.messages.map((message) =>
                     message.id === assistantMessageId ? { ...message, content: streamedContent } : message,
                   ),
-                  updatedAt: new Date().toISOString(),
+                  updatedAt,
                 },
-              },
+              }, nodeId, updatedAt),
             };
           });
         },
@@ -477,8 +489,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             if (!node) return {};
             const nextTitle = response.nodeTitle?.trim();
             const nextSummary = response.nodeSummary?.trim();
+            const updatedAt = finalAssistantMessage.createdAt;
             return {
-              nodes: {
+              nodes: touchNotebookRoot({
                 ...current.nodes,
                 [nodeId]: {
                   ...node,
@@ -487,9 +500,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
                   messages: node.messages.map((message) =>
                     message.id === assistantMessageId ? finalAssistantMessage : message,
                   ),
-                  updatedAt: finalAssistantMessage.createdAt,
+                  updatedAt,
                 },
-              },
+              }, nodeId, updatedAt),
               apiStatus: "ready",
               apiError: null,
             };
@@ -516,14 +529,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
               ? node.messages.map((message) => (message.id === assistantMessageId ? stoppedMessage : message))
               : node.messages.filter((message) => message.id !== assistantMessageId);
             return {
-              nodes: {
+              nodes: touchNotebookRoot({
                 ...current.nodes,
                 [nodeId]: {
                   ...node,
                   messages,
                   updatedAt: stoppedAt,
                 },
-              },
+              }, nodeId, stoppedAt),
               apiStatus: "ready",
               apiError: null,
             };
@@ -597,8 +610,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           if (!node) return {};
           const nextTitle = response.nodeTitle?.trim();
           const nextSummary = response.nodeSummary?.trim();
+          const updatedAt = fallbackAssistantMessage.createdAt;
           return {
-            nodes: {
+            nodes: touchNotebookRoot({
               ...current.nodes,
               [nodeId]: {
                 ...node,
@@ -607,9 +621,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
                 messages: node.messages.map((message) =>
                   message.id === assistantMessageId ? fallbackAssistantMessage : message,
                 ),
-                updatedAt: fallbackAssistantMessage.createdAt,
+                updatedAt,
               },
-            },
+            }, nodeId, updatedAt),
             apiStatus: "ready",
             apiError: null,
           };
@@ -628,14 +642,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           const node = current.nodes[nodeId];
           if (!node) return { apiStatus: "error", apiError: message };
           return {
-            nodes: {
+            nodes: touchNotebookRoot({
               ...current.nodes,
               [nodeId]: {
                 ...node,
                 messages: node.messages.map((item) => (item.id === assistantMessageId ? errorMessage : item)),
                 updatedAt: errorMessage.createdAt,
               },
-            },
+            }, nodeId, errorMessage.createdAt),
             apiStatus: "error",
             apiError: message,
           };
@@ -660,7 +674,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       return {
         apiError: null,
         chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
-        nodes: {
+        nodes: touchNotebookRoot({
           ...current.nodes,
           [nodeId]: {
             ...currentNode,
@@ -669,7 +683,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             ),
             updatedAt: now,
           },
-        },
+        }, nodeId, now),
       };
     });
 
@@ -682,18 +696,19 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
           set((current) => {
             const currentNode = current.nodes[nodeId];
             if (!currentNode) return {};
+            const updatedAt = new Date().toISOString();
             return {
               chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "streaming" },
-              nodes: {
+              nodes: touchNotebookRoot({
                 ...current.nodes,
                 [nodeId]: {
                   ...currentNode,
                   messages: currentNode.messages.map((message) =>
                     message.id === assistantMessageId ? { ...message, content: streamedContent } : message,
                   ),
-                  updatedAt: new Date().toISOString(),
+                  updatedAt,
                 },
-              },
+              }, nodeId, updatedAt),
             };
           });
         },
@@ -710,8 +725,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             if (!currentNode) return {};
             const nextTitle = response.nodeTitle?.trim();
             const nextSummary = response.nodeSummary?.trim();
+            const updatedAt = new Date().toISOString();
             return {
-              nodes: {
+              nodes: touchNotebookRoot({
                 ...current.nodes,
                 [nodeId]: {
                   ...currentNode,
@@ -720,9 +736,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
                   messages: currentNode.messages.map((message) =>
                     message.id === assistantMessageId ? replacementMessage : message,
                   ),
-                  updatedAt: new Date().toISOString(),
+                  updatedAt,
                 },
-              },
+              }, nodeId, updatedAt),
               apiStatus: "ready",
               apiError: null,
             };
@@ -764,11 +780,12 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     activeChatControllers.get(nodeId)?.abort();
   },
   renameNode: (nodeId, title) => {
+    const updatedAt = new Date().toISOString();
     set((state) => ({
-      nodes: {
+      nodes: touchNotebookRoot({
         ...state.nodes,
-        [nodeId]: { ...state.nodes[nodeId], title, updatedAt: new Date().toISOString() },
-      },
+        [nodeId]: { ...state.nodes[nodeId], title, updatedAt },
+      }, nodeId, updatedAt),
     }));
     void patchBackendNode(nodeId, { title }).catch((error) => {
       set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "重命名失败" });
@@ -801,16 +818,19 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
       const rootIds = state.rootIds.filter((id) => !idsToDelete.has(id));
       const pinnedRootIds = state.pinnedRootIds.filter((id) => !idsToDelete.has(id));
+      const updatedAt = new Date().toISOString();
       if (node.parentId && nodes[node.parentId]) {
         nodes[node.parentId] = {
           ...nodes[node.parentId],
           children: nodes[node.parentId].children.filter((id) => !idsToDelete.has(id)),
+          updatedAt,
         };
       }
+      const nextNodes = node.parentId && nodes[node.parentId] ? touchNotebookRoot(nodes, node.parentId, updatedAt) : nodes;
 
       const fallbackId = node.parentId && nodes[node.parentId] ? node.parentId : rootIds[0];
       return {
-        nodes,
+        nodes: nextNodes,
         rootIds,
         pinnedRootIds,
         activeNodeId: idsToDelete.has(state.activeNodeId) && fallbackId ? fallbackId : state.activeNodeId,
@@ -830,21 +850,24 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     }
 
     const oldParentId = node.parentId;
+    const updatedAt = new Date().toISOString();
     set((current) => {
       const nodes = { ...current.nodes };
       if (oldParentId) {
         nodes[oldParentId] = {
           ...nodes[oldParentId],
           children: nodes[oldParentId].children.filter((id) => id !== nodeId),
+          updatedAt,
         };
       }
       nodes[targetParentId] = {
         ...nodes[targetParentId],
         children: [...nodes[targetParentId].children, nodeId],
         expanded: true,
+        updatedAt,
       };
-      nodes[nodeId] = { ...nodes[nodeId], parentId: targetParentId };
-      return { nodes };
+      nodes[nodeId] = { ...nodes[nodeId], parentId: targetParentId, updatedAt };
+      return { nodes: touchNotebookRoot(touchNotebookRoot(nodes, oldParentId, updatedAt), targetParentId, updatedAt) };
     });
 
     void patchBackendNode(nodeId, { parentId: targetParentId }).catch((error) => {
