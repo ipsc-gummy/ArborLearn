@@ -4,6 +4,7 @@ import os
 import sqlite3
 
 from .db import get_parent_chain
+from .web_search import classify_source_url, select_relevant_evidence
 
 
 SYSTEM_PROMPT = """你是 TreeLearn 的学习助手。
@@ -51,26 +52,45 @@ def _format_turns(rows: list[sqlite3.Row]) -> str:
     return "\n".join(f"- {labels.get(row['role'], row['role'])}: {row['content']}" for row in rows)
 
 
-def _format_web_evidence(web_sources: list[dict] | None) -> str:
+def _format_web_evidence(web_sources: list[dict] | None, user_query: str | None = None) -> str:
     if not web_sources:
         return ""
     evidence_blocks = []
     for index, source in enumerate(web_sources[:3], start=1):
-        content = (source.get("content") or "").strip()[:3000]
+        content = (source.get("content") or "").strip()
         snippet = (source.get("snippet") or "").strip()
+        source_type = source.get("source_type")
+        trust_level = source.get("trust_level")
+        if not source_type or not trust_level:
+            source_type, trust_level, _ = classify_source_url(str(source.get("url") or ""))
+        relevant_evidence = select_relevant_evidence(
+            content or snippet,
+            user_query or f"{source.get('title') or ''} {snippet}",
+            max_paragraphs=2,
+            max_chars=2400,
+        )
         evidence_blocks.append(
             "\n".join(
                 [
-                    f"[{index}]",
+                    f"[S{index}]",
                     f"Title: {source.get('title') or 'Untitled'}",
                     f"URL: {source.get('url') or ''}",
-                    f"Snippet: {snippet or '无'}",
-                    "Content:",
-                    content or "无可用正文",
+                    f"Source Type: {source_type}",
+                    f"Trust Level: {trust_level}",
+                    f"Snippet: {snippet or 'None'}",
+                    "Relevant Evidence:",
+                    relevant_evidence or "无可用正文",
                 ]
             )
         )
-    return "\n\n[Web Evidence]\n\n" + "\n\n".join(evidence_blocks)
+    return (
+        "\n\n[Web Evidence - Use First]\n\n"
+        "The following sources were retrieved for the current user question.\n"
+        "Use these sources when relevant.\n"
+        "If the evidence is insufficient, explicitly say the evidence is insufficient.\n"
+        "When using a source, cite it as [S1], [S2], etc.\n\n"
+        + "\n\n".join(evidence_blocks)
+    )
 
 
 def build_model_messages(
@@ -79,6 +99,7 @@ def build_model_messages(
     before_created_at: str | None = None,
     model_name: str | None = None,
     web_sources: list[dict] | None = None,
+    user_query: str | None = None,
 ) -> list[dict[str, str]]:
     chain = get_parent_chain(conn, node_id)
     if not chain:
@@ -110,13 +131,14 @@ def build_model_messages(
         )
 
     current_history = _recent_turns(conn, node_id, 12, before_created_at)
-    web_evidence = _format_web_evidence(web_sources)
+    web_evidence = _format_web_evidence(web_sources, user_query)
     web_instruction = ""
     if web_evidence:
         web_instruction = (
             "\n\n联网检索回答规则:\n"
             "- 优先基于 Web Evidence 回答；证据不足时明确说明不足，不要编造来源。\n"
-            "- 使用来源信息时在句子或段落中标注 [1]、[2] 这类编号。\n"
+            "- 使用来源信息时在句子或段落中标注 [S1]、[S2] 这类编号。\n"
+            "- 不要引入 Web Evidence 或节点上下文都不支持的新事实。\n"
             "- 回答末尾必须列出“参考来源”，包含标题和 URL。"
         )
 

@@ -35,6 +35,8 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   const latestMessageContent = node.messages[node.messages.length - 1]?.content ?? "";
   const visibleMessages = node.messages.filter((message) => message.role !== "system");
+  const notebookId = path[0]?.id ?? node.id;
+  const panelId = `${compact ? "compact" : "main"}:${showCloseChild ? "child" : "primary"}:${node.id}`;
 
   useEffect(() => {
     const isNodeChange = previousNodeIdRef.current !== node.id;
@@ -95,7 +97,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {!compact && <LongTaskPanel nodeId={node.id} notebookId={path[0]?.id ?? node.id} nodeTitle={node.title} />}
+            {!compact && <LongTaskPanel nodeId={node.id} notebookId={notebookId} nodeTitle={node.title} panelId={panelId} />}
             {showCloseChild && (
               <Button variant="ghost" size="icon" onClick={closeChildConversation} aria-label="关闭子对话">
                 <X className="h-4 w-4" />
@@ -127,7 +129,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         </div>
       </div>
 
-      <Composer nodeId={node.id} />
+      <Composer nodeId={node.id} notebookId={notebookId} threadId={node.id} panelId={panelId} />
     </section>
   );
 }

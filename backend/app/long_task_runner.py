@@ -44,8 +44,12 @@ class RetrievalResult:
     error_message: str | None = None
 
 
-def model_name_for_logs() -> str:
-    return os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
+def task_model_name(task: dict | None) -> str:
+    return (task or {}).get("model_name") or os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
+
+
+def task_thinking_mode(task: dict | None) -> str:
+    return (task or {}).get("thinking_mode") or "fast"
 
 
 def estimate_tokens(text: str) -> int:
@@ -343,7 +347,7 @@ class LongTaskRunner:
         raw = ""
         error_message = None
         try:
-            raw = await asyncio.to_thread(call_model, messages, None, "deep")
+            raw = await asyncio.to_thread(call_model, messages, task_model_name(task), task_thinking_mode(task))
             raw_steps = extract_json_array(raw)
             if raw_steps is None:
                 error_message = "Planner returned invalid JSON"
@@ -362,7 +366,8 @@ class LongTaskRunner:
                 node_id=task.get("node_id"),
                 task_id=task["id"],
                 call_type="plan",
-                model_name=model_name_for_logs(),
+                model_name=task_model_name(task),
+                thinking_mode=task_thinking_mode(task),
                 input_chars=sum(len(message["content"]) for message in messages),
                 output_chars=len(raw),
                 estimated_input_tokens=estimate_tokens(prompt),
@@ -397,7 +402,7 @@ class LongTaskRunner:
         started = time.time()
         model_output = ""
         try:
-            model_output = await asyncio.to_thread(call_model, step_context.messages, None, "deep")
+            model_output = await asyncio.to_thread(call_model, step_context.messages, task_model_name(task), task_thinking_mode(task))
             with connect() as conn:
                 fresh_task = get_long_task_for_user(conn, user_id, task_id)
                 if not fresh_task or fresh_task["status"] == "CANCELLED":
@@ -432,7 +437,8 @@ class LongTaskRunner:
                     task_id=task_id,
                     step_id=step_id,
                     call_type="step_retrieve" if step["need_retrieval"] else "step_analyze",
-                    model_name=model_name_for_logs(),
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
                     input_chars=step_context.context_chars,
                     output_chars=len(model_output),
                     estimated_input_tokens=step_context.estimated_tokens,
@@ -459,7 +465,8 @@ class LongTaskRunner:
                     task_id=task_id,
                     step_id=step_id,
                     call_type="step_retrieve" if step["need_retrieval"] else "step_analyze",
-                    model_name=model_name_for_logs(),
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
                     input_chars=step_context.context_chars,
                     output_chars=len(model_output),
                     estimated_input_tokens=step_context.estimated_tokens,
@@ -595,7 +602,7 @@ class LongTaskRunner:
         started = time.time()
         raw = ""
         try:
-            raw = await asyncio.to_thread(call_model, messages, None, "deep")
+            raw = await asyncio.to_thread(call_model, messages, task_model_name(task), task_thinking_mode(task))
             with connect() as conn:
                 insert_model_call_log(
                     conn,
@@ -604,7 +611,8 @@ class LongTaskRunner:
                     node_id=task.get("node_id"),
                     task_id=task_id,
                     call_type="final_summary",
-                    model_name=model_name_for_logs(),
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
                     input_chars=len(prompt),
                     output_chars=len(raw),
                     estimated_input_tokens=estimate_tokens(prompt),
@@ -624,7 +632,8 @@ class LongTaskRunner:
                     node_id=task.get("node_id"),
                     task_id=task_id,
                     call_type="final_summary",
-                    model_name=model_name_for_logs(),
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
                     input_chars=len(prompt),
                     output_chars=len(raw),
                     estimated_input_tokens=estimate_tokens(prompt),

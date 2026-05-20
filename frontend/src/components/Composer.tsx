@@ -10,20 +10,25 @@ import {
   type DeepSeekModelId,
   type DeepSeekThinkingModeId,
 } from "../lib/models";
+import { getModelScopeId, type ModelScope } from "../lib/modelScope";
 import { cn } from "../lib/utils";
 
 interface ComposerProps {
   nodeId: string;
+  notebookId?: string;
+  panelId?: string;
+  threadId?: string;
 }
 
-export function Composer({ nodeId }: ComposerProps) {
+export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
   const [value, setValue] = useState("");
   const appendMessage = useTreeLearnStore((state) => state.appendMessage);
   const stopMessage = useTreeLearnStore((state) => state.stopMessage);
-  const selectedModel = useTreeLearnStore((state) => state.selectedModel);
-  const setSelectedModel = useTreeLearnStore((state) => state.setSelectedModel);
-  const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
-  const setSelectedThinkingMode = useTreeLearnStore((state) => state.setSelectedThinkingMode);
+  const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
+  const scopeId = getModelScopeId(scope);
+  const selectedModel = useTreeLearnStore((state) => state.getModelConfig(scope).model);
+  const setModelConfig = useTreeLearnStore((state) => state.setModelConfig);
+  const selectedThinkingMode = useTreeLearnStore((state) => state.getModelConfig(scope).thinkingMode);
   const webSearchEnabled = useTreeLearnStore((state) => state.webSearchEnabled);
   const setWebSearchEnabled = useTreeLearnStore((state) => state.setWebSearchEnabled);
   const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
@@ -36,7 +41,7 @@ export function Composer({ nodeId }: ComposerProps) {
       return;
     }
     if (!value.trim() || isThinking) return;
-    appendMessage(nodeId, value.trim());
+    appendMessage(nodeId, value.trim(), scope);
     setValue("");
   };
 
@@ -58,7 +63,10 @@ export function Composer({ nodeId }: ComposerProps) {
         />
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
-            <ThinkingModeSelector selectedMode={selectedThinkingMode} onSelect={setSelectedThinkingMode} />
+            <ThinkingModeSelector
+              selectedMode={selectedThinkingMode}
+              onSelect={(thinkingMode) => setModelConfig(scopeId, { model: selectedModel, thinkingMode })}
+            />
             <Button
               variant={webSearchEnabled ? "secondary" : "ghost"}
               size="sm"
@@ -76,7 +84,10 @@ export function Composer({ nodeId }: ComposerProps) {
             <Button variant="ghost" size="sm" title="上传文件">
               <Paperclip className="h-4 w-4" />
             </Button>
-            <ModelSelector selectedModel={selectedModel} onSelect={setSelectedModel} />
+            <ModelSelector
+              selectedModel={selectedModel}
+              onSelect={(modelName) => setModelConfig(scopeId, { model: modelName, thinkingMode: selectedThinkingMode })}
+            />
           </div>
           <Button
             size="icon"

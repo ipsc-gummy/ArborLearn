@@ -106,6 +106,8 @@ def init_db() -> None:
               current_step_index INTEGER DEFAULT 0,
               plan_json TEXT,
               plan_summary TEXT,
+              model_name TEXT,
+              thinking_mode TEXT,
               final_answer TEXT,
               error_message TEXT,
               created_at TEXT NOT NULL,
@@ -190,6 +192,7 @@ def init_db() -> None:
               step_id TEXT,
               call_type TEXT NOT NULL,
               model_name TEXT,
+              thinking_mode TEXT,
               input_chars INTEGER,
               output_chars INTEGER,
               estimated_input_tokens INTEGER,
@@ -233,6 +236,15 @@ def init_db() -> None:
               ON model_call_logs(task_id, step_id);
             """
         )
+        _ensure_column(conn, "long_tasks", "model_name", "TEXT")
+        _ensure_column(conn, "long_tasks", "thinking_mode", "TEXT")
+        _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
         ensure_column(conn, "notebooks", "owner_user_id", "TEXT")
 
 
@@ -536,6 +548,8 @@ def row_to_long_task(row: sqlite3.Row, include_final_answer: bool = True) -> dic
         "current_step_index": row["current_step_index"],
         "plan_json": row["plan_json"],
         "plan_summary": row["plan_summary"],
+        "model_name": row["model_name"],
+        "thinking_mode": row["thinking_mode"],
         "error_message": row["error_message"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -614,6 +628,8 @@ def create_long_task(
     title: str | None = None,
     notebook_id: str | None = None,
     node_id: str | None = None,
+    model_name: str | None = None,
+    thinking_mode: str | None = None,
 ) -> dict:
     task_id = uid("task")
     ts = now_iso()
@@ -621,11 +637,11 @@ def create_long_task(
         """
         INSERT INTO long_tasks(
           id, user_id, notebook_id, node_id, title, original_question, status,
-          current_step_index, created_at, updated_at
+          current_step_index, model_name, thinking_mode, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'CREATED', 0, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 'CREATED', 0, ?, ?, ?, ?)
         """,
-        (task_id, user_id, notebook_id, node_id, title, original_question, ts, ts),
+        (task_id, user_id, notebook_id, node_id, title, original_question, model_name, thinking_mode, ts, ts),
     )
     row = conn.execute("SELECT * FROM long_tasks WHERE id = ?", (task_id,)).fetchone()
     return row_to_long_task(row)
@@ -915,6 +931,7 @@ def insert_model_call_log(
     task_id: str | None = None,
     step_id: str | None = None,
     model_name: str | None = None,
+    thinking_mode: str | None = None,
     input_chars: int | None = None,
     output_chars: int | None = None,
     estimated_input_tokens: int | None = None,
@@ -933,12 +950,12 @@ def insert_model_call_log(
     conn.execute(
         """
         INSERT INTO model_call_logs(
-          id, user_id, notebook_id, node_id, task_id, step_id, call_type, model_name,
+          id, user_id, notebook_id, node_id, task_id, step_id, call_type, model_name, thinking_mode,
           input_chars, output_chars, estimated_input_tokens, estimated_output_tokens,
           context_chars, web_search_enabled, search_result_count, fetched_page_count,
           source_count, evidence_count, latency_ms, success, error_message, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             log_id,
@@ -949,6 +966,7 @@ def insert_model_call_log(
             step_id,
             call_type,
             model_name,
+            thinking_mode,
             input_chars,
             output_chars,
             estimated_input_tokens,

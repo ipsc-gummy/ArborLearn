@@ -88,6 +88,8 @@ export interface LongTask {
   plan_summary?: string | null;
   node_id?: string | null;
   notebook_id?: string | null;
+  model_name?: DeepSeekModelId | null;
+  thinking_mode?: DeepSeekThinkingModeId | null;
   final_answer?: string | null;
   error_message?: string | null;
   created_at?: string;
@@ -99,6 +101,26 @@ export interface LongTask {
 export interface LongTaskStepDetail extends LongTaskStep {
   evidence: TaskEvidence[];
   outputs: StepOutput[];
+}
+
+export interface ContextDebugResponse {
+  node_id: string;
+  model_config: {
+    model?: DeepSeekModelId | string | null;
+    thinkingMode?: DeepSeekThinkingModeId | string | null;
+  };
+  sections: Array<{ name: string; chars: number; truncated?: boolean }>;
+  sources: Array<{
+    title?: string | null;
+    url?: string | null;
+    source_type?: string | null;
+    trust_level?: string | null;
+    evidence_preview?: string | null;
+  }>;
+  estimated_tokens: number;
+  truncated: boolean;
+  web_search_warning?: string | null;
+  final_context_preview: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -198,8 +220,18 @@ export function createLongTask(payload: {
   question: string;
   title?: string;
   auto_run?: boolean;
+  model?: DeepSeekModelId;
+  thinkingMode?: DeepSeekThinkingModeId;
 }) {
-  return request<{ id: string; status: string; title?: string | null; original_question: string; node_id?: string | null }>(
+  return request<{
+    id: string;
+    status: string;
+    title?: string | null;
+    original_question: string;
+    node_id?: string | null;
+    model_name?: DeepSeekModelId | null;
+    thinking_mode?: DeepSeekThinkingModeId | null;
+  }>(
     "/api/long-tasks",
     {
       method: "POST",
@@ -226,6 +258,21 @@ export function cancelLongTask(taskId: string) {
   return request<{ task_id: string; status: string }>(`/api/long-tasks/${taskId}/cancel`, {
     method: "POST",
   });
+}
+
+export function fetchContextDebug(payload: {
+  nodeId: string;
+  query?: string;
+  webSearch?: boolean;
+  modelName?: DeepSeekModelId;
+  thinkingMode?: DeepSeekThinkingModeId;
+}) {
+  const params = new URLSearchParams({ node_id: payload.nodeId });
+  if (payload.query) params.set("query", payload.query);
+  if (payload.webSearch) params.set("webSearch", "true");
+  if (payload.modelName) params.set("modelName", payload.modelName);
+  if (payload.thinkingMode) params.set("thinkingMode", payload.thinkingMode);
+  return request<ContextDebugResponse>(`/api/context/debug?${params.toString()}`);
 }
 
 export function postChat(payload: {
