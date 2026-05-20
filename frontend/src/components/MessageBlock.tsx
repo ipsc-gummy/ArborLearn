@@ -11,10 +11,10 @@ interface MessageBlockProps {
   message: ChatMessage;
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ label = "正在思考" }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 text-muted-foreground">
-      <span className="animate-pulse">正在思考</span>
+      <span className="animate-pulse">{label}</span>
       <span className="flex items-center gap-1" aria-hidden="true">
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.24s]" />
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.12s]" />
@@ -33,7 +33,12 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
-  const isThinking = !isUser && (message.content === "正在思考..." || message.content === "正在重新生成...");
+  const isThinking =
+    !isUser &&
+    (message.content === "正在思考..." ||
+      message.content === "正在联网检索..." ||
+      message.content === "正在重新生成...");
+  const thinkingLabel = message.content === "正在联网检索..." ? "正在联网检索" : "正在思考";
   const [copied, setCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -134,7 +139,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
           </span>
         </div>
         {isThinking ? (
-          <ThinkingIndicator />
+          <ThinkingIndicator label={thinkingLabel} />
         ) : isUser ? (
           <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
         ) : (

@@ -1,31 +1,45 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import sqlite3
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
 from .context_builder import build_model_messages
 from .db import (
     add_message,
+    add_web_source,
     connect,
     create_starter_notebook,
+    create_long_task,
     descendant_ids,
+    get_long_task_for_user,
+    get_long_task_step_for_user,
     get_node_for_user,
     get_notebook_for_user,
     get_notebook_state,
     init_db,
+    insert_model_call_log,
+    list_long_task_steps,
     list_messages,
+    list_step_outputs,
+    list_task_evidence,
     now_iso,
     touch_node,
+    update_long_task_status,
     uid,
 )
+from .long_task_context import build_step_context
+from .long_task_runner import LongTaskRunner
+from .long_task_schemas import LongTaskCreateRequest
 from .model_client import (
     DEFAULT_MODEL_NAME,
     DEEPSEEK_MODEL_NAMES,
@@ -35,6 +49,15 @@ from .model_client import (
     stream_model,
 )
 from .settings import get_cors_origins
+from .web_search import (
+    SearchResult,
+    WebPageContent,
+    WebSearchConfigurationError,
+    WebSearchProviderError,
+    fetch_url,
+    get_web_search_config_status,
+    search_web,
+)
 
 
 app = FastAPI(title="TreeLearn API", version="0.1.0")
@@ -55,6 +78,16 @@ class ChatRequest(BaseModel):
     assistantMessageId: str | None = None
     modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
     thinkingMode: Literal["fast", "deep", "challenge"] | None = None
+    webSearch: bool = False
+    webQuery: str | None = None
+
+    @property
+    def web_search(self) -> bool:
+        return self.webSearch
+
+    @property
+    def web_query(self) -> str | None:
+        return self.webQuery
 
 
 class ChatStopRequest(BaseModel):
@@ -103,6 +136,25 @@ class NodePatch(BaseModel):
     parentId: str | None = None
 
 
+class WebSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    max_results: int = Field(5, ge=1, le=8, alias="maxResults")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class WebFetchRequest(BaseModel):
+    url: str = Field(min_length=1)
+
+
+class NodeWebSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    max_results: int = Field(5, ge=1, le=8, alias="maxResults")
+    fetch_top_k: int = Field(3, ge=1, le=3, alias="fetchTopK")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 def serialize_user(user: dict) -> dict:
     return {
         "id": user["id"],
@@ -122,6 +174,239 @@ def stopped_assistant_content(content: str) -> str | None:
         return None
     return f"{content}\n\n[stopped]"
     return f"{content}\n\n[已停止]"
+
+
+def source_public_view(source: dict, include_content: bool = False) -> dict:
+    public_source = {
+        "id": source.get("id"),
+        "title": source.get("title"),
+        "url": source.get("url"),
+        "snippet": source.get("snippet"),
+        "provider": source.get("provider"),
+        "createdAt": source.get("createdAt"),
+    }
+    if include_content:
+        public_source["content"] = source.get("content")
+    return public_source
+
+
+def source_brief_view(source: dict) -> dict:
+    return {
+        "title": source.get("title"),
+        "url": source.get("url"),
+    }
+
+
+def long_task_step_public_view(step: dict) -> dict:
+    return {
+        "id": step["id"],
+        "task_id": step["task_id"],
+        "node_id": step["node_id"],
+        "step_index": step["step_index"],
+        "title": step["title"],
+        "goal": step["goal"],
+        "step_type": step["step_type"],
+        "status": step["status"],
+        "need_retrieval": step["need_retrieval"],
+        "retrieval_mode": step["retrieval_mode"],
+        "output_summary": step["output_summary"],
+        "error_message": step["error_message"],
+        "started_at": step["started_at"],
+        "finished_at": step["finished_at"],
+    }
+
+
+def long_task_public_view(task: dict, steps: list[dict] | None = None) -> dict:
+    payload = {
+        "id": task["id"],
+        "title": task["title"],
+        "original_question": task["original_question"],
+        "status": task["status"],
+        "current_step_index": task["current_step_index"],
+        "plan_summary": task["plan_summary"],
+        "node_id": task["node_id"],
+        "notebook_id": task["notebook_id"],
+        "final_answer": task.get("final_answer"),
+        "error_message": task["error_message"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "finished_at": task["finished_at"],
+    }
+    if steps is not None:
+        payload["steps"] = [long_task_step_public_view(step) for step in steps]
+    return payload
+
+
+def task_evidence_public_view(evidence: dict) -> dict:
+    return {
+        "id": evidence["id"],
+        "source_type": evidence["source_type"],
+        "source_id": evidence["source_id"],
+        "title": evidence["title"],
+        "url": evidence["url"],
+        "evidence_text": evidence["evidence_text"],
+        "relevance_score": evidence["relevance_score"],
+        "char_count": evidence["char_count"],
+        "created_at": evidence["created_at"],
+    }
+
+
+def step_output_public_view(output: dict) -> dict:
+    return {
+        "id": output["id"],
+        "output_type": output["output_type"],
+        "content": output["content"],
+        "summary": output["summary"],
+        "confidence": output["confidence"],
+        "unresolved_questions": output["unresolved_questions"],
+        "created_at": output["created_at"],
+    }
+
+
+def append_source_references(content: str, sources: list[dict]) -> str:
+    if not sources:
+        return content
+    if all(source.get("url") and str(source["url"]) in content for source in sources):
+        return content
+    references = "\n".join(
+        f"[{index}] {source.get('title') or '来源'} - {source.get('url')}"
+        for index, source in enumerate(sources, start=1)
+        if source.get("url")
+    )
+    return f"{content.rstrip()}\n\n参考来源:\n{references}"
+
+
+def append_web_search_warning(content: str, warning: str | None) -> str:
+    if not warning:
+        return content
+    return f"{content.rstrip()}\n\n> 联网检索未完成：{warning}\n> 已降级为不使用网页证据的回答。"
+
+
+UNVERIFIED_REFERENCES_RE = re.compile(
+    r"\n{0,2}(?:#{1,6}\s*)?(?:参考来源|来源|References)\s*[:：]\s*[\s\S]*$",
+    re.IGNORECASE,
+)
+
+
+def strip_unverified_reference_section(content: str) -> str:
+    return UNVERIFIED_REFERENCES_RE.sub("", content.rstrip()).rstrip()
+
+
+def finalize_web_search_answer(content: str, sources: list[dict], warning: str | None) -> str:
+    if not warning:
+        return append_source_references(content, sources)
+    if sources:
+        return append_web_search_warning(append_source_references(content, sources), warning)
+    return append_web_search_warning(strip_unverified_reference_section(content), warning)
+
+
+def http_error_from_web_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, WebSearchConfigurationError):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, WebSearchProviderError):
+        return HTTPException(status_code=502, detail=str(exc))
+    return HTTPException(status_code=500, detail=f"Unexpected web search error: {exc}")
+
+
+async def fetch_top_web_pages(results: list[SearchResult], fetch_top_k: int) -> list[tuple[SearchResult, WebPageContent]]:
+    async def fetch_one(result: SearchResult) -> tuple[SearchResult, WebPageContent] | None:
+        try:
+            page = await fetch_url(result.url)
+        except (WebSearchConfigurationError, WebSearchProviderError):
+            return None
+        return result, page
+
+    fetched = await asyncio.gather(*(fetch_one(result) for result in results[:fetch_top_k]))
+    return [item for item in fetched if item is not None]
+
+
+async def collect_and_save_web_sources(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    node: sqlite3.Row,
+    query: str,
+    max_results: int = 5,
+    fetch_top_k: int = 3,
+) -> list[dict]:
+    try:
+        results = await search_web(query, max_results=max_results)
+    except (WebSearchConfigurationError, WebSearchProviderError) as exc:
+        raise http_error_from_web_error(exc) from exc
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No web search results found")
+
+    fetched_pages = await fetch_top_web_pages(results, fetch_top_k)
+
+    saved_sources: list[dict] = []
+    for result, page in fetched_pages:
+        saved_sources.append(
+            add_web_source(
+                conn,
+                user_id,
+                node["notebook_id"],
+                node["id"],
+                title=page.title or result.title,
+                url=page.url or result.url,
+                snippet=result.snippet,
+                content=page.content,
+                provider=page.provider,
+            )
+        )
+    if saved_sources:
+        return saved_sources
+
+    for result in results[:fetch_top_k]:
+        snippet = result.snippet.strip()
+        if not snippet:
+            continue
+        saved_sources.append(
+            add_web_source(
+                conn,
+                user_id,
+                node["notebook_id"],
+                node["id"],
+                title=result.title,
+                url=result.url,
+                snippet=snippet,
+                content=snippet,
+                provider="search-result",
+            )
+        )
+    if not saved_sources:
+        raise HTTPException(status_code=502, detail="No readable web pages or snippets found from the search results")
+    return saved_sources
+
+
+async def try_collect_web_sources(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    node: sqlite3.Row,
+    query: str,
+    max_results: int = 5,
+    fetch_top_k: int = 3,
+) -> tuple[list[dict], str | None]:
+    try:
+        sources = await asyncio.wait_for(
+            collect_and_save_web_sources(
+                conn,
+                user_id=user_id,
+                node=node,
+                query=query,
+                max_results=max_results,
+                fetch_top_k=fetch_top_k,
+            ),
+            timeout=float(os.getenv("WEB_SEARCH_PREP_TIMEOUT", "12")),
+        )
+        return sources, None
+    except asyncio.TimeoutError:
+        return [], "搜索或网页抓取超时"
+    except HTTPException as exc:
+        return [], str(exc.detail)
+    except Exception as exc:
+        return [], str(exc)
 
 
 def save_stopped_assistant(node_id: str, content_parts: list[str], message_id: str | None = None) -> dict | None:
@@ -361,6 +646,194 @@ def health() -> dict:
         "model": os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME),
         "modelBaseUrl": os.getenv("MODEL_BASE_URL", "https://api.deepseek.com"),
         "availableModels": sorted(DEEPSEEK_MODEL_NAMES),
+        "webSearch": get_web_search_config_status(),
+    }
+
+
+@app.post("/api/web/search")
+async def web_search_endpoint(payload: WebSearchRequest, user: dict = Depends(require_user)) -> dict:
+    try:
+        results = await search_web(payload.query.strip(), payload.max_results)
+    except (WebSearchConfigurationError, WebSearchProviderError) as exc:
+        raise http_error_from_web_error(exc) from exc
+    return {"results": [result.to_dict() for result in results], "provider": os.getenv("WEB_SEARCH_PROVIDER", "auto")}
+
+
+@app.post("/api/web/fetch")
+async def web_fetch_endpoint(payload: WebFetchRequest, user: dict = Depends(require_user)) -> dict:
+    try:
+        page = await fetch_url(payload.url)
+    except (WebSearchConfigurationError, WebSearchProviderError) as exc:
+        raise http_error_from_web_error(exc) from exc
+    return {"page": page.to_dict()}
+
+
+@app.post("/api/long-tasks", status_code=201)
+def create_long_task_endpoint(
+    payload: LongTaskCreateRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_user),
+) -> dict:
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+    with connect() as conn:
+        notebook_id = payload.notebook_id
+        node_id = payload.node_id
+        if node_id:
+            node = get_node_for_user(conn, node_id, user["id"])
+            if not node:
+                raise HTTPException(status_code=404, detail="Node not found")
+            if notebook_id and notebook_id != node["notebook_id"]:
+                raise HTTPException(status_code=400, detail="node_id and notebook_id do not belong to the same notebook")
+            notebook_id = node["notebook_id"]
+        elif notebook_id and not get_notebook_for_user(conn, notebook_id, user["id"]):
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        task = create_long_task(
+            conn,
+            user["id"],
+            original_question=question,
+            title=(payload.title or question[:32]).strip(),
+            notebook_id=notebook_id,
+            node_id=node_id,
+        )
+        if payload.auto_run:
+            update_long_task_status(conn, user["id"], task["id"], "RUNNING")
+            background_tasks.add_task(LongTaskRunner().run, user["id"], task["id"])
+            task["status"] = "RUNNING"
+
+    return {
+        "id": task["id"],
+        "status": task["status"],
+        "title": task["title"],
+        "original_question": task["original_question"],
+        "node_id": task["node_id"],
+    }
+
+
+@app.post("/api/long-tasks/{task_id}/run")
+def run_long_task_endpoint(task_id: str, background_tasks: BackgroundTasks, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        if task["status"] in {"RUNNING", "PLANNING", "SUMMARIZING"}:
+            return {"task_id": task_id, "status": task["status"], "message": "Long task is already running"}
+        if task["status"] == "DONE":
+            return {"task_id": task_id, "status": "DONE", "message": "Long task is already done"}
+        update_long_task_status(conn, user["id"], task_id, "RUNNING")
+    background_tasks.add_task(LongTaskRunner().run, user["id"], task_id)
+    return {"task_id": task_id, "status": "RUNNING", "message": "Long task started"}
+
+
+@app.get("/api/long-tasks/{task_id}")
+def get_long_task_endpoint(task_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        steps = list_long_task_steps(conn, user["id"], task_id)
+    return long_task_public_view(task, steps)
+
+
+@app.get("/api/long-tasks/{task_id}/steps/{step_id}")
+def get_long_task_step_endpoint(task_id: str, step_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        step = get_long_task_step_for_user(conn, user["id"], task_id, step_id)
+        if not step:
+            raise HTTPException(status_code=404, detail="Long task step not found")
+        evidence = list_task_evidence(conn, user["id"], task_id, step_id, limit=20)
+        outputs = list_step_outputs(conn, user["id"], task_id, step_id, limit=20)
+    return {
+        **long_task_step_public_view(step),
+        "evidence": [task_evidence_public_view(item) for item in evidence],
+        "outputs": [step_output_public_view(item) for item in outputs],
+    }
+
+
+@app.post("/api/long-tasks/{task_id}/cancel")
+def cancel_long_task_endpoint(task_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        update_long_task_status(conn, user["id"], task_id, "CANCELLED", finished=True)
+    return {"task_id": task_id, "status": "CANCELLED"}
+
+
+@app.post("/api/long-tasks/{task_id}/steps/{step_id}/retry")
+def retry_long_task_step_endpoint(
+    task_id: str,
+    step_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(require_user),
+) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        step = get_long_task_step_for_user(conn, user["id"], task_id, step_id)
+        if not step:
+            raise HTTPException(status_code=404, detail="Long task step not found")
+        if step["status"] != "FAILED":
+            raise HTTPException(status_code=400, detail="Only FAILED steps can be retried")
+        update_long_task_status(conn, user["id"], task_id, "RUNNING", current_step_index=step["step_index"])
+    background_tasks.add_task(LongTaskRunner().run, user["id"], task_id, step["step_index"])
+    return {"task_id": task_id, "step_id": step_id, "status": "RUNNING", "message": "Long task step retry started"}
+
+
+@app.get("/api/long-tasks/{task_id}/steps/{step_id}/context-debug")
+async def long_task_context_debug_endpoint(task_id: str, step_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        task = get_long_task_for_user(conn, user["id"], task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Long task not found")
+        step = get_long_task_step_for_user(conn, user["id"], task_id, step_id)
+        if not step:
+            raise HTTPException(status_code=404, detail="Long task step not found")
+
+    context = await build_step_context(user["id"], task_id, step_id)
+    with connect() as conn:
+        evidence_by_id = {
+            item["id"]: item
+            for item in list_task_evidence(conn, user["id"], task_id, step_id, limit=50)
+        }
+        insert_model_call_log(
+            conn,
+            user_id=user["id"],
+            notebook_id=task.get("notebook_id"),
+            node_id=task.get("node_id"),
+            task_id=task_id,
+            step_id=step_id,
+            call_type="context_debug",
+            model_name=None,
+            input_chars=context.context_chars,
+            estimated_input_tokens=context.estimated_tokens,
+            context_chars=context.context_chars,
+            evidence_count=len(context.used_evidence_ids),
+            success=True,
+        )
+    return {
+        "task_id": task_id,
+        "step_id": step_id,
+        "estimated_tokens": context.estimated_tokens,
+        "context_chars": context.context_chars,
+        "truncated": context.truncated,
+        "sections": context.sections,
+        "used_evidence": [
+            {
+                "id": evidence_id,
+                "title": evidence_by_id.get(evidence_id, {}).get("title"),
+                "source_type": evidence_by_id.get(evidence_id, {}).get("source_type"),
+                "relevance_score": evidence_by_id.get(evidence_id, {}).get("relevance_score"),
+            }
+            for evidence_id in context.used_evidence_ids
+        ],
     }
 
 
@@ -434,6 +907,23 @@ def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
         if not exists:
             raise HTTPException(status_code=404, detail="Node not found")
         return {"messages": list_messages(conn, node_id)}
+
+
+@app.post("/api/nodes/{node_id}/web-search")
+async def node_web_search(node_id: str, payload: NodeWebSearchRequest, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        node = get_node_for_user(conn, node_id, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+        sources = await collect_and_save_web_sources(
+            conn,
+            user_id=user["id"],
+            node=node,
+            query=payload.query.strip(),
+            max_results=payload.max_results,
+            fetch_top_k=payload.fetch_top_k,
+        )
+        return {"sources": [source_public_view(source, include_content=True) for source in sources]}
 
 
 @app.post("/api/nodes", status_code=201)
@@ -576,7 +1066,7 @@ def delete_node(node_id: str, user: dict = Depends(require_user)) -> dict:
 
 
 @app.post("/api/chat")
-def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
+async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
@@ -585,7 +1075,18 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
-        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName)
+        web_sources: list[dict] = []
+        web_search_warning: str | None = None
+        if payload.web_search:
+            web_sources, web_search_warning = await try_collect_web_sources(
+                conn,
+                user_id=user["id"],
+                node=node,
+                query=(payload.web_query or payload.message).strip(),
+                max_results=5,
+                fetch_top_k=3,
+            )
+        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName, web_sources=web_sources)
 
         try:
             content = call_model(model_messages, payload.modelName, payload.thinkingMode)
@@ -594,6 +1095,7 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
         except ModelProviderError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+        content = finalize_web_search_answer(content, web_sources, web_search_warning)
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
         node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
         node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
@@ -607,6 +1109,8 @@ def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
             "nodeId": payload.nodeId,
             "nodeTitle": node_title,
             "nodeSummary": node_summary,
+            "sources": [source_brief_view(source) for source in web_sources],
+            "webSearchWarning": web_search_warning,
         }
 
 
@@ -758,7 +1262,7 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
 
 
 @app.post("/api/chat/stream")
-def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
+async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
@@ -767,7 +1271,18 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         user_message = add_message(conn, payload.nodeId, "user", payload.message.strip(), payload.userMessageId)
-        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName)
+        web_sources: list[dict] = []
+        web_search_warning: str | None = None
+        if payload.web_search:
+            web_sources, web_search_warning = await try_collect_web_sources(
+                conn,
+                user_id=user["id"],
+                node=node,
+                query=(payload.web_query or payload.message).strip(),
+                max_results=5,
+                fetch_top_k=3,
+            )
+        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName, web_sources=web_sources)
 
     def generate():
         content_parts: list[str] = []
@@ -778,7 +1293,11 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
                 content_parts.append(delta)
                 yield sse_event({"content": delta})
 
-            content = "".join(content_parts).strip() or "模型没有返回内容。"
+            content = finalize_web_search_answer(
+                "".join(content_parts).strip() or "模型没有返回内容。",
+                web_sources,
+                web_search_warning,
+            )
             with connect() as conn:
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
                 node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
@@ -794,6 +1313,8 @@ def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> Str
                     "nodeId": payload.nodeId,
                     "nodeTitle": node_title,
                     "nodeSummary": node_summary,
+                    "sources": [source_brief_view(source) for source in web_sources],
+                    "webSearchWarning": web_search_warning,
                 },
                 "done",
             )
