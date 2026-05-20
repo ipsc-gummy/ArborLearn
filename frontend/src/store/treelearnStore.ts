@@ -27,12 +27,19 @@ import {
   type DeepSeekModelId,
   type DeepSeekThinkingModeId,
 } from "../lib/models";
+import {
+  GLOBAL_MODEL_SCOPE_ID,
+  getModelScopeFallbackIds,
+  type ModelConfig,
+  type ModelScope,
+} from "../lib/modelScope";
 
 type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
+const MODEL_CONFIGS_BY_SCOPE_KEY = "arborlearn:model-configs";
 const WEB_SEARCH_ENABLED_KEY = "arborlearn.webSearchEnabled";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
@@ -53,6 +60,7 @@ interface TreeLearnState {
   user: AuthUser | null;
   selectedModel: DeepSeekModelId;
   selectedThinkingMode: DeepSeekThinkingModeId;
+  configsByScope: Record<string, ModelConfig>;
   webSearchEnabled: boolean;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
@@ -70,11 +78,13 @@ interface TreeLearnState {
   toggleSidebar: () => void;
   toggleNode: (nodeId: string) => void;
   setSelectionDraft: (draft: SelectionDraft | null) => void;
-  setSelectedModel: (modelName: DeepSeekModelId) => void;
-  setSelectedThinkingMode: (thinkingMode: DeepSeekThinkingModeId) => void;
+  getModelConfig: (scope: ModelScope) => ModelConfig;
+  setModelConfig: (scopeId: string, config: ModelConfig) => void;
+  setSelectedModel: (scopeId: string, modelName: DeepSeekModelId) => void;
+  setSelectedThinkingMode: (scopeId: string, thinkingMode: DeepSeekThinkingModeId) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
-  appendMessage: (nodeId: string, content: string) => void;
+  appendMessage: (nodeId: string, content: string, modelScope?: ModelScope) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
   stopMessage: (nodeId: string) => void;
   renameNode: (nodeId: string, title: string) => void;
@@ -190,6 +200,39 @@ function saveThinkingModeSelection(thinkingMode: DeepSeekThinkingModeId) {
   }
 }
 
+function isModelConfig(value: unknown): value is ModelConfig {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ModelConfig>;
+  return isDeepSeekModelId(candidate.model) && isDeepSeekThinkingModeId(candidate.thinkingMode);
+}
+
+function getStoredModelConfigsByScope(): Record<string, ModelConfig> {
+  const fallbackConfig: ModelConfig = {
+    model: DEFAULT_DEEPSEEK_MODEL_ID,
+    thinkingMode: DEFAULT_DEEPSEEK_THINKING_MODE_ID,
+  };
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MODEL_CONFIGS_BY_SCOPE_KEY) || "{}") as Record<string, unknown>;
+    const configs: Record<string, ModelConfig> = {};
+    Object.entries(parsed).forEach(([scopeId, value]) => {
+      if (scopeId.startsWith("task:")) return;
+      if (isModelConfig(value)) configs[scopeId] = value;
+    });
+    return { [GLOBAL_MODEL_SCOPE_ID]: configs[GLOBAL_MODEL_SCOPE_ID] ?? fallbackConfig, ...configs };
+  } catch {
+    return { [GLOBAL_MODEL_SCOPE_ID]: fallbackConfig };
+  }
+}
+
+function saveModelConfigsByScope(configs: Record<string, ModelConfig>) {
+  try {
+    const persistent = Object.fromEntries(Object.entries(configs).filter(([scopeId]) => !scopeId.startsWith("task:")));
+    localStorage.setItem(MODEL_CONFIGS_BY_SCOPE_KEY, JSON.stringify(persistent));
+  } catch {
+    // Ignore storage failures; the in-memory selection still applies.
+  }
+}
+
 function getStoredWebSearchEnabled(): boolean {
   try {
     localStorage.removeItem(WEB_SEARCH_ENABLED_KEY);
@@ -223,6 +266,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   user: null,
   selectedModel: getStoredModelSelection(),
   selectedThinkingMode: getStoredThinkingModeSelection(),
+  configsByScope: getStoredModelConfigsByScope(),
   webSearchEnabled: getStoredWebSearchEnabled(),
   chatRunStatusByNode: {},
   selectionDraft: null,
@@ -403,13 +447,30 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       },
     })),
   setSelectionDraft: (draft) => set({ selectionDraft: draft }),
-  setSelectedModel: (modelName) => {
-    saveModelSelection(modelName);
-    set({ selectedModel: modelName });
+  getModelConfig: (scope) => {
+    const state = get();
+    for (const scopeId of getModelScopeFallbackIds(scope)) {
+      const config = state.configsByScope[scopeId];
+      if (config) return config;
+    }
+    return state.configsByScope[GLOBAL_MODEL_SCOPE_ID] ?? {
+      model: state.selectedModel,
+      thinkingMode: state.selectedThinkingMode,
+    };
   },
-  setSelectedThinkingMode: (thinkingMode) => {
-    saveThinkingModeSelection(thinkingMode);
-    set({ selectedThinkingMode: thinkingMode });
+  setModelConfig: (scopeId, config) => {
+    set((current) => ({
+      configsByScope: { ...current.configsByScope, [scopeId]: config },
+    }));
+    saveModelConfigsByScope({ ...get().configsByScope, [scopeId]: config });
+  },
+  setSelectedModel: (scopeId, modelName) => {
+    const currentConfig = get().configsByScope[scopeId] ?? get().getModelConfig({});
+    get().setModelConfig(scopeId, { ...currentConfig, model: modelName });
+  },
+  setSelectedThinkingMode: (scopeId, thinkingMode) => {
+    const currentConfig = get().configsByScope[scopeId] ?? get().getModelConfig({});
+    get().setModelConfig(scopeId, { ...currentConfig, thinkingMode });
   },
   setWebSearchEnabled: (enabled) => {
     saveWebSearchEnabled(enabled);
@@ -465,13 +526,16 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     });
     return id;
   },
-  appendMessage: (nodeId, content) => {
+  appendMessage: (nodeId, content, modelScope) => {
     const state = get();
     if (state.chatRunStatusByNode[nodeId]) return;
     const useWebSearch = state.webSearchEnabled;
 
     const now = new Date().toISOString();
     const notebookId = getNotebookRootId(state.nodes, nodeId);
+    const modelConfig = state.getModelConfig({ nodeId, notebookId, threadId: nodeId, ...modelScope });
+    const modelName = modelConfig.model;
+    const thinkingMode = modelConfig.thinkingMode;
     const userMessage: ChatMessage = { id: uid("msg"), role: "user", content, createdAt: now };
     const assistantMessageId = uid("msg");
     const controller = new AbortController();
@@ -513,8 +577,8 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         message: content,
         userMessageId: userMessage.id,
         assistantMessageId,
-        modelName: state.selectedModel,
-        thinkingMode: state.selectedThinkingMode,
+        modelName,
+        thinkingMode,
         webSearch: useWebSearch,
       },
       {
@@ -654,8 +718,8 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             message: content,
             userMessageId: userMessage.id,
             assistantMessageId,
-            modelName: state.selectedModel,
-            thinkingMode: state.selectedThinkingMode,
+            modelName,
+            thinkingMode,
             webSearch: useWebSearch,
           });
         }
@@ -729,6 +793,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
     const originalMessage = node.messages.find((message) => message.id === assistantMessageId);
     if (!originalMessage || originalMessage.role !== "assistant") return;
+    const notebookId = getNotebookRootId(state.nodes, nodeId);
+    const modelConfig = state.getModelConfig({ nodeId, notebookId, threadId: nodeId });
+    const modelName = modelConfig.model;
+    const thinkingMode = modelConfig.thinkingMode;
 
     const now = new Date().toISOString();
     const controller = new AbortController();
@@ -754,7 +822,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
     let streamedContent = "";
     void postChatRetryStream(
-      { nodeId, assistantMessageId, modelName: state.selectedModel, thinkingMode: state.selectedThinkingMode },
+      { nodeId, assistantMessageId, modelName, thinkingMode },
       {
         onDelta: (delta) => {
           streamedContent += delta;
