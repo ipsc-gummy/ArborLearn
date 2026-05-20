@@ -33,6 +33,7 @@ const activeChatControllers = new Map<string, AbortController>();
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
+const WEB_SEARCH_ENABLED_KEY = "arborlearn.webSearchEnabled";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -52,6 +53,7 @@ interface TreeLearnState {
   user: AuthUser | null;
   selectedModel: DeepSeekModelId;
   selectedThinkingMode: DeepSeekThinkingModeId;
+  webSearchEnabled: boolean;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
@@ -70,6 +72,7 @@ interface TreeLearnState {
   setSelectionDraft: (draft: SelectionDraft | null) => void;
   setSelectedModel: (modelName: DeepSeekModelId) => void;
   setSelectedThinkingMode: (thinkingMode: DeepSeekThinkingModeId) => void;
+  setWebSearchEnabled: (enabled: boolean) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
@@ -187,6 +190,25 @@ function saveThinkingModeSelection(thinkingMode: DeepSeekThinkingModeId) {
   }
 }
 
+function getStoredWebSearchEnabled(): boolean {
+  try {
+    localStorage.removeItem(WEB_SEARCH_ENABLED_KEY);
+  } catch {
+    // Ignore storage failures; the in-memory default still applies.
+  }
+  return false;
+}
+
+function saveWebSearchEnabled(enabled: boolean) {
+  try {
+    if (!enabled) {
+      localStorage.removeItem(WEB_SEARCH_ENABLED_KEY);
+    }
+  } catch {
+    // Ignore storage failures; the in-memory toggle still applies.
+  }
+}
+
 export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   nodes: {},
   rootIds: [],
@@ -201,6 +223,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   user: null,
   selectedModel: getStoredModelSelection(),
   selectedThinkingMode: getStoredThinkingModeSelection(),
+  webSearchEnabled: getStoredWebSearchEnabled(),
   chatRunStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
@@ -388,6 +411,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     saveThinkingModeSelection(thinkingMode);
     set({ selectedThinkingMode: thinkingMode });
   },
+  setWebSearchEnabled: (enabled) => {
+    saveWebSearchEnabled(enabled);
+    set({ webSearchEnabled: enabled });
+  },
   createChildConversation: (sourceNodeId, selectedText) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
     const id = uid("node");
@@ -441,6 +468,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   appendMessage: (nodeId, content) => {
     const state = get();
     if (state.chatRunStatusByNode[nodeId]) return;
+    const useWebSearch = state.webSearchEnabled;
 
     const now = new Date().toISOString();
     const notebookId = getNotebookRootId(state.nodes, nodeId);
@@ -451,7 +479,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const assistantMessage: ChatMessage = {
       id: assistantMessageId,
       role: "assistant",
-      content: "正在思考...",
+      content: useWebSearch ? "正在联网检索..." : "正在思考...",
       createdAt: now,
     };
 
@@ -465,6 +493,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         },
       }, nodeId, now),
       apiError: null,
+      webSearchEnabled: false,
       chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
     }));
 
@@ -486,6 +515,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         assistantMessageId,
         modelName: state.selectedModel,
         thinkingMode: state.selectedThinkingMode,
+        webSearch: useWebSearch,
       },
       {
         onDelta: (delta) => {
@@ -626,6 +656,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             assistantMessageId,
             modelName: state.selectedModel,
             thinkingMode: state.selectedThinkingMode,
+            webSearch: useWebSearch,
           });
         }
         throw error;

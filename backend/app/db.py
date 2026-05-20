@@ -75,6 +75,162 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_messages_node_created
               ON messages(node_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS web_sources (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              notebook_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              url TEXT NOT NULL,
+              title TEXT NOT NULL,
+              snippet TEXT NOT NULL DEFAULT '',
+              content TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_web_sources_user_node_created
+              ON web_sources(user_id, node_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS long_tasks (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              notebook_id TEXT,
+              node_id TEXT,
+              title TEXT,
+              original_question TEXT NOT NULL,
+              status TEXT NOT NULL,
+              current_step_index INTEGER DEFAULT 0,
+              plan_json TEXT,
+              plan_summary TEXT,
+              final_answer TEXT,
+              error_message TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              finished_at TEXT,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS long_task_steps (
+              id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              node_id TEXT,
+              step_index INTEGER NOT NULL,
+              title TEXT NOT NULL,
+              goal TEXT NOT NULL,
+              step_type TEXT NOT NULL,
+              status TEXT NOT NULL,
+              need_retrieval INTEGER NOT NULL DEFAULT 0,
+              retrieval_mode TEXT NOT NULL DEFAULT 'none',
+              depends_on TEXT,
+              input_summary TEXT,
+              output_summary TEXT,
+              error_message TEXT,
+              started_at TEXT,
+              finished_at TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (task_id) REFERENCES long_tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS task_evidence (
+              id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              step_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              node_id TEXT,
+              source_type TEXT NOT NULL,
+              source_id TEXT,
+              title TEXT,
+              url TEXT,
+              page_number INTEGER,
+              evidence_text TEXT NOT NULL,
+              relevance_score REAL,
+              token_estimate INTEGER,
+              char_count INTEGER,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (task_id) REFERENCES long_tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (step_id) REFERENCES long_task_steps(id) ON DELETE CASCADE,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS step_outputs (
+              id TEXT PRIMARY KEY,
+              task_id TEXT NOT NULL,
+              step_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              node_id TEXT,
+              output_type TEXT NOT NULL,
+              content TEXT NOT NULL,
+              summary TEXT,
+              confidence REAL,
+              unresolved_questions TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (task_id) REFERENCES long_tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (step_id) REFERENCES long_task_steps(id) ON DELETE CASCADE,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS model_call_logs (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              notebook_id TEXT,
+              node_id TEXT,
+              task_id TEXT,
+              step_id TEXT,
+              call_type TEXT NOT NULL,
+              model_name TEXT,
+              input_chars INTEGER,
+              output_chars INTEGER,
+              estimated_input_tokens INTEGER,
+              estimated_output_tokens INTEGER,
+              context_chars INTEGER,
+              web_search_enabled INTEGER NOT NULL DEFAULT 0,
+              search_result_count INTEGER NOT NULL DEFAULT 0,
+              fetched_page_count INTEGER NOT NULL DEFAULT 0,
+              source_count INTEGER NOT NULL DEFAULT 0,
+              evidence_count INTEGER NOT NULL DEFAULT 0,
+              latency_ms INTEGER,
+              success INTEGER NOT NULL,
+              error_message TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE SET NULL,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL,
+              FOREIGN KEY (task_id) REFERENCES long_tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (step_id) REFERENCES long_task_steps(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_long_tasks_user_node
+              ON long_tasks(user_id, node_id);
+
+            CREATE INDEX IF NOT EXISTS idx_long_tasks_status
+              ON long_tasks(user_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_steps_task_index
+              ON long_task_steps(task_id, step_index);
+
+            CREATE INDEX IF NOT EXISTS idx_steps_status
+              ON long_task_steps(task_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_evidence_step
+              ON task_evidence(step_id);
+
+            CREATE INDEX IF NOT EXISTS idx_outputs_step
+              ON step_outputs(step_id);
+
+            CREATE INDEX IF NOT EXISTS idx_model_logs_task
+              ON model_call_logs(task_id, step_id);
             """
         )
         ensure_column(conn, "notebooks", "owner_user_id", "TEXT")
@@ -294,6 +450,551 @@ def add_message(
         "selectedText": selected_text,
         "createdAt": ts,
     }
+
+
+def row_to_web_source(row: sqlite3.Row, include_content: bool = False) -> dict:
+    source = {
+        "id": row["id"],
+        "nodeId": row["node_id"],
+        "notebookId": row["notebook_id"],
+        "title": row["title"],
+        "url": row["url"],
+        "snippet": row["snippet"],
+        "provider": row["provider"],
+        "createdAt": row["created_at"],
+    }
+    if include_content:
+        source["content"] = row["content"]
+    return source
+
+
+def add_web_source(
+    conn: sqlite3.Connection,
+    user_id: str,
+    notebook_id: str,
+    node_id: str,
+    *,
+    title: str,
+    url: str,
+    snippet: str,
+    content: str,
+    provider: str,
+) -> dict:
+    source_id = uid("src")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO web_sources(
+          id, user_id, notebook_id, node_id, url, title, snippet, content, provider, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (source_id, user_id, notebook_id, node_id, url, title, snippet, content, provider, ts),
+    )
+    return {
+        "id": source_id,
+        "nodeId": node_id,
+        "notebookId": notebook_id,
+        "title": title,
+        "url": url,
+        "snippet": snippet,
+        "content": content,
+        "provider": provider,
+        "createdAt": ts,
+    }
+
+
+def list_web_sources(
+    conn: sqlite3.Connection,
+    user_id: str,
+    node_id: str,
+    limit: int = 10,
+    include_content: bool = False,
+) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, user_id, notebook_id, node_id, url, title, snippet, content, provider, created_at
+        FROM web_sources
+        WHERE user_id = ? AND node_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (user_id, node_id, limit),
+    ).fetchall()
+    return [row_to_web_source(row, include_content=include_content) for row in rows]
+
+
+def row_to_long_task(row: sqlite3.Row, include_final_answer: bool = True) -> dict:
+    task = {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "notebook_id": row["notebook_id"],
+        "node_id": row["node_id"],
+        "title": row["title"],
+        "original_question": row["original_question"],
+        "status": row["status"],
+        "current_step_index": row["current_step_index"],
+        "plan_json": row["plan_json"],
+        "plan_summary": row["plan_summary"],
+        "error_message": row["error_message"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "finished_at": row["finished_at"],
+    }
+    if include_final_answer:
+        task["final_answer"] = row["final_answer"]
+    return task
+
+
+def row_to_long_task_step(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "user_id": row["user_id"],
+        "node_id": row["node_id"],
+        "step_index": row["step_index"],
+        "title": row["title"],
+        "goal": row["goal"],
+        "step_type": row["step_type"],
+        "status": row["status"],
+        "need_retrieval": bool(row["need_retrieval"]),
+        "retrieval_mode": row["retrieval_mode"],
+        "depends_on": row["depends_on"],
+        "input_summary": row["input_summary"],
+        "output_summary": row["output_summary"],
+        "error_message": row["error_message"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def row_to_task_evidence(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "step_id": row["step_id"],
+        "user_id": row["user_id"],
+        "node_id": row["node_id"],
+        "source_type": row["source_type"],
+        "source_id": row["source_id"],
+        "title": row["title"],
+        "url": row["url"],
+        "page_number": row["page_number"],
+        "evidence_text": row["evidence_text"],
+        "relevance_score": row["relevance_score"],
+        "token_estimate": row["token_estimate"],
+        "char_count": row["char_count"],
+        "created_at": row["created_at"],
+    }
+
+
+def row_to_step_output(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "step_id": row["step_id"],
+        "user_id": row["user_id"],
+        "node_id": row["node_id"],
+        "output_type": row["output_type"],
+        "content": row["content"],
+        "summary": row["summary"],
+        "confidence": row["confidence"],
+        "unresolved_questions": row["unresolved_questions"],
+        "created_at": row["created_at"],
+    }
+
+
+def create_long_task(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    original_question: str,
+    title: str | None = None,
+    notebook_id: str | None = None,
+    node_id: str | None = None,
+) -> dict:
+    task_id = uid("task")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO long_tasks(
+          id, user_id, notebook_id, node_id, title, original_question, status,
+          current_step_index, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'CREATED', 0, ?, ?)
+        """,
+        (task_id, user_id, notebook_id, node_id, title, original_question, ts, ts),
+    )
+    row = conn.execute("SELECT * FROM long_tasks WHERE id = ?", (task_id,)).fetchone()
+    return row_to_long_task(row)
+
+
+def get_long_task_for_user(conn: sqlite3.Connection, user_id: str, task_id: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM long_tasks WHERE id = ? AND user_id = ?",
+        (task_id, user_id),
+    ).fetchone()
+    return row_to_long_task(row) if row else None
+
+
+def list_long_task_steps(conn: sqlite3.Connection, user_id: str, task_id: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM long_task_steps
+        WHERE task_id = ? AND user_id = ?
+        ORDER BY step_index ASC
+        """,
+        (task_id, user_id),
+    ).fetchall()
+    return [row_to_long_task_step(row) for row in rows]
+
+
+def get_long_task_step_for_user(conn: sqlite3.Connection, user_id: str, task_id: str, step_id: str) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM long_task_steps
+        WHERE id = ? AND task_id = ? AND user_id = ?
+        """,
+        (step_id, task_id, user_id),
+    ).fetchone()
+    return row_to_long_task_step(row) if row else None
+
+
+def save_long_task_plan(conn: sqlite3.Connection, user_id: str, task_id: str, plan_json: str, plan_summary: str) -> None:
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE long_tasks
+        SET plan_json = ?, plan_summary = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (plan_json, plan_summary, ts, task_id, user_id),
+    )
+
+
+def replace_long_task_steps(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    task_id: str,
+    node_id: str | None,
+    steps: list[dict],
+) -> list[dict]:
+    conn.execute("DELETE FROM long_task_steps WHERE task_id = ? AND user_id = ?", (task_id, user_id))
+    ts = now_iso()
+    saved_steps: list[dict] = []
+    for index, step in enumerate(steps):
+        step_id = uid("step")
+        conn.execute(
+            """
+            INSERT INTO long_task_steps(
+              id, task_id, user_id, node_id, step_index, title, goal, step_type, status,
+              need_retrieval, retrieval_mode, depends_on, input_summary, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                step_id,
+                task_id,
+                user_id,
+                node_id,
+                int(step.get("index", index)),
+                str(step.get("title") or f"步骤 {index + 1}")[:160],
+                str(step.get("goal") or step.get("expected_output") or "完成当前子任务"),
+                str(step.get("step_type") or "analyze"),
+                1 if step.get("need_retrieval") else 0,
+                str(step.get("retrieval_mode") or ("standard" if step.get("need_retrieval") else "none")),
+                step.get("depends_on"),
+                step.get("expected_output") or step.get("input_summary"),
+                ts,
+                ts,
+            ),
+        )
+        row = conn.execute("SELECT * FROM long_task_steps WHERE id = ?", (step_id,)).fetchone()
+        saved_steps.append(row_to_long_task_step(row))
+    return saved_steps
+
+
+def update_long_task_status(
+    conn: sqlite3.Connection,
+    user_id: str,
+    task_id: str,
+    status: str,
+    *,
+    error_message: str | None = None,
+    final_answer: str | None = None,
+    current_step_index: int | None = None,
+    finished: bool = False,
+) -> None:
+    ts = now_iso()
+    finished_at = ts if finished else None
+    conn.execute(
+        """
+        UPDATE long_tasks
+        SET status = ?,
+            error_message = ?,
+            final_answer = COALESCE(?, final_answer),
+            current_step_index = COALESCE(?, current_step_index),
+            updated_at = ?,
+            finished_at = COALESCE(?, finished_at)
+        WHERE id = ? AND user_id = ?
+        """,
+        (status, error_message, final_answer, current_step_index, ts, finished_at, task_id, user_id),
+    )
+
+
+def update_task_current_step(conn: sqlite3.Connection, user_id: str, task_id: str, step_index: int) -> None:
+    conn.execute(
+        "UPDATE long_tasks SET current_step_index = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+        (step_index, now_iso(), task_id, user_id),
+    )
+
+
+def update_long_task_step_status(
+    conn: sqlite3.Connection,
+    user_id: str,
+    step_id: str,
+    status: str,
+    *,
+    output_summary: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    ts = now_iso()
+    started_at = ts if status == "RUNNING" else None
+    finished_at = ts if status in {"DONE", "FAILED", "SKIPPED"} else None
+    conn.execute(
+        """
+        UPDATE long_task_steps
+        SET status = ?,
+            output_summary = COALESCE(?, output_summary),
+            error_message = ?,
+            started_at = COALESCE(started_at, ?),
+            finished_at = COALESCE(?, finished_at),
+            updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (status, output_summary, error_message, started_at, finished_at, ts, step_id, user_id),
+    )
+
+
+def list_task_evidence(
+    conn: sqlite3.Connection,
+    user_id: str,
+    task_id: str,
+    step_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    step_filter = "AND step_id = ?" if step_id else ""
+    params: tuple = (user_id, task_id, step_id, limit) if step_id else (user_id, task_id, limit)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM task_evidence
+        WHERE user_id = ? AND task_id = ?
+        {step_filter}
+        ORDER BY COALESCE(relevance_score, 0) DESC, created_at ASC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    return [row_to_task_evidence(row) for row in rows]
+
+
+def add_task_evidence(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    task_id: str,
+    step_id: str,
+    node_id: str | None,
+    source_type: str,
+    evidence_text: str,
+    source_id: str | None = None,
+    title: str | None = None,
+    url: str | None = None,
+    page_number: int | None = None,
+    relevance_score: float | None = None,
+) -> dict:
+    evidence_id = uid("ev")
+    ts = now_iso()
+    char_count = len(evidence_text)
+    conn.execute(
+        """
+        INSERT INTO task_evidence(
+          id, task_id, step_id, user_id, node_id, source_type, source_id, title, url,
+          page_number, evidence_text, relevance_score, token_estimate, char_count, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            evidence_id,
+            task_id,
+            step_id,
+            user_id,
+            node_id,
+            source_type,
+            source_id,
+            title,
+            url,
+            page_number,
+            evidence_text,
+            relevance_score,
+            char_count // 4,
+            char_count,
+            ts,
+        ),
+    )
+    row = conn.execute("SELECT * FROM task_evidence WHERE id = ?", (evidence_id,)).fetchone()
+    return row_to_task_evidence(row)
+
+
+def add_step_output(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    task_id: str,
+    step_id: str,
+    node_id: str | None,
+    output_type: str,
+    content: str,
+    summary: str | None = None,
+    confidence: float | None = None,
+    unresolved_questions: str | None = None,
+) -> dict:
+    output_id = uid("out")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO step_outputs(
+          id, task_id, step_id, user_id, node_id, output_type, content, summary,
+          confidence, unresolved_questions, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (output_id, task_id, step_id, user_id, node_id, output_type, content, summary, confidence, unresolved_questions, ts),
+    )
+    row = conn.execute("SELECT * FROM step_outputs WHERE id = ?", (output_id,)).fetchone()
+    return row_to_step_output(row)
+
+
+def list_step_outputs(
+    conn: sqlite3.Connection,
+    user_id: str,
+    task_id: str,
+    step_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    step_filter = "AND step_id = ?" if step_id else ""
+    params: tuple = (user_id, task_id, step_id, limit) if step_id else (user_id, task_id, limit)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM step_outputs
+        WHERE user_id = ? AND task_id = ?
+        {step_filter}
+        ORDER BY created_at ASC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    return [row_to_step_output(row) for row in rows]
+
+
+def insert_model_call_log(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    call_type: str,
+    success: bool,
+    notebook_id: str | None = None,
+    node_id: str | None = None,
+    task_id: str | None = None,
+    step_id: str | None = None,
+    model_name: str | None = None,
+    input_chars: int | None = None,
+    output_chars: int | None = None,
+    estimated_input_tokens: int | None = None,
+    estimated_output_tokens: int | None = None,
+    context_chars: int | None = None,
+    web_search_enabled: bool = False,
+    search_result_count: int = 0,
+    fetched_page_count: int = 0,
+    source_count: int = 0,
+    evidence_count: int = 0,
+    latency_ms: int | None = None,
+    error_message: str | None = None,
+) -> dict:
+    log_id = uid("log")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO model_call_logs(
+          id, user_id, notebook_id, node_id, task_id, step_id, call_type, model_name,
+          input_chars, output_chars, estimated_input_tokens, estimated_output_tokens,
+          context_chars, web_search_enabled, search_result_count, fetched_page_count,
+          source_count, evidence_count, latency_ms, success, error_message, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            log_id,
+            user_id,
+            notebook_id,
+            node_id,
+            task_id,
+            step_id,
+            call_type,
+            model_name,
+            input_chars,
+            output_chars,
+            estimated_input_tokens,
+            estimated_output_tokens,
+            context_chars,
+            1 if web_search_enabled else 0,
+            search_result_count,
+            fetched_page_count,
+            source_count,
+            evidence_count,
+            latency_ms,
+            1 if success else 0,
+            error_message,
+            ts,
+        ),
+    )
+    row = conn.execute("SELECT * FROM model_call_logs WHERE id = ?", (log_id,)).fetchone()
+    return dict(row)
+
+
+def clear_step_artifacts_from_index(conn: sqlite3.Connection, user_id: str, task_id: str, step_index: int) -> None:
+    steps = conn.execute(
+        """
+        SELECT id
+        FROM long_task_steps
+        WHERE user_id = ? AND task_id = ? AND step_index >= ?
+        """,
+        (user_id, task_id, step_index),
+    ).fetchall()
+    step_ids = [row["id"] for row in steps]
+    for step_id in step_ids:
+        conn.execute("DELETE FROM step_outputs WHERE user_id = ? AND step_id = ?", (user_id, step_id))
+        conn.execute("DELETE FROM task_evidence WHERE user_id = ? AND step_id = ?", (user_id, step_id))
+        conn.execute(
+            """
+            UPDATE long_task_steps
+            SET status = 'PENDING',
+                output_summary = NULL,
+                error_message = NULL,
+                started_at = NULL,
+                finished_at = NULL,
+                updated_at = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (now_iso(), step_id, user_id),
+        )
 
 
 def touch_node(conn: sqlite3.Connection, node_id: str, ts: str | None = None) -> None:

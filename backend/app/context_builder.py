@@ -51,11 +51,34 @@ def _format_turns(rows: list[sqlite3.Row]) -> str:
     return "\n".join(f"- {labels.get(row['role'], row['role'])}: {row['content']}" for row in rows)
 
 
+def _format_web_evidence(web_sources: list[dict] | None) -> str:
+    if not web_sources:
+        return ""
+    evidence_blocks = []
+    for index, source in enumerate(web_sources[:3], start=1):
+        content = (source.get("content") or "").strip()[:3000]
+        snippet = (source.get("snippet") or "").strip()
+        evidence_blocks.append(
+            "\n".join(
+                [
+                    f"[{index}]",
+                    f"Title: {source.get('title') or 'Untitled'}",
+                    f"URL: {source.get('url') or ''}",
+                    f"Snippet: {snippet or '无'}",
+                    "Content:",
+                    content or "无可用正文",
+                ]
+            )
+        )
+    return "\n\n[Web Evidence]\n\n" + "\n\n".join(evidence_blocks)
+
+
 def build_model_messages(
     conn: sqlite3.Connection,
     node_id: str,
     before_created_at: str | None = None,
     model_name: str | None = None,
+    web_sources: list[dict] | None = None,
 ) -> list[dict[str, str]]:
     chain = get_parent_chain(conn, node_id)
     if not chain:
@@ -87,10 +110,25 @@ def build_model_messages(
         )
 
     current_history = _recent_turns(conn, node_id, 12, before_created_at)
+    web_evidence = _format_web_evidence(web_sources)
+    web_instruction = ""
+    if web_evidence:
+        web_instruction = (
+            "\n\n联网检索回答规则:\n"
+            "- 优先基于 Web Evidence 回答；证据不足时明确说明不足，不要编造来源。\n"
+            "- 使用来源信息时在句子或段落中标注 [1]、[2] 这类编号。\n"
+            "- 回答末尾必须列出“参考来源”，包含标题和 URL。"
+        )
+
     messages = [
         {
             "role": "system",
-            "content": f"{SYSTEM_PROMPT}\n\n{_model_identity_context(model_name)}\n\n树状上下文:\n" + "\n".join(context_lines),
+            "content": (
+                f"{SYSTEM_PROMPT}\n\n{_model_identity_context(model_name)}\n\n树状上下文:\n"
+                + "\n".join(context_lines)
+                + web_evidence
+                + web_instruction
+            ),
         }
     ]
     messages.extend({"role": row["role"], "content": row["content"]} for row in current_history)

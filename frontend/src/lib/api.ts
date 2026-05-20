@@ -32,11 +32,73 @@ interface ChatResponse {
   nodeSummary?: string | null;
   userMessage?: ChatMessage;
   message?: ChatMessage;
+  sources?: Array<{ title?: string; url?: string }>;
 }
 
 interface ChatStreamCallbacks {
   onDelta: (delta: string) => void;
   onDone: (response: ChatResponse) => void;
+}
+
+export interface LongTaskStep {
+  id: string;
+  task_id: string;
+  node_id?: string | null;
+  step_index: number;
+  title: string;
+  goal: string;
+  step_type: string;
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "SKIPPED";
+  need_retrieval: boolean;
+  retrieval_mode: string;
+  output_summary?: string | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface TaskEvidence {
+  id: string;
+  source_type: string;
+  source_id?: string | null;
+  title?: string | null;
+  url?: string | null;
+  evidence_text: string;
+  relevance_score?: number | null;
+  char_count?: number | null;
+  created_at?: string;
+}
+
+export interface StepOutput {
+  id: string;
+  output_type: string;
+  content: string;
+  summary?: string | null;
+  confidence?: number | null;
+  unresolved_questions?: string | null;
+  created_at?: string;
+}
+
+export interface LongTask {
+  id: string;
+  title?: string | null;
+  original_question: string;
+  status: "CREATED" | "PLANNING" | "RUNNING" | "SUMMARIZING" | "DONE" | "FAILED" | "CANCELLED";
+  current_step_index: number;
+  plan_summary?: string | null;
+  node_id?: string | null;
+  notebook_id?: string | null;
+  final_answer?: string | null;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  finished_at?: string | null;
+  steps?: LongTaskStep[];
+}
+
+export interface LongTaskStepDetail extends LongTaskStep {
+  evidence: TaskEvidence[];
+  outputs: StepOutput[];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -130,6 +192,42 @@ export function deleteBackendNode(nodeId: string) {
   });
 }
 
+export function createLongTask(payload: {
+  node_id?: string;
+  notebook_id?: string;
+  question: string;
+  title?: string;
+  auto_run?: boolean;
+}) {
+  return request<{ id: string; status: string; title?: string | null; original_question: string; node_id?: string | null }>(
+    "/api/long-tasks",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function runLongTask(taskId: string) {
+  return request<{ task_id: string; status: string; message: string }>(`/api/long-tasks/${taskId}/run`, {
+    method: "POST",
+  });
+}
+
+export function fetchLongTask(taskId: string) {
+  return request<LongTask>(`/api/long-tasks/${taskId}`);
+}
+
+export function fetchLongTaskStep(taskId: string, stepId: string) {
+  return request<LongTaskStepDetail>(`/api/long-tasks/${taskId}/steps/${stepId}`);
+}
+
+export function cancelLongTask(taskId: string) {
+  return request<{ task_id: string; status: string }>(`/api/long-tasks/${taskId}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function postChat(payload: {
   notebookId: string;
   nodeId: string;
@@ -138,6 +236,8 @@ export function postChat(payload: {
   assistantMessageId?: string;
   modelName?: DeepSeekModelId;
   thinkingMode?: DeepSeekThinkingModeId;
+  webSearch?: boolean;
+  webQuery?: string;
 }) {
   return request<ChatResponse>("/api/chat", {
     method: "POST",
@@ -253,6 +353,8 @@ export async function postChatStream(
     assistantMessageId?: string;
     modelName?: DeepSeekModelId;
     thinkingMode?: DeepSeekThinkingModeId;
+    webSearch?: boolean;
+    webQuery?: string;
   },
   callbacks: ChatStreamCallbacks,
   signal?: AbortSignal,
