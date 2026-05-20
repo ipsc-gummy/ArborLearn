@@ -7,7 +7,7 @@ import re
 import sqlite3
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,8 +54,10 @@ from .web_search import (
     WebPageContent,
     WebSearchConfigurationError,
     WebSearchProviderError,
+    classify_source_url,
     fetch_url,
     get_web_search_config_status,
+    select_relevant_evidence,
     search_web,
 )
 
@@ -177,12 +179,16 @@ def stopped_assistant_content(content: str) -> str | None:
 
 
 def source_public_view(source: dict, include_content: bool = False) -> dict:
+    source_type, trust_level, domain_quality_score = classify_source_url(str(source.get("url") or ""))
     public_source = {
         "id": source.get("id"),
         "title": source.get("title"),
         "url": source.get("url"),
         "snippet": source.get("snippet"),
         "provider": source.get("provider"),
+        "source_type": source.get("source_type") or source_type,
+        "trust_level": source.get("trust_level") or trust_level,
+        "domain_quality_score": source.get("domain_quality_score") or domain_quality_score,
         "createdAt": source.get("createdAt"),
     }
     if include_content:
@@ -191,9 +197,12 @@ def source_public_view(source: dict, include_content: bool = False) -> dict:
 
 
 def source_brief_view(source: dict) -> dict:
+    source_type, trust_level, _ = classify_source_url(str(source.get("url") or ""))
     return {
         "title": source.get("title"),
         "url": source.get("url"),
+        "source_type": source.get("source_type") or source_type,
+        "trust_level": source.get("trust_level") or trust_level,
     }
 
 
@@ -226,6 +235,8 @@ def long_task_public_view(task: dict, steps: list[dict] | None = None) -> dict:
         "plan_summary": task["plan_summary"],
         "node_id": task["node_id"],
         "notebook_id": task["notebook_id"],
+        "model_name": task.get("model_name"),
+        "thinking_mode": task.get("thinking_mode"),
         "final_answer": task.get("final_answer"),
         "error_message": task["error_message"],
         "created_at": task["created_at"],
@@ -269,7 +280,7 @@ def append_source_references(content: str, sources: list[dict]) -> str:
     if all(source.get("url") and str(source["url"]) in content for source in sources):
         return content
     references = "\n".join(
-        f"[{index}] {source.get('title') or '来源'} - {source.get('url')}"
+        f"[S{index}] {source.get('title') or '来源'} - {source.get('url')}"
         for index, source in enumerate(sources, start=1)
         if source.get("url")
     )
@@ -341,19 +352,20 @@ async def collect_and_save_web_sources(
 
     saved_sources: list[dict] = []
     for result, page in fetched_pages:
-        saved_sources.append(
-            add_web_source(
-                conn,
-                user_id,
-                node["notebook_id"],
-                node["id"],
-                title=page.title or result.title,
-                url=page.url or result.url,
-                snippet=result.snippet,
-                content=page.content,
-                provider=page.provider,
-            )
+        source = add_web_source(
+            conn,
+            user_id,
+            node["notebook_id"],
+            node["id"],
+            title=page.title or result.title,
+            url=page.url or result.url,
+            snippet=result.snippet,
+            content=page.content,
+            provider=page.provider,
         )
+        source_type, trust_level, domain_quality_score = classify_source_url(str(source.get("url") or ""))
+        source.update({"source_type": source_type, "trust_level": trust_level, "domain_quality_score": domain_quality_score})
+        saved_sources.append(source)
     if saved_sources:
         return saved_sources
 
@@ -361,19 +373,25 @@ async def collect_and_save_web_sources(
         snippet = result.snippet.strip()
         if not snippet:
             continue
-        saved_sources.append(
-            add_web_source(
-                conn,
-                user_id,
-                node["notebook_id"],
-                node["id"],
-                title=result.title,
-                url=result.url,
-                snippet=snippet,
-                content=snippet,
-                provider="search-result",
-            )
+        source = add_web_source(
+            conn,
+            user_id,
+            node["notebook_id"],
+            node["id"],
+            title=result.title,
+            url=result.url,
+            snippet=snippet,
+            content=snippet,
+            provider="search-result",
         )
+        source.update(
+            {
+                "source_type": result.source_type,
+                "trust_level": result.trust_level,
+                "domain_quality_score": result.domain_quality_score,
+            }
+        )
+        saved_sources.append(source)
     if not saved_sources:
         raise HTTPException(status_code=502, detail="No readable web pages or snippets found from the search results")
     return saved_sources
@@ -407,6 +425,46 @@ async def try_collect_web_sources(
         return [], str(exc.detail)
     except Exception as exc:
         return [], str(exc)
+
+
+async def collect_web_sources_preview(query: str, max_results: int = 5, fetch_top_k: int = 3) -> tuple[list[dict], str | None]:
+    try:
+        results = await search_web(query, max_results=max_results)
+    except (WebSearchConfigurationError, WebSearchProviderError) as exc:
+        return [], str(exc)
+    if not results:
+        return [], "No web search results found"
+
+    fetched_pages = await fetch_top_web_pages(results, fetch_top_k)
+    by_url = {page.url: (result, page) for result, page in fetched_pages}
+    sources: list[dict] = []
+    for result in results[:fetch_top_k]:
+        item = by_url.get(result.url)
+        if item:
+            _, page = item
+            content = page.content
+            title = page.title or result.title
+            url = page.url or result.url
+            provider = page.provider
+        else:
+            content = result.snippet
+            title = result.title
+            url = result.url
+            provider = "search-result"
+        source_type, trust_level, domain_quality_score = classify_source_url(url)
+        sources.append(
+            {
+                "title": title,
+                "url": url,
+                "snippet": result.snippet,
+                "content": content,
+                "provider": provider,
+                "source_type": source_type,
+                "trust_level": trust_level,
+                "domain_quality_score": domain_quality_score,
+            }
+        )
+    return sources, None
 
 
 def save_stopped_assistant(node_id: str, content_parts: list[str], message_id: str | None = None) -> dict | None:
@@ -668,6 +726,78 @@ async def web_fetch_endpoint(payload: WebFetchRequest, user: dict = Depends(requ
     return {"page": page.to_dict()}
 
 
+@app.get("/api/context/debug")
+async def context_debug_endpoint(
+    node_id: str = Query(..., alias="node_id"),
+    query: str = Query(""),
+    web_search: bool = Query(False, alias="web_search"),
+    webSearch: bool | None = Query(None),
+    modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = Query(None),
+    thinkingMode: Literal["fast", "deep", "challenge"] | None = Query(None),
+    user: dict = Depends(require_user),
+) -> dict:
+    use_web_search = webSearch if webSearch is not None else web_search
+    with connect() as conn:
+        node = get_node_for_user(conn, node_id, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        sources: list[dict] = []
+        web_search_warning: str | None = None
+        if use_web_search and query.strip():
+            sources, web_search_warning = await collect_web_sources_preview(query.strip(), max_results=5, fetch_top_k=3)
+
+        messages = build_model_messages(
+            conn,
+            node_id,
+            model_name=modelName,
+            web_sources=sources,
+            user_query=query.strip() or None,
+        )
+
+    system_chars = len(messages[0]["content"]) if messages else 0
+    recent_chars = sum(len(message["content"]) for message in messages[1:])
+    source_payloads = []
+    evidence_chars = 0
+    for source in sources:
+        evidence_preview = select_relevant_evidence(
+            str(source.get("content") or source.get("snippet") or ""),
+            query,
+            max_paragraphs=2,
+            max_chars=900,
+        )
+        evidence_chars += len(evidence_preview)
+        source_payloads.append(
+            {
+                "title": source.get("title"),
+                "url": source.get("url"),
+                "source_type": source.get("source_type"),
+                "trust_level": source.get("trust_level"),
+                "evidence_preview": evidence_preview,
+            }
+        )
+
+    final_context = "\n\n".join(message["content"] for message in messages)
+    return {
+        "node_id": node_id,
+        "model_config": {
+            "model": modelName or os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME),
+            "thinkingMode": thinkingMode,
+        },
+        "sections": [
+            {"name": "System", "chars": system_chars},
+            {"name": "Node Context", "chars": system_chars},
+            {"name": "Recent Messages", "chars": recent_chars},
+            {"name": "Web Evidence", "chars": evidence_chars},
+        ],
+        "sources": source_payloads,
+        "estimated_tokens": max(1, len(final_context) // 4),
+        "truncated": False,
+        "web_search_warning": web_search_warning,
+        "final_context_preview": final_context[:4000],
+    }
+
+
 @app.post("/api/long-tasks", status_code=201)
 def create_long_task_endpoint(
     payload: LongTaskCreateRequest,
@@ -698,6 +828,8 @@ def create_long_task_endpoint(
             title=(payload.title or question[:32]).strip(),
             notebook_id=notebook_id,
             node_id=node_id,
+            model_name=payload.resolved_model_name,
+            thinking_mode=payload.resolved_thinking_mode,
         )
         if payload.auto_run:
             update_long_task_status(conn, user["id"], task["id"], "RUNNING")
@@ -710,6 +842,8 @@ def create_long_task_endpoint(
         "title": task["title"],
         "original_question": task["original_question"],
         "node_id": task["node_id"],
+        "model_name": task.get("model_name"),
+        "thinking_mode": task.get("thinking_mode"),
     }
 
 
@@ -1086,7 +1220,13 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
                 max_results=5,
                 fetch_top_k=3,
             )
-        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName, web_sources=web_sources)
+        model_messages = build_model_messages(
+            conn,
+            payload.nodeId,
+            model_name=payload.modelName,
+            web_sources=web_sources,
+            user_query=(payload.web_query or payload.message).strip(),
+        )
 
         try:
             content = call_model(model_messages, payload.modelName, payload.thinkingMode)
@@ -1282,7 +1422,13 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 max_results=5,
                 fetch_top_k=3,
             )
-        model_messages = build_model_messages(conn, payload.nodeId, model_name=payload.modelName, web_sources=web_sources)
+        model_messages = build_model_messages(
+            conn,
+            payload.nodeId,
+            model_name=payload.modelName,
+            web_sources=web_sources,
+            user_query=(payload.web_query or payload.message).strip(),
+        )
 
     def generate():
         content_parts: list[str] = []

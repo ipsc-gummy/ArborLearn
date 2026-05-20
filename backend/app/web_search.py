@@ -5,6 +5,7 @@ import html
 import ipaddress
 import json
 import os
+import re
 import socket
 import time
 import urllib.error
@@ -29,6 +30,9 @@ class SearchResult:
     url: str
     snippet: str = ""
     score: float | None = None
+    source_type: str = "unknown"
+    trust_level: str = "medium"
+    domain_quality_score: float = 0.5
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -102,6 +106,98 @@ def normalize_text(value: str) -> str:
     lines = [" ".join(line.split()) for line in html.unescape(value).splitlines()]
     compact_lines = [line for line in lines if line]
     return "\n".join(compact_lines).strip()
+
+
+def query_terms(text: str) -> set[str]:
+    return {item.lower() for item in re.findall(r"[A-Za-z0-9_\-]{2,}|[\u4e00-\u9fff]{2,}", text)}
+
+
+def classify_source_url(url: str) -> tuple[str, str, float]:
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path.lower()
+
+    official_markers = ("docs.", "developer.", "developers.", "api.", "learn.", "support.")
+    if host == "github.com" or host.endswith(".github.io"):
+        return "github", "high", 0.95
+    if host == "arxiv.org" or "doi.org" in host or "acm.org" in host or "ieee.org" in host:
+        return "paper", "high", 0.95
+    if any(marker in host for marker in official_markers) or "/docs" in path or "/documentation" in path:
+        return "official_docs", "high", 1.0
+    if host.endswith(".edu") or ".edu." in host:
+        return "course", "high", 0.9
+    if "wikipedia.org" in host:
+        return "wikipedia", "medium", 0.78
+    if "stackoverflow.com" in host or "stackexchange.com" in host or "github.com" in host and "/issues/" in path:
+        return "forum", "medium", 0.68
+    if "medium.com" in host or "blog" in host or "dev.to" in host or "juejin.cn" in host or "cnblogs.com" in host:
+        return "blog", "medium", 0.58
+    if any(marker in host for marker in ("seo", "zhuanlan", "csdn", "51cto", "53ai")):
+        return "blog", "low", 0.42
+    return "unknown", "medium", 0.5
+
+
+def enrich_search_result(result: SearchResult) -> SearchResult:
+    source_type, trust_level, domain_quality_score = classify_source_url(result.url)
+    result.source_type = source_type
+    result.trust_level = trust_level
+    result.domain_quality_score = domain_quality_score
+    return result
+
+
+def keyword_overlap_score(text: str, terms: set[str]) -> float:
+    lowered = text.lower()
+    return sum(1 for term in terms if term in lowered) / max(1, len(terms))
+
+
+def rank_search_results(results: list[SearchResult], query: str) -> list[SearchResult]:
+    terms = query_terms(query)
+    seen_hosts: set[str] = set()
+    scored: list[tuple[float, int, SearchResult]] = []
+    for index, raw_result in enumerate(results):
+        result = enrich_search_result(raw_result)
+        host = urllib.parse.urlparse(result.url).hostname or result.url
+        provider_score = result.score if result.score is not None else 0.5
+        keyword_overlap = keyword_overlap_score(f"{result.title}\n{result.snippet}", terms)
+        duplicate_penalty = 1.0 if host in seen_hosts else 0.0
+        final_score = (
+            provider_score * 0.45
+            + keyword_overlap * 0.25
+            + result.domain_quality_score * 0.20
+            - duplicate_penalty * 0.10
+        )
+        scored.append((final_score, -index, result))
+        seen_hosts.add(host)
+    return [result for _, _, result in sorted(scored, key=lambda item: (item[0], item[1]), reverse=True)]
+
+
+def split_paragraphs(text: str) -> list[str]:
+    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n{2,}|\r\n{2,}", text) if paragraph.strip()]
+    if len(paragraphs) <= 1:
+        paragraphs = [paragraph.strip() for paragraph in text.split("\n") if paragraph.strip()]
+    return paragraphs
+
+
+def select_relevant_evidence(text: str, query: str, *, max_paragraphs: int = 2, max_chars: int = 1800) -> str:
+    terms = query_terms(query)
+    candidates: list[tuple[float, int, str]] = []
+    for index, paragraph in enumerate(split_paragraphs(text)):
+        compact = " ".join(paragraph.split())
+        if len(compact) < 40:
+            continue
+        if len(compact) > 900:
+            for start in range(0, len(compact), 780):
+                part = compact[start : start + 900].strip()
+                candidates.append((keyword_overlap_score(part, terms), -index, part))
+        else:
+            candidates.append((keyword_overlap_score(compact, terms), -index, compact))
+
+    if not candidates:
+        return text.strip()[:max_chars]
+
+    selected = [item[2] for item in sorted(candidates, key=lambda item: (item[0], item[1]), reverse=True)[:max_paragraphs]]
+    evidence = "\n\n".join(selected).strip()
+    return evidence[:max_chars]
 
 
 def _request_json(url: str, *, method: str = "GET", headers: dict[str, str] | None = None, payload: dict | None = None, timeout: float) -> dict:
@@ -228,11 +324,13 @@ def _tavily_search(query: str, max_results: int) -> list[SearchResult]:
         if not url:
             continue
         parsed.append(
-            SearchResult(
-                title=str(item.get("title") or url).strip(),
-                url=url,
-                snippet=str(item.get("content") or "").strip(),
-                score=_parse_score(item.get("score")),
+            enrich_search_result(
+                SearchResult(
+                    title=str(item.get("title") or url).strip(),
+                    url=url,
+                    snippet=str(item.get("content") or "").strip(),
+                    score=_parse_score(item.get("score")),
+                )
             )
         )
     return parsed
@@ -260,11 +358,13 @@ def _brave_search(query: str, max_results: int) -> list[SearchResult]:
         if not url:
             continue
         parsed.append(
-            SearchResult(
-                title=str(item.get("title") or url).strip(),
-                url=url,
-                snippet=str(item.get("description") or "").strip(),
-                score=_parse_score(item.get("score")),
+            enrich_search_result(
+                SearchResult(
+                    title=str(item.get("title") or url).strip(),
+                    url=url,
+                    snippet=str(item.get("description") or "").strip(),
+                    score=_parse_score(item.get("score")),
+                )
             )
         )
     return parsed
@@ -290,11 +390,13 @@ def _searxng_search(query: str, max_results: int) -> list[SearchResult]:
         if not url:
             continue
         parsed.append(
-            SearchResult(
-                title=str(item.get("title") or url).strip(),
-                url=url,
-                snippet=str(item.get("content") or "").strip(),
-                score=_parse_score(item.get("score")),
+            enrich_search_result(
+                SearchResult(
+                    title=str(item.get("title") or url).strip(),
+                    url=url,
+                    snippet=str(item.get("content") or "").strip(),
+                    score=_parse_score(item.get("score")),
+                )
             )
         )
     return parsed
@@ -307,11 +409,11 @@ def _sync_search_web(query: str, max_results: int) -> list[SearchResult]:
     max_results = _clamp_max_results(max_results)
     provider = _selected_provider()
     if provider == "tavily":
-        return _tavily_search(query, max_results)
+        return rank_search_results(_tavily_search(query, max_results), query)
     if provider == "brave":
-        return _brave_search(query, max_results)
+        return rank_search_results(_brave_search(query, max_results), query)
     if provider == "searxng":
-        return _searxng_search(query, max_results)
+        return rank_search_results(_searxng_search(query, max_results), query)
     raise WebSearchConfigurationError(f"Unsupported WEB_SEARCH_PROVIDER '{provider}'.")
 
 

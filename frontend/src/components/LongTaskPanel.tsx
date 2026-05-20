@@ -14,11 +14,14 @@ import {
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { MarkdownContent } from "./MarkdownContent";
+import { useTreeLearnStore } from "../store/treelearnStore";
+import { type ModelScope } from "../lib/modelScope";
 
 interface LongTaskPanelProps {
   nodeId: string;
   notebookId: string;
   nodeTitle: string;
+  panelId?: string;
 }
 
 const terminalStatuses = new Set(["DONE", "FAILED", "CANCELLED"]);
@@ -54,7 +57,7 @@ function StatusIcon({ status }: { status: string }) {
   return <ClipboardList className="h-4 w-4" />;
 }
 
-export function LongTaskPanel({ nodeId, notebookId, nodeTitle }: LongTaskPanelProps) {
+export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTaskPanelProps) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [task, setTask] = useState<LongTask | null>(null);
@@ -62,6 +65,8 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle }: LongTaskPanelPr
   const [stepDetail, setStepDetail] = useState<LongTaskStepDetail | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const getModelConfig = useTreeLearnStore((state) => state.getModelConfig);
+  const modelScope: ModelScope = { panelId, threadId: nodeId, nodeId, notebookId };
 
   const activeStep = useMemo(() => {
     if (!task?.steps?.length) return null;
@@ -96,6 +101,7 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle }: LongTaskPanelPr
         notebook_id: notebookId,
         question: trimmed,
         title: trimmed.slice(0, 32),
+        ...getModelConfig(modelScope),
       });
       await runLongTask(created.id);
       const nextTask = await fetchLongTask(created.id);
