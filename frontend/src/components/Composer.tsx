@@ -24,6 +24,8 @@ export function Composer({ nodeId }: ComposerProps) {
   const setSelectedModel = useTreeLearnStore((state) => state.setSelectedModel);
   const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
   const setSelectedThinkingMode = useTreeLearnStore((state) => state.setSelectedThinkingMode);
+  const webSearchEnabled = useTreeLearnStore((state) => state.webSearchEnabled);
+  const setWebSearchEnabled = useTreeLearnStore((state) => state.setWebSearchEnabled);
   const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
   const isThinking = chatRunStatus === "thinking";
   const isStreaming = chatRunStatus === "streaming";
@@ -57,7 +59,17 @@ export function Composer({ nodeId }: ComposerProps) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1">
             <ThinkingModeSelector selectedMode={selectedThinkingMode} onSelect={setSelectedThinkingMode} />
-            <Button variant="ghost" size="sm" title="联网搜索">
+            <Button
+              variant={webSearchEnabled ? "secondary" : "ghost"}
+              size="sm"
+              title={webSearchEnabled ? "已开启联网搜索" : "开启联网搜索"}
+              aria-pressed={webSearchEnabled}
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              className={cn(
+                "transition",
+                webSearchEnabled && "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15",
+              )}
+            >
               <Globe className="h-4 w-4" />
               搜索
             </Button>

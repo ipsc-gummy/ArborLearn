@@ -5,6 +5,7 @@ import { MessageBlock } from "./MessageBlock";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import type { KnowledgeNode } from "../types/treelearn";
+import { LongTaskPanel } from "./LongTaskPanel";
 
 interface NodePanelProps {
   node: KnowledgeNode;
@@ -94,6 +95,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {!compact && <LongTaskPanel nodeId={node.id} notebookId={path[0]?.id ?? node.id} nodeTitle={node.title} />}
             {showCloseChild && (
               <Button variant="ghost" size="icon" onClick={closeChildConversation} aria-label="关闭子对话">
                 <X className="h-4 w-4" />
