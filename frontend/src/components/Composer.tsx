@@ -159,46 +159,46 @@ function ThinkingModeSelector({
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="flex h-9 items-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_10px_26px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10"
+          className="flex h-8 items-center gap-1 rounded-full bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_8px_20px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10"
           aria-label="选择模型"
           title="选择模型"
         >
           <span>{activeCopy.trigger}</span>
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
           side="top"
-          align="start"
+          align="end"
           sideOffset={8}
-          className="tl-panel z-50 w-56 overflow-visible rounded-[1.35rem] border p-2.5 text-sm shadow-panel outline-none"
+          className="tl-panel z-50 w-44 overflow-visible rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
         >
-          <div className="px-3 pb-2 pt-1">
-            <p className="text-base font-medium leading-6 text-muted-foreground">DeepSeek</p>
+          <div className="px-2 pb-1 pt-0.5">
+            <p className="text-xs font-medium leading-5 text-muted-foreground">DeepSeek</p>
           </div>
 
-          <div className="overflow-visible rounded-xl">
+          <div className="overflow-visible rounded-lg">
             <button
               type="button"
               role="radio"
               aria-checked={selectedMode === "fast"}
               className={cn(
-                "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition",
+                "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition",
                 selectedMode === "fast" ? "bg-foreground/10" : "hover:bg-foreground/5 dark:hover:bg-white/10",
               )}
               onClick={() => selectMode("fast")}
             >
               <span className="min-w-0 flex-1">
-                <span className="text-base font-semibold leading-6">{thinkingModeCopy.fast.title}</span>
+                <span className="text-sm font-semibold leading-5">{thinkingModeCopy.fast.title}</span>
               </span>
-              {selectedMode === "fast" && <Check className="h-4 w-4 shrink-0 text-foreground" />}
+              {selectedMode === "fast" && <Check className="h-3.5 w-3.5 shrink-0 text-foreground" />}
             </button>
 
             <div className="group relative overflow-visible">
               <div
                 className={cn(
-                  "flex min-h-11 w-full items-center gap-2 rounded-xl transition",
+                  "flex min-h-9 w-full items-center gap-1 rounded-lg transition",
                   selectedMode !== "fast" ? "bg-foreground/10" : "hover:bg-foreground/5 dark:hover:bg-white/10",
                 )}
               >
@@ -206,11 +206,11 @@ function ThinkingModeSelector({
                   type="button"
                   role="radio"
                   aria-checked={selectedMode !== "fast"}
-                  className="flex min-h-11 min-w-0 flex-1 items-center px-3 py-2 text-left"
+                  className="flex min-h-9 min-w-0 flex-1 items-center px-2 py-1 text-left"
                   onClick={() => selectMode("deep")}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="text-base font-semibold leading-6">Thinking</span>
+                    <span className="text-sm font-semibold leading-5">Thinking</span>
                     {thinkingRowSuffix && (
                       <span className="ml-2 align-baseline text-sm text-muted-foreground">
                         · {thinkingRowSuffix}
@@ -223,7 +223,7 @@ function ThinkingModeSelector({
                   aria-label="调整 Thinking 强度"
                   title="调整 Thinking 强度"
                   className={cn(
-                    "mr-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/10 opacity-0 transition group-hover:opacity-100 hover:bg-foreground/15 hover:shadow-[0_10px_22px_rgba(25,45,64,0.18)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/25",
+                    "mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground/10 opacity-0 transition group-hover:opacity-100 hover:bg-foreground/15 hover:shadow-[0_8px_18px_rgba(25,45,64,0.16)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary/25",
                     thinkingOptionsOpen && "opacity-100 shadow-[0_10px_22px_rgba(25,45,64,0.18)]",
                   )}
                   onClick={(event) => {
@@ -231,12 +231,12 @@ function ThinkingModeSelector({
                     setThinkingOptionsOpen((current) => !current);
                   }}
                 >
-                  <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                  <SlidersHorizontal className="h-3 w-3 text-muted-foreground" />
                 </button>
               </div>
 
               {thinkingOptionsOpen && (
-                <div className="tl-panel absolute right-[calc(100%-0.15rem)] top-0 z-50 w-36 rounded-[1.25rem] border p-2.5 shadow-panel">
+                <div className="tl-panel absolute left-[calc(100%-0.1rem)] top-0 z-50 w-28 rounded-2xl border p-1.5 shadow-panel">
                   {(["deep", "challenge"] as const).map((mode) => {
                     const active = selectedMode === mode;
                     return (
@@ -246,15 +246,15 @@ function ThinkingModeSelector({
                         role="radio"
                         aria-checked={active}
                         className={cn(
-                          "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition",
+                          "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition",
                           active ? "bg-foreground/10" : "hover:bg-foreground/5 dark:hover:bg-white/10",
                         )}
                         onClick={() => selectMode(mode)}
                       >
                         <span className="min-w-0 flex-1">
-                          <span className="text-base font-semibold leading-6">{thinkingStrengthCopy[mode]}</span>
+                          <span className="text-sm font-semibold leading-5">{thinkingStrengthCopy[mode]}</span>
                         </span>
-                        {active && <Check className="h-4 w-4 shrink-0 text-foreground" />}
+                        {active && <Check className="h-3.5 w-3.5 shrink-0 text-foreground" />}
                       </button>
                     );
                   })}
@@ -262,10 +262,10 @@ function ThinkingModeSelector({
               )}
             </div>
 
-            <div className="mx-3 my-1.5 h-px bg-border" />
+            <div className="mx-2 my-1 h-px bg-border" />
             <button
               type="button"
-              className="flex min-h-11 w-full items-center rounded-xl px-3 py-2 text-left text-base font-semibold transition hover:bg-foreground/5 dark:hover:bg-white/10"
+              className="flex min-h-9 w-full items-center rounded-lg px-2 py-1 text-left text-sm font-semibold transition hover:bg-foreground/5 dark:hover:bg-white/10"
             >
               配置...
             </button>
@@ -295,27 +295,27 @@ function ModelSelector({
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="hidden h-9 items-center gap-1.5 rounded-full bg-transparent px-3 text-sm font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_10px_26px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10 sm:flex"
+          className="hidden h-8 items-center gap-1 rounded-full bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_8px_20px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10 sm:flex"
           aria-label="选择 DeepSeek 模型"
           title="选择 DeepSeek 模型"
         >
           <span>{activeModel.label}</span>
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
           side="top"
           align="start"
-          sideOffset={10}
-          className="tl-panel z-50 w-[21rem] rounded-2xl border p-2 text-sm shadow-panel outline-none"
+          sideOffset={8}
+          className="tl-panel z-50 w-64 rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
         >
-          <div className="px-4 pb-3 pt-2">
-            <p className="text-lg font-semibold leading-7">DeepSeek 模型</p>
-            <p className="mt-0.5 text-sm leading-5 text-muted-foreground">选择本次对话使用的底层模型</p>
+          <div className="px-2.5 pb-1.5 pt-1">
+            <p className="text-sm font-semibold leading-5">DeepSeek 模型</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">选择本次对话使用的底层模型</p>
           </div>
 
-          <div className="overflow-hidden rounded-xl">
+          <div className="overflow-hidden rounded-lg">
             {DEEPSEEK_MODELS.map((model) => {
               const active = selectedModel === model.id;
               return (
@@ -325,7 +325,7 @@ function ModelSelector({
                   role="radio"
                   aria-checked={active}
                   className={cn(
-                    "flex min-h-[4.5rem] w-full items-center gap-3 px-4 py-3 text-left transition",
+                    "flex min-h-[3.15rem] w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition",
                     active
                       ? "bg-primary/10 ring-1 ring-inset ring-primary/45"
                       : "hover:bg-foreground/5 dark:hover:bg-white/10",
@@ -333,12 +333,12 @@ function ModelSelector({
                   onClick={() => selectModel(model.id)}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="text-lg font-semibold leading-6">{model.label}</span>
-                    <span className="mt-1 block text-sm leading-5 text-muted-foreground">{model.description}</span>
+                    <span className="text-sm font-semibold leading-5">{model.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{model.description}</span>
                   </span>
                   {active && (
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="h-4 w-4" />
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="h-2.5 w-2.5" />
                     </span>
                   )}
                 </button>
