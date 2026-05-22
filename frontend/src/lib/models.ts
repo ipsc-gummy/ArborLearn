@@ -15,7 +15,7 @@ export const DEEPSEEK_MODELS: readonly {
 }[] = [
   {
     id: "deepseek-v4-flash",
-    label: "快速",
+    label: "Flash",
     badge: "Flash",
     description: "快速回答，适合日常学习和轻量追问",
   },
@@ -38,18 +38,18 @@ export const DEEPSEEK_THINKING_MODES: readonly {
 }[] = [
   {
     id: "fast",
-    label: "快速",
-    description: "轻量问题，立即回答",
+    label: "Instant",
+    description: "即时回答",
   },
   {
     id: "deep",
-    label: "深思",
-    description: "学习讲解，稳健推理",
+    label: "Thinking",
+    description: "高强度思考",
   },
   {
     id: "challenge",
-    label: "攻坚",
-    description: "长时推理，复杂任务",
+    label: "进阶",
+    description: "最大强度思考",
   },
 ];
 
