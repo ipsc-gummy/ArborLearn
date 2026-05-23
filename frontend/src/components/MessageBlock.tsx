@@ -1,4 +1,4 @@
-import { Check, Copy, GitBranch, RotateCcw, Volume2, VolumeX } from "lucide-react";
+﻿import { Check, Copy, GitBranch, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
 import type { ChatMessage } from "../types/treelearn";
@@ -27,6 +27,7 @@ function ThinkingIndicator({ label = "正在思考" }: { label?: string }) {
 // 单条聊天消息：根据角色切换左右布局，并把已创建子对话的选中文本渲染为可点击链接。
 export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
+  const user = useTreeLearnStore((state) => state.user);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
   const retryAssistantMessage = useTreeLearnStore((state) => state.retryAssistantMessage);
   const isNodeRunning = Boolean(useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]));
@@ -41,6 +42,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const thinkingLabel = message.content === "正在联网检索..." ? "正在联网检索" : "正在思考";
   const [copied, setCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const userLabel = user?.displayName?.trim() || "用户";
 
   const writeToClipboard = async (content: string) => {
     await navigator.clipboard?.writeText(content);
@@ -116,9 +118,10 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
 
   return (
     <article className={cn("flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
-      <div
+      <div className={cn("group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
+        <div
         className={cn(
-          "group max-w-[82%] rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md md:max-w-[72%]",
+          "rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
           isUser
             ? "rounded-br-md border"
             : "tl-panel rounded-bl-md border text-card-foreground",
@@ -135,7 +138,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className={cn("text-xs font-semibold", isUser ? "opacity-70" : "text-muted-foreground")}>
-            {isUser ? "用户" : "TreeLearn AI"}
+            {isUser ? userLabel : "TreeLearn AI"}
           </span>
         </div>
         {isThinking ? (
@@ -156,22 +159,29 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
                 }))}
               onTreeLinkClick={setActiveNode}
             />
-            <div className="tl-reveal-actions mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
-              <MessageActionButton title="复制" onClick={handleCopy}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </MessageActionButton>
-              <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
-                {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              </MessageActionButton>
-              <MessageActionButton
-                title="重试"
-                onClick={() => retryAssistantMessage(nodeId, message.id)}
-                disabled={isNodeRunning}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </MessageActionButton>
-            </div>
           </>
+        )}
+        </div>
+        {!isThinking && (
+          <div className={cn("tl-reveal-actions mt-1 flex items-center gap-1 px-1 text-muted-foreground", isUser ? "justify-end" : "justify-start")}>
+            <MessageActionButton title="复制" onClick={handleCopy}>
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </MessageActionButton>
+            {!isUser && (
+              <>
+                <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
+                  {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </MessageActionButton>
+                <MessageActionButton
+                  title="重试"
+                  onClick={() => retryAssistantMessage(nodeId, message.id)}
+                  disabled={isNodeRunning}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </MessageActionButton>
+              </>
+            )}
+          </div>
         )}
       </div>
     </article>
