@@ -8,7 +8,7 @@ import {
   type DeepSeekModelId,
   type DeepSeekThinkingModeId,
 } from "../lib/models";
-import { getModelScopeId, type ModelScope } from "../lib/modelScope";
+import { getModelScopeId, type ModelConfig, type ModelScope } from "../lib/modelScope";
 import { cn } from "../lib/utils";
 
 interface ComposerProps {
@@ -85,13 +85,10 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             </Button>
           </div>
           <div className="flex items-center justify-end gap-1.5">
-            <ModelSelector
+            <ModelModeSelector
               selectedModel={selectedModel}
-              onSelect={(modelName) => setModelConfig(scopeId, { model: modelName, thinkingMode: selectedThinkingMode })}
-            />
-            <ThinkingModeSelector
               selectedMode={selectedThinkingMode}
-              onSelect={(thinkingMode) => setModelConfig(scopeId, { model: selectedModel, thinkingMode })}
+              onChange={(config) => setModelConfig(scopeId, config)}
             />
             <Button
               size="icon"
@@ -131,15 +128,18 @@ const thinkingStrengthCopy = {
   challenge: "进阶",
 } satisfies Record<Exclude<DeepSeekThinkingModeId, "fast">, string>;
 
-function ThinkingModeSelector({
+function ModelModeSelector({
+  selectedModel,
   selectedMode,
-  onSelect,
+  onChange,
 }: {
+  selectedModel: DeepSeekModelId;
   selectedMode: DeepSeekThinkingModeId;
-  onSelect: (thinkingMode: DeepSeekThinkingModeId) => void;
+  onChange: (config: ModelConfig) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [thinkingOptionsOpen, setThinkingOptionsOpen] = useState(false);
+  const activeModel = DEEPSEEK_MODELS.find((model) => model.id === selectedModel) ?? DEEPSEEK_MODELS[0];
   const activeCopy = thinkingModeCopy[selectedMode] ?? thinkingModeCopy.fast;
   const thinkingRowSuffix = selectedMode === "challenge" ? thinkingModeCopy.challenge.title : "";
   const handleOpenChange = (nextOpen: boolean) => {
@@ -148,8 +148,11 @@ function ThinkingModeSelector({
       setThinkingOptionsOpen(false);
     }
   };
+  const selectModel = (model: DeepSeekModelId) => {
+    onChange({ model, thinkingMode: selectedMode });
+  };
   const selectMode = (thinkingMode: DeepSeekThinkingModeId) => {
-    onSelect(thinkingMode);
+    onChange({ model: selectedModel, thinkingMode });
     setOpen(false);
     setThinkingOptionsOpen(false);
   };
@@ -163,6 +166,8 @@ function ThinkingModeSelector({
           aria-label="选择模型"
           title="选择模型"
         >
+          <span>{activeModel.label}</span>
+          <span className="text-muted-foreground/60">·</span>
           <span>{activeCopy.trigger}</span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
@@ -172,11 +177,45 @@ function ThinkingModeSelector({
           side="top"
           align="end"
           sideOffset={8}
-          className="tl-panel z-50 w-44 overflow-visible rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
+          className="tl-panel z-50 w-72 overflow-visible rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
         >
-          <div className="px-2 pb-1 pt-0.5">
-            <p className="text-xs font-medium leading-5 text-muted-foreground">DeepSeek</p>
+          <div className="px-2.5 pb-1.5 pt-1">
+            <p className="text-sm font-semibold leading-5">DeepSeek</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">Flash / Pro · Instant / Thinking</p>
           </div>
+
+          <div className="overflow-hidden rounded-lg">
+            {DEEPSEEK_MODELS.map((model) => {
+              const active = selectedModel === model.id;
+              return (
+                <button
+                  key={model.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={cn(
+                    "flex min-h-[3.15rem] w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition",
+                    active
+                      ? "bg-primary/10 ring-1 ring-inset ring-primary/45"
+                      : "hover:bg-foreground/5 dark:hover:bg-white/10",
+                  )}
+                  onClick={() => selectModel(model.id)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm font-semibold leading-5">{model.label}</span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{model.description}</span>
+                  </span>
+                  {active && (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="h-2.5 w-2.5" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mx-2 my-1.5 h-px bg-border" />
 
           <div className="overflow-visible rounded-lg">
             <button
@@ -276,77 +315,3 @@ function ThinkingModeSelector({
   );
 }
 
-function ModelSelector({
-  selectedModel,
-  onSelect,
-}: {
-  selectedModel: DeepSeekModelId;
-  onSelect: (modelName: DeepSeekModelId) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const activeModel = DEEPSEEK_MODELS.find((model) => model.id === selectedModel) ?? DEEPSEEK_MODELS[0];
-  const selectModel = (modelName: DeepSeekModelId) => {
-    onSelect(modelName);
-    setOpen(false);
-  };
-
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          className="hidden h-8 items-center gap-1 rounded-full bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_8px_20px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10 sm:flex"
-          aria-label="选择 DeepSeek 模型"
-          title="选择 DeepSeek 模型"
-        >
-          <span>{activeModel.label}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="top"
-          align="start"
-          sideOffset={8}
-          className="tl-panel z-50 w-64 rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
-        >
-          <div className="px-2.5 pb-1.5 pt-1">
-            <p className="text-sm font-semibold leading-5">DeepSeek 模型</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">选择本次对话使用的底层模型</p>
-          </div>
-
-          <div className="overflow-hidden rounded-lg">
-            {DEEPSEEK_MODELS.map((model) => {
-              const active = selectedModel === model.id;
-              return (
-                <button
-                  key={model.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  className={cn(
-                    "flex min-h-[3.15rem] w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition",
-                    active
-                      ? "bg-primary/10 ring-1 ring-inset ring-primary/45"
-                      : "hover:bg-foreground/5 dark:hover:bg-white/10",
-                  )}
-                  onClick={() => selectModel(model.id)}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-sm font-semibold leading-5">{model.label}</span>
-                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{model.description}</span>
-                  </span>
-                  {active && (
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
