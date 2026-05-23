@@ -3,8 +3,12 @@ import { createPortal } from "react-dom";
 import * as Popover from "@radix-ui/react-popover";
 import {
   BookOpen,
+  Check,
+  ChevronDown,
   FileText,
   GitBranch,
+  LayoutGrid,
+  List,
   MessageSquareText,
   MoreHorizontal,
   Pencil,
@@ -41,6 +45,8 @@ interface DeleteTarget {
 }
 
 type SortMode = "recent" | "title";
+type ViewMode = "grid" | "list";
+const NOTEBOOK_VIEW_MODE_KEY = "arborlearn.notebookViewMode";
 
 const notebookCoverPalettes = [
   {
@@ -105,6 +111,45 @@ function formatNotebookUpdatedAt(value: string) {
   })}`;
 }
 
+function formatNotebookDate(value: string | undefined) {
+  const date = new Date(value ?? "");
+  if (Number.isNaN(date.getTime())) return "未知";
+  return date.toLocaleDateString("zh-Hans-CN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getNotebookCreatedAt(node: KnowledgeNode) {
+  const messageTimes = node.messages
+    .map((message) => message.createdAt)
+    .filter((value) => !Number.isNaN(new Date(value).getTime()));
+  return messageTimes[0] ?? node.updatedAt;
+}
+
+const sortModeLabel: Record<SortMode, string> = {
+  recent: "最近",
+  title: "标题",
+};
+
+function getStoredNotebookViewMode(): ViewMode {
+  try {
+    const saved = localStorage.getItem(NOTEBOOK_VIEW_MODE_KEY);
+    return saved === "list" || saved === "grid" ? saved : "grid";
+  } catch {
+    return "grid";
+  }
+}
+
+function saveNotebookViewMode(mode: ViewMode) {
+  try {
+    localStorage.setItem(NOTEBOOK_VIEW_MODE_KEY, mode);
+  } catch {
+    // Ignore storage failures; the in-memory view selection still applies.
+  }
+}
+
 function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId: string) {
   const visited = new Set<string>();
   const textParts: string[] = [];
@@ -149,6 +194,7 @@ export function NotebookDashboard({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>("recent");
+  const [viewMode, setViewModeState] = useState<ViewMode>(getStoredNotebookViewMode);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const editInputRef = useRef<HTMLInputElement | null>(null);
@@ -235,6 +281,11 @@ export function NotebookDashboard({
   const openFirstSearchResult = () => {
     if (!hasSearchKeyword || !filteredRootIds[0]) return;
     onOpenNotebook(filteredRootIds[0]);
+  };
+
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    saveNotebookViewMode(mode);
   };
 
   return (
@@ -381,24 +432,52 @@ export function NotebookDashboard({
                   </>
                 )}
               </div>
-              <div className="tl-input hidden items-center rounded-full border p-0.5 text-xs sm:flex">
+              <Popover.Root>
+                <Popover.Trigger asChild>
+                  <button className="tl-input tl-hover flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium text-muted-foreground">
+                    排序：{sortModeLabel[sortMode]}
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-32 rounded-xl border p-1 text-sm shadow-panel">
+                    {(["recent", "title"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
+                        onClick={() => setSortMode(mode)}
+                      >
+                        <span className="flex h-4 w-4 items-center justify-center">
+                          {sortMode === mode && <Check className="h-3.5 w-3.5" />}
+                        </span>
+                        {sortModeLabel[mode]}
+                      </button>
+                    ))}
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+              <div className="tl-input flex items-center rounded-full border p-0.5">
                 <button
                   className={cn(
-                    "tl-sort-option h-8 rounded-full px-3 font-medium text-muted-foreground transition",
-                    sortMode === "recent" && "is-active",
+                    "tl-sort-option flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition",
+                    viewMode === "grid" && "is-active",
                   )}
-                  onClick={() => setSortMode("recent")}
+                  onClick={() => setViewMode("grid")}
+                  aria-label="网格视图"
+                  title="网格视图"
                 >
-                  最近
+                  <LayoutGrid className="h-4 w-4" />
                 </button>
                 <button
                   className={cn(
-                    "tl-sort-option h-8 rounded-full px-3 font-medium text-muted-foreground transition",
-                    sortMode === "title" && "is-active",
+                    "tl-sort-option flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition",
+                    viewMode === "list" && "is-active",
                   )}
-                  onClick={() => setSortMode("title")}
+                  onClick={() => setViewMode("list")}
+                  aria-label="列表视图"
+                  title="列表视图"
                 >
-                  标题
+                  <List className="h-4 w-4" />
                 </button>
               </div>
               <Button
@@ -417,6 +496,7 @@ export function NotebookDashboard({
             </div>
           )}
 
+          {viewMode === "grid" && (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <button
               className={cn(
@@ -439,11 +519,17 @@ export function NotebookDashboard({
               if (!node) return null;
               const isPinned = pinnedRootIds.includes(id);
               const isEditing = editingId === id;
+              const isMenuOpen = openMenuId === id;
+              const isCoverLocked = isEditing || deleteTarget?.id === id;
               const coverPalette = notebookCoverPalettes[index % notebookCoverPalettes.length];
               return (
                 <div
                   key={id}
-                  className="tl-notebook-book group relative min-h-[18.5rem] text-left"
+                  className={cn(
+                    "tl-notebook-book group relative min-h-[18.5rem] text-left",
+                    isMenuOpen && "is-menu-open",
+                    isCoverLocked && "is-cover-locked",
+                  )}
                   style={{
                     "--tl-notebook-cover-light": coverPalette.lightCover,
                     "--tl-notebook-spine-light": coverPalette.lightSpine,
@@ -459,7 +545,7 @@ export function NotebookDashboard({
                   <div className="tl-notebook-pages" aria-hidden="true" />
                   <div className="tl-notebook-paper">
                     <div className="tl-notebook-paper-rule" aria-hidden="true" />
-                    <p className="tl-notebook-summary pointer-events-none line-clamp-4">{node.summary}</p>
+                    <p className="tl-notebook-summary pointer-events-none line-clamp-3">{node.summary}</p>
                     <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
                   </div>
                   <div className="tl-notebook-cover">
@@ -475,17 +561,22 @@ export function NotebookDashboard({
                         </span>
                       </div>
                       {isEditing ? (
-                        <input
-                          ref={editInputRef}
-                          value={editingTitle}
-                          onChange={(event) => setEditingTitle(event.target.value)}
-                          onBlur={commitRename}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") commitRename();
-                            if (event.key === "Escape") cancelRename();
-                          }}
-                          className="tl-input relative z-20 ml-5 w-[calc(100%-3.25rem)] rounded-md border px-2 py-1 text-sm font-semibold outline-none ring-2 ring-primary/15"
-                        />
+                        <div className="tl-notebook-title-block">
+                          <input
+                            ref={editInputRef}
+                            value={editingTitle}
+                            onChange={(event) => setEditingTitle(event.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") commitRename();
+                              if (event.key === "Escape") cancelRename();
+                            }}
+                            className="tl-input relative z-20 w-full rounded-md border px-2 py-1 text-[1.05rem] font-semibold leading-tight text-foreground outline-none ring-2 ring-primary/15"
+                          />
+                          <p className="text-[color:var(--tl-notebook-muted)]">
+                            {formatNotebookUpdatedAt(node.updatedAt)}
+                          </p>
+                        </div>
                       ) : (
                         <div className="tl-notebook-title-block pointer-events-none">
                           <h4 className="line-clamp-2 text-[color:var(--tl-notebook-ink)]">
@@ -535,6 +626,106 @@ export function NotebookDashboard({
               );
             })}
           </div>
+          )}
+          {viewMode === "list" && (
+            <div className="overflow-hidden">
+              <div className="hidden grid-cols-[minmax(0,1fr)_9rem_9rem_3rem] gap-4 border-b border-border/70 px-4 py-3 text-sm font-semibold text-foreground md:grid">
+                <span>笔记本</span>
+                <span>创建日期</span>
+                <span>最近修改</span>
+                <span className="sr-only">菜单</span>
+              </div>
+              <div className="divide-y divide-border/60">
+                {filteredRootIds.map((id) => {
+                  const node = nodes[id];
+                  if (!node) return null;
+                  const isEditing = editingId === id;
+                  const createdAt = getNotebookCreatedAt(node);
+                  return (
+                    <div
+                      key={id}
+                      className={cn(
+                        "group relative grid min-h-16 grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-3 px-4 py-3 transition hover:bg-foreground/5 md:grid-cols-[minmax(0,1fr)_9rem_9rem_3rem] md:gap-4",
+                        !isEditing && "cursor-pointer",
+                      )}
+                      onClick={() => {
+                        if (!isEditing) onOpenNotebook(id);
+                      }}
+                    >
+                      <div className="relative z-10 flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-primary">
+                          <BookOpen className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          {isEditing ? (
+                            <input
+                              ref={editInputRef}
+                              value={editingTitle}
+                              onChange={(event) => setEditingTitle(event.target.value)}
+                              onBlur={commitRename}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") commitRename();
+                                if (event.key === "Escape") cancelRename();
+                              }}
+                              className="tl-input relative z-20 w-full rounded-md border px-2 py-1 text-sm font-semibold outline-none ring-2 ring-primary/15"
+                            />
+                          ) : (
+                            <p className="truncate text-sm font-semibold">{node.title}</p>
+                          )}
+                          <p className="mt-1 text-xs text-muted-foreground md:hidden">
+                            创建 {formatNotebookDate(createdAt)} · 修改 {formatNotebookDate(node.updatedAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="relative z-10 hidden text-sm text-muted-foreground md:block">{formatNotebookDate(createdAt)}</span>
+                      <span className="relative z-10 hidden text-sm text-muted-foreground md:block">{formatNotebookDate(node.updatedAt)}</span>
+                      <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
+                        <Popover.Trigger asChild>
+                          <button
+                            type="button"
+                            className="tl-hover relative z-20 flex h-9 w-9 items-center justify-center rounded-full"
+                            aria-label="打开笔记本菜单"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                          <Popover.Content
+                            side="bottom"
+                            align="end"
+                            className="tl-panel z-50 w-36 rounded-xl border p-1 text-sm shadow-panel"
+                          >
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                beginRename(id, node.title);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              修改标题
+                            </button>
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                beginDelete(id, node.title);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              删除
+                            </button>
+                          </Popover.Content>
+                        </Popover.Portal>
+                      </Popover.Root>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {hasSearchKeyword && !hasSearchResults && (
             <div className="tl-panel mt-4 rounded-2xl border border-dashed p-8 text-center">
               <p className="font-medium">没有匹配的笔记本</p>

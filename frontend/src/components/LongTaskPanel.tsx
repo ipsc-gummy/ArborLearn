@@ -5,6 +5,7 @@ import {
   cancelLongTask,
   createLongTask,
   fetchLongTask,
+  fetchNodeLongTasks,
   fetchLongTaskStep,
   runLongTask,
   type LongTask,
@@ -61,9 +62,11 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [task, setTask] = useState<LongTask | null>(null);
+  const [tasks, setTasks] = useState<LongTask[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [stepDetail, setStepDetail] = useState<LongTaskStepDetail | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const getModelConfig = useTreeLearnStore((state) => state.getModelConfig);
   const modelScope: ModelScope = { panelId, threadId: nodeId, nodeId, notebookId };
@@ -74,11 +77,30 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
   }, [task]);
 
   useEffect(() => {
+    setTask(null);
+    setTasks([]);
+    setStepDetail(null);
+    setSelectedStepId(null);
+    setError(null);
+    setIsLoadingHistory(true);
+    void fetchNodeLongTasks(nodeId)
+      .then(({ tasks: nextTasks }) => {
+        setTasks(nextTasks);
+        setTask(nextTasks[0] ?? null);
+      })
+      .catch((historyError) => {
+        setError(historyError instanceof Error ? historyError.message : "Long task history failed to load");
+      })
+      .finally(() => setIsLoadingHistory(false));
+  }, [nodeId]);
+
+  useEffect(() => {
     if (!task || terminalStatuses.has(task.status)) return;
     const interval = window.setInterval(() => {
       void fetchLongTask(task.id)
         .then((nextTask) => {
           setTask(nextTask);
+          setTasks((current) => [nextTask, ...current.filter((item) => item.id !== nextTask.id)]);
           if (selectedStepId && nextTask.steps?.some((step) => step.id === selectedStepId)) {
             void fetchLongTaskStep(nextTask.id, selectedStepId).then(setStepDetail).catch(() => undefined);
           }
@@ -106,6 +128,8 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
       await runLongTask(created.id);
       const nextTask = await fetchLongTask(created.id);
       setTask(nextTask);
+      setTasks((current) => [nextTask, ...current.filter((item) => item.id !== nextTask.id)]);
+      setQuestion("");
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : "长任务启动失败");
     } finally {
@@ -128,9 +152,25 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
     setError(null);
     try {
       await cancelLongTask(task.id);
-      setTask(await fetchLongTask(task.id));
+      const nextTask = await fetchLongTask(task.id);
+      setTask(nextTask);
+      setTasks((current) => [nextTask, ...current.filter((item) => item.id !== nextTask.id)]);
     } catch (cancelError) {
       setError(cancelError instanceof Error ? cancelError.message : "取消长任务失败");
+    }
+  };
+
+  const selectTask = async (nextTask: LongTask) => {
+    setTask(nextTask);
+    setStepDetail(null);
+    setSelectedStepId(null);
+    setError(null);
+    try {
+      const freshTask = await fetchLongTask(nextTask.id);
+      setTask(freshTask);
+      setTasks((current) => current.map((item) => (item.id === freshTask.id ? freshTask : item)));
+    } catch (selectError) {
+      setError(selectError instanceof Error ? selectError.message : "Long task failed to refresh");
     }
   };
 
@@ -189,6 +229,38 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
                 </div>
               )}
             </div>
+
+            {isLoadingHistory && (
+              <div className="mt-4 rounded-xl border border-border bg-background/45 px-3 py-3 text-xs text-muted-foreground">
+                正在读取长任务记录...
+              </div>
+            )}
+
+            {tasks.length > 1 && (
+              <div className="mt-4 space-y-2">
+                <p className="px-1 text-xs font-medium text-muted-foreground">历史记录</p>
+                {tasks.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void selectTask(item)}
+                    className={cn(
+                      "w-full rounded-xl border px-3 py-2 text-left transition hover:border-primary/35 hover:bg-primary/5",
+                      task?.id === item.id ? "border-primary/35 bg-primary/10" : "border-border bg-background/42",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-xs font-medium">{item.title || item.original_question || `长任务 ${index + 1}`}</p>
+                      <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]", statusTone(item.status))}>
+                        <StatusIcon status={item.status} />
+                        {statusLabel(item.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-muted-foreground">{item.updated_at || item.created_at || "暂无时间"}</p>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {task && (
               <div className="mt-4 space-y-3">
