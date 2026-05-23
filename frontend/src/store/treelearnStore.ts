@@ -235,18 +235,16 @@ function saveModelConfigsByScope(configs: Record<string, ModelConfig>) {
 
 function getStoredWebSearchEnabled(): boolean {
   try {
-    localStorage.removeItem(WEB_SEARCH_ENABLED_KEY);
+    return localStorage.getItem(WEB_SEARCH_ENABLED_KEY) === "true";
   } catch {
     // Ignore storage failures; the in-memory default still applies.
+    return false;
   }
-  return false;
 }
 
 function saveWebSearchEnabled(enabled: boolean) {
   try {
-    if (!enabled) {
-      localStorage.removeItem(WEB_SEARCH_ENABLED_KEY);
-    }
+    localStorage.setItem(WEB_SEARCH_ENABLED_KEY, String(enabled));
   } catch {
     // Ignore storage failures; the in-memory toggle still applies.
   }
@@ -557,7 +555,6 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         },
       }, nodeId, now),
       apiError: null,
-      webSearchEnabled: false,
       chatRunStatusByNode: { ...current.chatRunStatusByNode, [nodeId]: "thinking" },
     }));
 
