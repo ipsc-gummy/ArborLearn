@@ -13,6 +13,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
+from .backfill import (
+    archive_patch,
+    archive_patches_for_message,
+    create_and_apply_patch,
+    list_message_patches,
+    normalize_source_metadata_for_storage,
+)
 from .context_builder import build_model_messages
 from .db import (
     add_message,
@@ -37,6 +44,7 @@ from .db import (
     update_long_task_status,
     uid,
 )
+from .effective_context import list_effective_messages
 from .long_task_context import build_step_context
 from .long_task_runner import LongTaskRunner
 from .long_task_schemas import LongTaskCreateRequest
@@ -127,6 +135,7 @@ class NodeCreate(BaseModel):
     summary: str = ""
     selectedText: str | None = None
     contextWeight: Literal["isolated", "mainline"] = "isolated"
+    sourceMetadata: dict | None = None
     messages: list[MessagePayload] = Field(default_factory=list)
 
 
@@ -136,6 +145,15 @@ class NodePatch(BaseModel):
     selectedText: str | None = None
     contextWeight: Literal["isolated", "mainline"] | None = None
     parentId: str | None = None
+
+
+class BackfillPatchCreate(BaseModel):
+    sourceChildNodeId: str
+    targetMessageId: str
+    editType: Literal["correct", "expand", "compress", "reframe"]
+    targetRangeStart: int
+    targetRangeEnd: int
+    replacementText: str = Field(min_length=1)
 
 
 class WebSearchRequest(BaseModel):
@@ -593,16 +611,7 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
     if not node or node["parent_id"] is None:
         return None
 
-    rows = conn.execute(
-        """
-        SELECT role, content
-        FROM messages
-        WHERE node_id = ? AND role IN ('user', 'assistant')
-        ORDER BY created_at ASC
-        LIMIT 24
-        """,
-        (node_id,),
-    ).fetchall()
+    rows = list_effective_messages(conn, node_id, limit=24, ascending=True)
     if not rows:
         return None
 
@@ -629,7 +638,7 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
     if not summary:
         return None
 
-    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
+    conn.execute("UPDATE nodes SET summary = ?, summary_stale = 0, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
     return summary
 
 
@@ -645,16 +654,7 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
     if not node:
         return None
 
-    rows = conn.execute(
-        """
-        SELECT role, content
-        FROM messages
-        WHERE node_id = ? AND role IN ('user', 'assistant')
-        ORDER BY created_at ASC
-        LIMIT 24
-        """,
-        (node_id,),
-    ).fetchall()
+    rows = list_effective_messages(conn, node_id, limit=24, ascending=True)
     if not rows:
         return None
 
@@ -688,7 +688,7 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
     if not summary:
         return None
 
-    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
+    conn.execute("UPDATE nodes SET summary = ?, summary_stale = 0, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))
     return summary
 
 
@@ -1043,6 +1043,35 @@ def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
         return {"messages": list_messages(conn, node_id)}
 
 
+@app.get("/api/messages/{message_id}/patches")
+def message_patches(message_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        return {"patches": list_message_patches(conn, user["id"], message_id)}
+
+
+@app.post("/api/backfill/patches", status_code=201)
+def create_backfill_patch(payload: BackfillPatchCreate, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        patch = create_and_apply_patch(
+            conn,
+            user["id"],
+            source_child_node_id=payload.sourceChildNodeId,
+            target_message_id=payload.targetMessageId,
+            edit_type=payload.editType,
+            target_range_start=payload.targetRangeStart,
+            target_range_end=payload.targetRangeEnd,
+            replacement_text=payload.replacementText,
+        )
+        return {"patch": patch}
+
+
+@app.post("/api/backfill/patches/{patch_id}/archive")
+def archive_backfill_patch(patch_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        patch = archive_patch(conn, user["id"], patch_id)
+        return {"patch": patch}
+
+
 @app.post("/api/nodes/{node_id}/web-search")
 async def node_web_search(node_id: str, payload: NodeWebSearchRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
@@ -1066,12 +1095,20 @@ def create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict
     ts = now_iso()
 
     with connect() as conn:
+        source_metadata_json: str | None = None
         if payload.parentId:
             parent = get_node_for_user(conn, payload.parentId, user["id"])
             if not parent:
                 raise HTTPException(status_code=404, detail="Parent node not found")
             notebook_id = parent["notebook_id"]
             context_mode = payload.contextWeight
+            if payload.sourceMetadata is not None:
+                source_metadata_json = normalize_source_metadata_for_storage(
+                    conn,
+                    user["id"],
+                    payload.parentId,
+                    payload.sourceMetadata,
+                )
         else:
             notebook_id = payload.notebookId or node_id
             context_mode = "mainline"
@@ -1095,14 +1132,15 @@ def create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict
         conn.execute(
             """
             INSERT INTO nodes(
-              id, notebook_id, parent_id, title, summary, selected_text,
+              id, notebook_id, parent_id, title, summary, selected_text, source_metadata_json,
               context_mode, position, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               title = excluded.title,
               summary = excluded.summary,
               selected_text = excluded.selected_text,
+              source_metadata_json = excluded.source_metadata_json,
               context_mode = excluded.context_mode,
               updated_at = excluded.updated_at
             """,
@@ -1113,6 +1151,7 @@ def create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict
                 payload.title,
                 payload.summary,
                 payload.selectedText,
+                source_metadata_json,
                 context_mode,
                 sibling_count,
                 ts,
@@ -1297,6 +1336,12 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
             raise HTTPException(status_code=400, detail="No user message found to retry")
 
         model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
+        archived_patch_count = archive_patches_for_message(
+            conn,
+            user["id"],
+            payload.assistantMessageId,
+            "target_message_regenerated",
+        )
 
         try:
             content = call_model(model_messages, payload.modelName, payload.thinkingMode)
@@ -1317,6 +1362,7 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
             "nodeId": payload.nodeId,
             "nodeTitle": node_title,
             "nodeSummary": node_summary,
+            "archivedPatchCount": archived_patch_count,
         }
 
 
@@ -1352,6 +1398,12 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
             raise HTTPException(status_code=400, detail="No user message found to retry")
 
         model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
+        archived_patch_count = archive_patches_for_message(
+            conn,
+            user["id"],
+            payload.assistantMessageId,
+            "target_message_regenerated",
+        )
         previous_user_content = previous_user_message["content"]
 
     def generate():
@@ -1378,6 +1430,7 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
                     "nodeId": payload.nodeId,
                     "nodeTitle": node_title,
                     "nodeSummary": node_summary,
+                    "archivedPatchCount": archived_patch_count,
                 },
                 "done",
             )

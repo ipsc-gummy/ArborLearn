@@ -12,12 +12,15 @@ export interface ChatMessage {
   id: string;
   role: Role;
   content: string;
+  originalContent?: string | null;
   // ISO 字符串便于排序、序列化和与后端时间字段对齐。
   createdAt: string;
   // 预留：消息中可以显式链接到某个子节点。
   linkedNodeId?: string;
   // 如果消息由选中文本触发，这里记录触发片段。
   selectedText?: string;
+  patches?: ConversationPatch[];
+  stale?: boolean;
 }
 
 export interface KnowledgeNode {
@@ -27,7 +30,9 @@ export interface KnowledgeNode {
   title: string;
   kind: NodeKind;
   summary: string;
+  summaryStale?: boolean;
   selectedText?: string;
+  sourceMetadata?: BackfillSourceMetadata | null;
   contextWeight: ContextWeight;
   // children 只保存子节点 id，节点详情统一存在 store.nodes，便于更新和删除。
   children: string[];
@@ -52,4 +57,46 @@ export interface SelectionDraft {
   text: string;
   rect: DOMRect;
   sourceNodeId: string;
+  sourceMetadata?: BackfillSourceMetadata;
+}
+
+export type EditType = "correct" | "expand" | "compress" | "reframe";
+
+export interface ConversationPatch {
+  id: string;
+  sourceChildNodeId?: string | null;
+  targetMessageId: string;
+  targetRangeStart: number;
+  targetRangeEnd: number;
+  anchorRangeStart: number;
+  anchorRangeEnd: number;
+  anchorText: string;
+  originalText: string;
+  replacementText: string;
+  status: "draft" | "applied" | "rejected" | "archived";
+  editType: EditType;
+  mappingStatus?: "exact" | "stale" | "unmapped";
+  archiveReason?: string | null;
+  createdAt?: string;
+  appliedAt?: string | null;
+  archivedAt?: string | null;
+}
+
+export interface BackfillSourceMetadata {
+  type: "backfill_anchor";
+  parentNodeId: string;
+  targetMessageId: string;
+  targetMessageRole: Role;
+  targetMessageCreatedAt: string;
+  baseMessageContentHash: string;
+  baseContentLength: number;
+  coordinateSpace: "raw_markdown";
+  selectorStrategy: "dom_to_raw_exact";
+  anchorRangeStart: number;
+  anchorRangeEnd: number;
+  anchorText: string;
+  anchorPrefix: string;
+  anchorSuffix: string;
+  beforeContext: string;
+  afterContext: string;
 }
