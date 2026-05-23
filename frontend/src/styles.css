@@ -1060,6 +1060,30 @@ input {
     transform: translateX(0.12rem);
   }
 
+  .tl-notebook-book.is-menu-open .tl-notebook-cover {
+    transform: rotateY(-112deg) translateZ(1px);
+    box-shadow:
+      0 30px 64px rgba(0, 0, 0, 0.34),
+      -0.8rem 0 1.1rem rgba(0, 0, 0, 0.26) inset;
+  }
+
+  .tl-notebook-book.is-menu-open .tl-notebook-paper {
+    transform: translateX(0.12rem);
+  }
+
+  .tl-notebook-book.is-cover-locked:hover .tl-notebook-cover,
+  .tl-notebook-book.is-cover-locked:focus-within .tl-notebook-cover {
+    transform: rotateY(0deg) translateZ(1px);
+    box-shadow:
+      0 28px 54px rgba(0, 0, 0, 0.16),
+      0 1px 0 rgba(255, 255, 255, 0.32) inset;
+  }
+
+  .tl-notebook-book.is-cover-locked:hover .tl-notebook-paper,
+  .tl-notebook-book.is-cover-locked:focus-within .tl-notebook-paper {
+    transform: translateX(0);
+  }
+
   .tl-notebook-book .tl-notebook-paper .tl-notebook-diagram {
     margin-top: 0.95rem;
     max-height: 8.35rem;

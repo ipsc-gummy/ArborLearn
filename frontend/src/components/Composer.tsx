@@ -45,7 +45,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
 
   return (
     <div className="shrink-0 border-t border-border/70 px-3 py-3 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 78%, transparent)" }}>
-      <div className="tl-panel tl-focus-ring group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2 ring-1 ring-white/35 transition duration-200 hover:shadow-[0_18px_46px_rgba(25,45,64,0.14)] dark:ring-white/5">
+      <div className="tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -62,14 +62,14 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
         <div className="flex items-center justify-between gap-2 pt-1">
           <div className="flex flex-wrap items-center gap-1">
             <Button
-              variant={webSearchEnabled ? "secondary" : "ghost"}
+              variant="ghost"
               size="sm"
               title={webSearchEnabled ? "已开启联网搜索" : "开启联网搜索"}
               aria-pressed={webSearchEnabled}
               onClick={() => setWebSearchEnabled(!webSearchEnabled)}
               className={cn(
-                "transition",
-                webSearchEnabled && "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15",
+                "border-transparent transition focus:ring-0 focus:ring-offset-0 hover:border-transparent",
+                webSearchEnabled && "border-primary/30 bg-primary/10 text-primary hover:border-primary/30 hover:bg-primary/15",
               )}
             >
               <Globe className="h-4 w-4" />
@@ -79,7 +79,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
               variant="ghost"
               size="icon"
               title="上传文件"
-              className="h-9 w-9 text-muted-foreground shadow-none hover:bg-foreground/5 hover:text-foreground"
+              className="h-9 w-9 border-transparent text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0 hover:border-transparent hover:bg-foreground/5 hover:text-foreground"
             >
               <Paperclip className="h-4 w-4" />
             </Button>

@@ -116,9 +116,10 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
 
   return (
     <article className={cn("flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
-      <div
+      <div className={cn("group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
+        <div
         className={cn(
-          "group max-w-[82%] rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md md:max-w-[72%]",
+          "rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
           isUser
             ? "rounded-br-md border"
             : "tl-panel rounded-bl-md border text-card-foreground",
@@ -156,22 +157,29 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
                 }))}
               onTreeLinkClick={setActiveNode}
             />
-            <div className="tl-reveal-actions mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
-              <MessageActionButton title="复制" onClick={handleCopy}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </MessageActionButton>
-              <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
-                {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              </MessageActionButton>
-              <MessageActionButton
-                title="重试"
-                onClick={() => retryAssistantMessage(nodeId, message.id)}
-                disabled={isNodeRunning}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </MessageActionButton>
-            </div>
           </>
+        )}
+        </div>
+        {!isThinking && (
+          <div className={cn("tl-reveal-actions mt-1 flex items-center gap-1 px-1 text-muted-foreground", isUser ? "justify-end" : "justify-start")}>
+            <MessageActionButton title="复制" onClick={handleCopy}>
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </MessageActionButton>
+            {!isUser && (
+              <>
+                <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
+                  {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </MessageActionButton>
+                <MessageActionButton
+                  title="重试"
+                  onClick={() => retryAssistantMessage(nodeId, message.id)}
+                  disabled={isNodeRunning}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </MessageActionButton>
+              </>
+            )}
+          </div>
         )}
       </div>
     </article>
