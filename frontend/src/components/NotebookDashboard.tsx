@@ -545,7 +545,7 @@ export function NotebookDashboard({
                   <div className="tl-notebook-pages" aria-hidden="true" />
                   <div className="tl-notebook-paper">
                     <div className="tl-notebook-paper-rule" aria-hidden="true" />
-                    <p className="tl-notebook-summary pointer-events-none line-clamp-4">{node.summary}</p>
+                    <p className="tl-notebook-summary pointer-events-none line-clamp-3">{node.summary}</p>
                     <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
                   </div>
                   <div className="tl-notebook-cover">
