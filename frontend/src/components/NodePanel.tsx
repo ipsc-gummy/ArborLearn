@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import type { KnowledgeNode } from "../types/treelearn";
 import { LongTaskPanel } from "./LongTaskPanel";
+import { BackfillPanel } from "./BackfillPanel";
 
 interface NodePanelProps {
   node: KnowledgeNode;
@@ -16,7 +17,6 @@ interface NodePanelProps {
 // 单个知识节点的聊天面板：展示路径、摘要、消息列表和底部输入框。
 export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
-  const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
   const closeChildConversation = useTreeLearnStore((state) => state.closeChildConversation);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(node.messages.length);
@@ -63,17 +63,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
     });
   }, [node.id, node.messages.length, latestMessageContent]);
 
-  const handleMouseUp = () => {
-    // 使用浏览器 Selection API 读取用户在聊天内容区选中的文本。
-    // 这里不直接创建子对话，而是先把选区文本和屏幕坐标写入 Zustand，
-    // 由 SelectionBubble 负责展示“复制 / 搜索 / 子对话”等悬浮操作。
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-    if (!selection || !text || text.length < 2) return;
-    const range = selection.getRangeAt(0);
-    setSelectionDraft({ text, rect: range.getBoundingClientRect(), sourceNodeId: node.id });
-  };
-
   const handleScroll = () => {
     const scroller = scrollRef.current;
     if (!scroller) return;
@@ -95,8 +84,14 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
               {node.title}
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
+            {node.summaryStale && (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                摘要可能基于回填前内容生成
+              </p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {!compact && <BackfillPanel node={node} />}
             {!compact && <LongTaskPanel nodeId={node.id} notebookId={notebookId} nodeTitle={node.title} panelId={panelId} />}
             {showCloseChild && (
               <Button variant="ghost" size="icon" onClick={closeChildConversation} aria-label="关闭子对话">
@@ -111,7 +106,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         ref={scrollRef}
         className="min-h-0 overflow-y-auto px-3 py-6"
         onScroll={handleScroll}
-        onMouseUp={handleMouseUp}
       >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
           {node.selectedText && (

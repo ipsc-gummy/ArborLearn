@@ -17,7 +17,7 @@ import {
   setAuthToken,
   type AuthUser,
 } from "../lib/api";
-import type { ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
+import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
 import { uid } from "../lib/utils";
 import {
   DEFAULT_DEEPSEEK_MODEL_ID,
@@ -83,7 +83,7 @@ interface TreeLearnState {
   setSelectedModel: (scopeId: string, modelName: DeepSeekModelId) => void;
   setSelectedThinkingMode: (scopeId: string, thinkingMode: DeepSeekThinkingModeId) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
-  createChildConversation: (sourceNodeId: string, selectedText: string) => string;
+  createChildConversation: (sourceNodeId: string, selectedText: string, sourceMetadata?: BackfillSourceMetadata) => string;
   appendMessage: (nodeId: string, content: string, modelScope?: ModelScope) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
   stopMessage: (nodeId: string) => void;
@@ -476,7 +476,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     saveWebSearchEnabled(enabled);
     set({ webSearchEnabled: enabled });
   },
-  createChildConversation: (sourceNodeId, selectedText) => {
+  createChildConversation: (sourceNodeId, selectedText, sourceMetadata) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
     const id = uid("node");
     const now = new Date().toISOString();
@@ -489,6 +489,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       kind: "branch",
       summary: "",
       selectedText,
+      sourceMetadata: sourceMetadata ?? null,
       contextWeight: "isolated",
       children: [],
       expanded: true,

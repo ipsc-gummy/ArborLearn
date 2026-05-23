@@ -1,4 +1,4 @@
-import type { ChatMessage, KnowledgeNode } from "../types/treelearn";
+import type { ChatMessage, ConversationPatch, EditType, KnowledgeNode } from "../types/treelearn";
 import type { DeepSeekModelId, DeepSeekThinkingModeId } from "./models";
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
@@ -193,8 +193,29 @@ export function createBackendNode(node: KnowledgeNode, notebookId?: string) {
       summary: node.summary,
       selectedText: node.selectedText,
       contextWeight: node.contextWeight,
+      sourceMetadata: node.sourceMetadata,
       messages: node.messages,
     }),
+  });
+}
+
+export function createBackfillPatch(payload: {
+  sourceChildNodeId: string;
+  targetMessageId: string;
+  editType: EditType;
+  targetRangeStart: number;
+  targetRangeEnd: number;
+  replacementText: string;
+}) {
+  return request<{ patch: ConversationPatch }>("/api/backfill/patches", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function archiveBackfillPatch(patchId: string) {
+  return request<{ patch: ConversationPatch }>(`/api/backfill/patches/${patchId}/archive`, {
+    method: "POST",
   });
 }
 
