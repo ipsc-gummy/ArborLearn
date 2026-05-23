@@ -138,7 +138,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = response.statusText;
     try {
       const body = await response.json();
-      detail = body.detail ?? detail;
+      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? detail);
     } catch {
       // Keep the HTTP status text when the backend does not return JSON.
     }

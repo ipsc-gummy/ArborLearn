@@ -12,7 +12,12 @@ interface MessageBlockProps {
   message: ChatMessage;
 }
 
-const COMPLEX_MARKDOWN_RE = /```|`|\[[^\]]+\]\([^)]+\)|^\s{0,3}#{1,6}\s|^\s{0,3}>\s|^\s*([-*+]\s|\d+\.\s)|\|/m;
+interface MessageTreeLink {
+  id: string;
+  text: string;
+  title: string;
+  summary: string;
+}
 
 async function sha256(text: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -21,21 +26,105 @@ async function sha256(text: string) {
     .join("")}`;
 }
 
-function findPlainParagraphSelection(rawContent: string, selectedText: string) {
-  const first = rawContent.indexOf(selectedText);
-  if (first < 0 || rawContent.indexOf(selectedText, first + selectedText.length) >= 0) return null;
-  const paragraphStart = rawContent.lastIndexOf("\n\n", first) + 2;
-  const nextBreak = rawContent.indexOf("\n\n", first + selectedText.length);
+function normalizeSelectionText(text: string) {
+  return text.replace(/\u00a0/g, " ").trim();
+}
+
+function normalizeSearchText(text: string) {
+  return text.replace(/\u00a0/g, " ");
+}
+
+function findOccurrences(text: string, needle: string) {
+  const starts: number[] = [];
+  if (!needle) return starts;
+  let index = text.indexOf(needle);
+  while (index >= 0) {
+    starts.push(index);
+    index = text.indexOf(needle, index + Math.max(needle.length, 1));
+  }
+  return starts;
+}
+
+function buildRenderedMarkdownMap(rawContent: string) {
+  let rendered = "";
+  const rawByRenderedIndex: number[] = [];
+  let lineStart = true;
+  let inLinkLabel = false;
+  let skipLinkUrl = false;
+
+  for (let index = 0; index < rawContent.length; index += 1) {
+    const char = rawContent[index];
+    const next = rawContent[index + 1] ?? "";
+
+    if (lineStart) {
+      const rest = rawContent.slice(index);
+      const marker = rest.match(/^(#{1,6}\s+|>\s+|[-*+]\s+|\d+\.\s+)/);
+      if (marker) {
+        index += marker[0].length - 1;
+        lineStart = false;
+        continue;
+      }
+    }
+
+    if (skipLinkUrl) {
+      if (char === ")") skipLinkUrl = false;
+      continue;
+    }
+    if (char === "[" && !inLinkLabel) {
+      inLinkLabel = true;
+      continue;
+    }
+    if (char === "]" && inLinkLabel && next === "(") {
+      inLinkLabel = false;
+      skipLinkUrl = true;
+      index += 1;
+      continue;
+    }
+    if ((char === "*" && next === "*") || (char === "_" && next === "_") || (char === "~" && next === "~")) {
+      index += 1;
+      continue;
+    }
+    if (char === "`" || char === "*" || char === "_") continue;
+
+    rendered += char;
+    rawByRenderedIndex.push(index);
+    lineStart = char === "\n";
+  }
+
+  return { rendered, rawByRenderedIndex };
+}
+
+function locateRawMarkdownSelection(rawContent: string, selectedText: string) {
+  const target = normalizeSelectionText(selectedText);
+  const exactStarts = findOccurrences(rawContent, target);
+  if (exactStarts.length === 1) {
+    const start = exactStarts[0];
+    return buildLocatedSelection(rawContent, start, start + target.length, target);
+  }
+
+  const mapped = buildRenderedMarkdownMap(rawContent);
+  const renderedStarts = findOccurrences(normalizeSearchText(mapped.rendered), target);
+  if (renderedStarts.length !== 1) return null;
+  const renderedStart = renderedStarts[0];
+  const renderedEnd = renderedStart + target.length - 1;
+  const start = mapped.rawByRenderedIndex[renderedStart];
+  const end = mapped.rawByRenderedIndex[renderedEnd] + 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return null;
+  return buildLocatedSelection(rawContent, start, end, rawContent.slice(start, end));
+}
+
+function buildLocatedSelection(rawContent: string, start: number, end: number, anchorText: string) {
+  const paragraphStart = Math.max(rawContent.lastIndexOf("\n\n", start) + 2, 0);
+  const nextBreak = rawContent.indexOf("\n\n", end);
   const paragraphEnd = nextBreak >= 0 ? nextBreak : rawContent.length;
-  const paragraph = rawContent.slice(paragraphStart, paragraphEnd);
-  if (COMPLEX_MARKDOWN_RE.test(paragraph)) return null;
   return {
-    start: first,
-    end: first + selectedText.length,
-    beforeContext: rawContent.slice(paragraphStart, first),
-    afterContext: rawContent.slice(first + selectedText.length, paragraphEnd),
-    prefix: rawContent.slice(Math.max(0, first - 80), first),
-    suffix: rawContent.slice(first + selectedText.length, first + selectedText.length + 80),
+    start,
+    end,
+    anchorText,
+    beforeContext: rawContent.slice(paragraphStart, start),
+    afterContext: rawContent.slice(end, paragraphEnd),
+    prefix: rawContent.slice(Math.max(0, start - 80), start),
+    suffix: rawContent.slice(end, end + 80),
   };
 }
 
@@ -74,6 +163,30 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const [showOriginal, setShowOriginal] = useState(false);
   const patches = message.patches ?? [];
   const hasAppliedPatches = patches.some((patch) => patch.status === "applied");
+  const messageTreeLinks: MessageTreeLink[] = [
+    ...patches
+      .filter((patch) => patch.status === "applied" && patch.sourceChildNodeId && patch.replacementText)
+      .map((patch) => {
+        const child = nodes[patch.sourceChildNodeId ?? ""];
+        return child
+          ? {
+              id: child.id,
+              text: patch.replacementText,
+              title: child.title,
+              summary: child.summary,
+            }
+          : null;
+      })
+      .filter((link): link is MessageTreeLink => Boolean(link)),
+    ...children
+      .filter((child) => child.selectedText)
+      .map((child) => ({
+        id: child.id,
+        text: child.selectedText ?? "",
+        title: child.title,
+        summary: child.summary,
+      })),
+  ];
 
   const writeToClipboard = async (content: string) => {
     await navigator.clipboard?.writeText(content);
@@ -112,36 +225,37 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   };
 
   const handleMouseUp = async () => {
-    if (isSystem || hasAppliedPatches) return;
+    if (isSystem) return;
     const selection = window.getSelection();
-    const text = selection?.toString().trim();
+    const text = normalizeSelectionText(selection?.toString() ?? "");
     if (!selection || !text || text.length < 2 || selection.rangeCount === 0) return;
     const rawContent = message.originalContent || message.content;
-    const located = findPlainParagraphSelection(rawContent, text);
-    if (!located) return;
+    const located = locateRawMarkdownSelection(rawContent, text);
     const range = selection.getRangeAt(0);
     setSelectionDraft({
       text,
       rect: range.getBoundingClientRect(),
       sourceNodeId: nodeId,
-      sourceMetadata: {
-        type: "backfill_anchor",
-        parentNodeId: nodeId,
-        targetMessageId: message.id,
-        targetMessageRole: message.role,
-        targetMessageCreatedAt: message.createdAt,
-        baseMessageContentHash: await sha256(rawContent),
-        baseContentLength: rawContent.length,
-        coordinateSpace: "raw_markdown",
-        selectorStrategy: "dom_to_raw_exact",
-        anchorRangeStart: located.start,
-        anchorRangeEnd: located.end,
-        anchorText: text,
-        anchorPrefix: located.prefix,
-        anchorSuffix: located.suffix,
-        beforeContext: located.beforeContext,
-        afterContext: located.afterContext,
-      },
+      sourceMetadata: located
+        ? {
+            type: "backfill_anchor",
+            parentNodeId: nodeId,
+            targetMessageId: message.id,
+            targetMessageRole: message.role,
+            targetMessageCreatedAt: message.createdAt,
+            baseMessageContentHash: await sha256(rawContent),
+            baseContentLength: rawContent.length,
+            coordinateSpace: "raw_markdown",
+            selectorStrategy: "dom_to_raw_exact",
+            anchorRangeStart: located.start,
+            anchorRangeEnd: located.end,
+            anchorText: located.anchorText,
+            anchorPrefix: located.prefix,
+            anchorSuffix: located.suffix,
+            beforeContext: located.beforeContext,
+            afterContext: located.afterContext,
+          }
+        : undefined,
     });
   };
 
@@ -154,30 +268,30 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     // 逐个查找当前节点下由 selectedText 创建的子节点，把原文片段替换为链接按钮。
     let content: Array<string | ReactElement> = [message.content];
 
-    children.forEach((child) => {
-      const childSummary = child.summary.trim() || "摘要将在子对话更新后生成。";
+    messageTreeLinks.forEach((link) => {
+      const childSummary = link.summary.trim() || "摘要将在子对话更新后生成。";
       content = content.flatMap((part) => {
         // ReactElement 不再继续切分；没有匹配片段时保持原样。
-        if (typeof part !== "string" || !child.selectedText || !part.includes(child.selectedText)) return [part];
+        if (typeof part !== "string" || !link.text || !part.includes(link.text)) return [part];
 
-        const [before, ...rest] = part.split(child.selectedText);
+        const [before, ...rest] = part.split(link.text);
 
         return [
           before,
-          <span key={`${message.id}-${child.id}`} className="relative inline-flex">
-            <button className="tree-link peer" onClick={() => setActiveNode(child.id)}>
-              {child.selectedText}
+          <span key={`${message.id}-${link.id}`} className="relative inline-flex">
+            <button className="tree-link peer" onClick={() => setActiveNode(link.id)}>
+              {link.text}
             </button>
             {/* 使用 peer-hover 限定触发区域：只有鼠标真正悬停在超链接按钮上时才显示预览。 */}
             <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
               <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
                 <GitBranch className="tl-brand h-4 w-4" />
-                {child.title}
+                {link.title}
               </span>
               <span className="line-clamp-3 block text-muted-foreground">{childSummary}</span>
             </span>
           </span>,
-          rest.join(child.selectedText),
+          rest.join(link.text),
         ];
       });
     });
@@ -253,14 +367,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
           <>
             <MarkdownContent
               content={message.content}
-              treeLinks={children
-                .filter((child) => child.selectedText)
-                .map((child) => ({
-                  id: child.id,
-                  text: child.selectedText ?? "",
-                  title: child.title,
-                  summary: child.summary,
-                }))}
+              treeLinks={messageTreeLinks}
               onTreeLinkClick={setActiveNode}
             />
             <div className="tl-reveal-actions mt-3 flex items-center gap-1 border-t border-border/60 pt-2 text-muted-foreground">
