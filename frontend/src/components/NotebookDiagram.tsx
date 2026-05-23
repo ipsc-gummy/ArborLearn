@@ -186,7 +186,7 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
       className="relative h-full min-h-0 cursor-grab overflow-hidden active:cursor-grabbing"
       style={{
         background:
-          "radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--tl-brand) 8%, transparent), transparent 24rem), linear-gradient(color-mix(in srgb, var(--tl-border) 32%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--tl-border) 32%, transparent) 1px, transparent 1px), var(--tl-panel-muted)",
+          "radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--tl-brand) 8%, transparent), transparent 24rem), linear-gradient(color-mix(in srgb, var(--tl-border) 24%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--tl-border) 24%, transparent) 1px, transparent 1px), transparent",
         backgroundSize: "auto, 28px 28px, 28px 28px, auto",
       }}
       onPointerDown={handlePointerDown}

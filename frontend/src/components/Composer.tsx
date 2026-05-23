@@ -27,7 +27,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const selectedModel = useTreeLearnStore((state) => state.getModelConfig(scope).model);
   const setModelConfig = useTreeLearnStore((state) => state.setModelConfig);
   const selectedThinkingMode = useTreeLearnStore((state) => state.getModelConfig(scope).thinkingMode);
-  const webSearchEnabled = useTreeLearnStore((state) => state.webSearchEnabled);
+  const webSearchEnabled = useTreeLearnStore((state) => state.webSearchEnabledByNode[nodeId] ?? false);
   const setWebSearchEnabled = useTreeLearnStore((state) => state.setWebSearchEnabled);
   const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
   const isThinking = chatRunStatus === "thinking";
@@ -44,7 +44,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   };
 
   return (
-    <div className="shrink-0 border-t border-border/70 px-3 py-3 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 78%, transparent)" }}>
+    <div className="shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
       <div className="tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
         <textarea
           value={value}
@@ -66,7 +66,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
               size="sm"
               title={webSearchEnabled ? "已开启联网搜索" : "开启联网搜索"}
               aria-pressed={webSearchEnabled}
-              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              onClick={() => setWebSearchEnabled(nodeId, !webSearchEnabled)}
               className={cn(
                 "border-transparent transition focus:ring-0 focus:ring-offset-0 hover:border-transparent",
                 webSearchEnabled && "border-primary/30 bg-primary/10 text-primary hover:border-primary/30 hover:bg-primary/15",

@@ -19,7 +19,7 @@ interface TopBarProps {
 // 工作区顶部栏：只保留页面级操作，具体节点操作放在左侧树和聊天面板中。
 export function TopBar({ onHome, themeMode, onThemeChange, user, onLogout, onRequestAuth }: TopBarProps) {
   return (
-    <header className="tl-app-bg-elevated relative z-20 flex h-16 shrink-0 items-center justify-between border-b tl-border px-3 backdrop-blur-xl md:px-5">
+    <header className="relative z-20 flex h-16 shrink-0 items-center justify-between px-3 backdrop-blur-sm md:px-5">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" onClick={onHome} aria-label="返回首页">
           <ArrowLeft className="h-4 w-4" />
