@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
-import { GitPullRequest, Route, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, GitPullRequest, Route, X } from "lucide-react";
 import { Composer } from "./Composer";
 import { MessageBlock } from "./MessageBlock";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
+import { cn } from "../lib/utils";
 import type { KnowledgeNode } from "../types/treelearn";
-import { LongTaskPanel } from "./LongTaskPanel";
 
 interface NodePanelProps {
   node: KnowledgeNode;
@@ -13,7 +13,6 @@ interface NodePanelProps {
   showCloseChild?: boolean;
 }
 
-// 单个知识节点的聊天面板：展示路径、摘要、消息列表和底部输入框。
 export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
   const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
@@ -22,6 +21,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   const previousMessageCountRef = useRef(node.messages.length);
   const previousNodeIdRef = useRef(node.id);
   const shouldFollowScrollRef = useRef(true);
+  const [nodeInfoOpen, setNodeInfoOpen] = useState(false);
 
   const path = useMemo(() => {
     const items: KnowledgeNode[] = [];
@@ -37,13 +37,17 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   const visibleMessages = node.messages.filter((message) => message.role !== "system");
   const notebookId = path[0]?.id ?? node.id;
   const panelId = `${compact ? "compact" : "main"}:${showCloseChild ? "child" : "primary"}:${node.id}`;
+  const nodeInfoPanelId = `${panelId}:node-info`;
+  const nodeInfoToggleLabel = nodeInfoOpen ? "收回节点标题和概要" : "展开节点标题和概要";
 
   useEffect(() => {
     const isNodeChange = previousNodeIdRef.current !== node.id;
     previousNodeIdRef.current = node.id;
-    if (isNodeChange) shouldFollowScrollRef.current = true;
+    if (isNodeChange) {
+      shouldFollowScrollRef.current = true;
+      setNodeInfoOpen(false);
+    }
 
-    // 新消息出现时，只滚动中间消息区到底部；底部输入框不会被消息内容挤走。
     const scroller = scrollRef.current;
     if (!scroller) return;
     const hasNewMessage = previousMessageCountRef.current !== node.messages.length;
@@ -64,9 +68,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   }, [node.id, node.messages.length, latestMessageContent]);
 
   const handleMouseUp = () => {
-    // 使用浏览器 Selection API 读取用户在聊天内容区选中的文本。
-    // 这里不直接创建子对话，而是先把选区文本和屏幕坐标写入 Zustand，
-    // 由 SelectionBubble 负责展示“复制 / 搜索 / 子对话”等悬浮操作。
     const selection = window.getSelection();
     const text = selection?.toString().trim();
     if (!selection || !text || text.length < 2) return;
@@ -82,34 +83,62 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   };
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden" style={{ background: "var(--tl-panel-muted)" }}>
-      <div className="relative border-b border-border/70 px-5 py-4 backdrop-blur-xl" style={{ background: "color-mix(in srgb, var(--tl-panel) 86%, transparent)" }}>
-        <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/65 to-transparent dark:via-white/10" />
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <Route className="h-4 w-4" />
-          <span className="truncate">{path.map((item) => item.title).join(" / ")}</span>
-        </div>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className={compact ? "truncate text-base font-semibold" : "text-xl font-semibold"}>
-              {node.title}
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {!compact && <LongTaskPanel nodeId={node.id} notebookId={notebookId} nodeTitle={node.title} panelId={panelId} />}
-            {showCloseChild && (
-              <Button variant="ghost" size="icon" onClick={closeChildConversation} aria-label="关闭子对话">
-                <X className="h-4 w-4" />
-              </Button>
+    <section className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent">
+      <div
+        className="tl-border-soft relative z-20 h-5 shrink-0 border-b"
+        style={{ background: "color-mix(in srgb, var(--tl-panel) 10%, transparent)" }}
+      >
+        <div className="absolute left-3 right-3 top-full z-30 mx-auto max-w-4xl">
+          <div
+            id={nodeInfoPanelId}
+            className={cn(
+              "grid overflow-hidden rounded-b-2xl border-x border-b border-border/55 shadow-sm backdrop-blur-xl transition-[grid-template-rows] duration-300 ease-out",
+              nodeInfoOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
             )}
+            style={{ background: "color-mix(in srgb, var(--tl-panel-solid) 88%, transparent)" }}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="relative px-5 py-4">
+                <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/65 to-transparent dark:via-white/10" />
+                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Route className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{path.map((item) => item.title).join(" / ")}</span>
+                </div>
+                <h2 className={compact ? "truncate text-base font-semibold" : "text-xl font-semibold"}>{node.title}</h2>
+                {node.summary && <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>}
+              </div>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setNodeInfoOpen((open) => !open)}
+            className="mx-auto flex h-5 w-14 items-center justify-center rounded-b-full border-x border-b border-border/55 bg-background/75 text-muted-foreground shadow-sm backdrop-blur-md transition-colors duration-200 hover:bg-background/90 hover:text-foreground"
+            aria-expanded={nodeInfoOpen}
+            aria-controls={nodeInfoPanelId}
+            aria-label={nodeInfoToggleLabel}
+            title={nodeInfoToggleLabel}
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-300", nodeInfoOpen && "rotate-180")} />
+          </button>
         </div>
       </div>
 
+      {showCloseChild && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={closeChildConversation}
+          aria-label="关闭子对话"
+          title="关闭子对话"
+          className="absolute right-4 top-4 z-20 h-9 w-9 rounded-full border border-border/55 bg-background/35 shadow-sm backdrop-blur-sm hover:bg-background/55"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
+
       <div
         ref={scrollRef}
-        className="min-h-0 overflow-y-auto px-3 py-6"
+        className="min-h-0 overflow-y-auto px-3 pb-5 pt-7"
         onScroll={handleScroll}
         onMouseUp={handleMouseUp}
       >

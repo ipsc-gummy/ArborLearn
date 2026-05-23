@@ -40,7 +40,7 @@ const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
 const MODEL_CONFIGS_BY_SCOPE_KEY = "arborlearn:model-configs";
-const WEB_SEARCH_ENABLED_KEY = "arborlearn.webSearchEnabled";
+const WEB_SEARCH_ENABLED_BY_NODE_KEY = "arborlearn.webSearchEnabledByNode";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface TreeLearnState {
@@ -61,7 +61,7 @@ interface TreeLearnState {
   selectedModel: DeepSeekModelId;
   selectedThinkingMode: DeepSeekThinkingModeId;
   configsByScope: Record<string, ModelConfig>;
-  webSearchEnabled: boolean;
+  webSearchEnabledByNode: Record<string, boolean>;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
@@ -82,7 +82,7 @@ interface TreeLearnState {
   setModelConfig: (scopeId: string, config: ModelConfig) => void;
   setSelectedModel: (scopeId: string, modelName: DeepSeekModelId) => void;
   setSelectedThinkingMode: (scopeId: string, thinkingMode: DeepSeekThinkingModeId) => void;
-  setWebSearchEnabled: (enabled: boolean) => void;
+  setWebSearchEnabled: (nodeId: string, enabled: boolean) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string) => string;
   appendMessage: (nodeId: string, content: string, modelScope?: ModelScope) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
@@ -233,18 +233,21 @@ function saveModelConfigsByScope(configs: Record<string, ModelConfig>) {
   }
 }
 
-function getStoredWebSearchEnabled(): boolean {
+function getStoredWebSearchEnabledByNode(): Record<string, boolean> {
   try {
-    return localStorage.getItem(WEB_SEARCH_ENABLED_KEY) === "true";
+    const saved = localStorage.getItem(WEB_SEARCH_ENABLED_BY_NODE_KEY);
+    if (!saved) return {};
+    const parsed = JSON.parse(saved) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "boolean")) as Record<string, boolean>;
   } catch {
     // Ignore storage failures; the in-memory default still applies.
-    return false;
+    return {};
   }
 }
 
-function saveWebSearchEnabled(enabled: boolean) {
+function saveWebSearchEnabledByNode(settings: Record<string, boolean>) {
   try {
-    localStorage.setItem(WEB_SEARCH_ENABLED_KEY, String(enabled));
+    localStorage.setItem(WEB_SEARCH_ENABLED_BY_NODE_KEY, JSON.stringify(settings));
   } catch {
     // Ignore storage failures; the in-memory toggle still applies.
   }
@@ -265,7 +268,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   selectedModel: getStoredModelSelection(),
   selectedThinkingMode: getStoredThinkingModeSelection(),
   configsByScope: getStoredModelConfigsByScope(),
-  webSearchEnabled: getStoredWebSearchEnabled(),
+  webSearchEnabledByNode: getStoredWebSearchEnabledByNode(),
   chatRunStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
@@ -470,9 +473,10 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const currentConfig = get().configsByScope[scopeId] ?? get().getModelConfig({});
     get().setModelConfig(scopeId, { ...currentConfig, thinkingMode });
   },
-  setWebSearchEnabled: (enabled) => {
-    saveWebSearchEnabled(enabled);
-    set({ webSearchEnabled: enabled });
+  setWebSearchEnabled: (nodeId, enabled) => {
+    const nextSettings = { ...get().webSearchEnabledByNode, [nodeId]: enabled };
+    saveWebSearchEnabledByNode(nextSettings);
+    set({ webSearchEnabledByNode: nextSettings });
   },
   createChildConversation: (sourceNodeId, selectedText) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
@@ -527,7 +531,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
   appendMessage: (nodeId, content, modelScope) => {
     const state = get();
     if (state.chatRunStatusByNode[nodeId]) return;
-    const useWebSearch = state.webSearchEnabled;
+    const useWebSearch = state.webSearchEnabledByNode[nodeId] ?? false;
 
     const now = new Date().toISOString();
     const notebookId = getNotebookRootId(state.nodes, nodeId);
