@@ -1,4 +1,7 @@
-# 局部回填功能实现方案
+# 局部回填功能实现方案cd D:\AAAlab\softlab\ArborLearn\backend
+
+.\.venv\Scripts\activate
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## 0. 本次变更范围
 
@@ -31,7 +34,6 @@
 
 1. 选区定位不能只依赖 `selectedText`。
    系统必须稳定记录用户选的是哪条消息、原文里的哪一段、基于哪个消息版本、是否还能映射回原文。
-
 2. 上下文一致性必须覆盖所有模型入口。
    任何会读取对话内容的后端链路都必须读取 applied patches 后的 effective context，包括普通聊天、重新生成、联网检索、长任务、摘要生成、标题生成和 context debug。不能出现部分入口读新内容、部分入口读旧内容。
 
