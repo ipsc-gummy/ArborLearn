@@ -406,6 +406,7 @@ export async function postChatStream(
     thinkingMode?: DeepSeekThinkingModeId;
     webSearch?: boolean;
     webQuery?: string;
+    ragEnabled?: boolean;
   },
   callbacks: ChatStreamCallbacks,
   signal?: AbortSignal,
