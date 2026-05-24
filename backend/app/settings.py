@@ -44,3 +44,23 @@ def get_cors_origins() -> list[str]:
         "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175",
     )
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def get_vector_db_path() -> Path:
+    """获取向量数据库路径"""
+    configured = os.getenv("VECTOR_DB_PATH", "data/lancedb")
+    path = Path(configured)
+    if not path.is_absolute():
+        path = BACKEND_DIR / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_vector_embedding_model() -> str:
+    """获取向量嵌入模型名称"""
+    return os.getenv("VECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+
+def is_rag_enabled() -> bool:
+    """检查是否启用 RAG 功能"""
+    return os.getenv("ENABLE_RAG", "false").lower() == "true"

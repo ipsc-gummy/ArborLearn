@@ -581,6 +581,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         modelName,
         thinkingMode,
         webSearch: useWebSearch,
+        ragEnabled: import.meta.env.VITE_RAG_ENABLED === "true",
       },
       {
         onDelta: (delta) => {
