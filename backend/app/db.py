@@ -699,6 +699,20 @@ def get_long_task_for_user(conn: sqlite3.Connection, user_id: str, task_id: str)
     return row_to_long_task(row) if row else None
 
 
+def list_long_tasks_for_node(conn: sqlite3.Connection, user_id: str, node_id: str, limit: int = 20) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM long_tasks
+        WHERE user_id = ? AND node_id = ?
+        ORDER BY datetime(updated_at) DESC, datetime(created_at) DESC
+        LIMIT ?
+        """,
+        (user_id, node_id, limit),
+    ).fetchall()
+    return [row_to_long_task(row) for row in rows]
+
+
 def list_long_task_steps(conn: sqlite3.Connection, user_id: str, task_id: str) -> list[dict]:
     rows = conn.execute(
         """
