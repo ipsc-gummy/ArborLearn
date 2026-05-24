@@ -1,0 +1,230 @@
+warning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/backend/app/main.py b/backend/app/main.py[m
+[1mindex 08be74d..62e9b4d 100644[m
+[1m--- a/backend/app/main.py[m
+[1m+++ b/backend/app/main.py[m
+[36m@@ -13,6 +13,13 @@[m [mfrom fastapi.responses import StreamingResponse[m
+ from pydantic import BaseModel, ConfigDict, Field[m
+ [m
+ from .auth import create_token, normalize_email, password_hash, require_user, verify_password[m
+[32m+[m[32mfrom .backfill import ([m
+[32m+[m[32m    archive_patch,[m
+[32m+[m[32m    archive_patches_for_message,[m
+[32m+[m[32m    create_and_apply_patch,[m
+[32m+[m[32m    list_message_patches,[m
+[32m+[m[32m    normalize_source_metadata_for_storage,[m
+[32m+[m[32m)[m
+ from .context_builder import build_model_messages[m
+ from .db import ([m
+     add_message,[m
+[36m@@ -37,6 +44,7 @@[m [mfrom .db import ([m
+     update_long_task_status,[m
+     uid,[m
+ )[m
+[32m+[m[32mfrom .effective_context import list_effective_messages[m
+ from .long_task_context import build_step_context[m
+ from .long_task_runner import LongTaskRunner[m
+ from .long_task_schemas import LongTaskCreateRequest[m
+[36m@@ -127,6 +135,7 @@[m [mclass NodeCreate(BaseModel):[m
+     summary: str = ""[m
+     selectedText: str | None = None[m
+     contextWeight: Literal["isolated", "mainline"] = "isolated"[m
+[32m+[m[32m    sourceMetadata: dict | None = None[m
+     messages: list[MessagePayload] = Field(default_factory=list)[m
+ [m
+ [m
+[36m@@ -138,6 +147,15 @@[m [mclass NodePatch(BaseModel):[m
+     parentId: str | None = None[m
+ [m
+ [m
+[32m+[m[32mclass BackfillPatchCreate(BaseModel):[m
+[32m+[m[32m    sourceChildNodeId: str[m
+[32m+[m[32m    targetMessageId: str[m
+[32m+[m[32m    editType: Literal["correct", "expand", "compress", "reframe"][m
+[32m+[m[32m    targetRangeStart: int[m
+[32m+[m[32m    targetRangeEnd: int[m
+[32m+[m[32m    replacementText: str = Field(min_length=1)[m
+[32m+[m
+[32m+[m
+ class WebSearchRequest(BaseModel):[m
+     query: str = Field(min_length=1)[m
+     max_results: int = Field(5, ge=1, le=8, alias="maxResults")[m
+[36m@@ -593,16 +611,7 @@[m [mdef maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_[m
+     if not node or node["parent_id"] is None:[m
+         return None[m
+ [m
+[31m-    rows = conn.execute([m
+[31m-        """[m
+[31m-        SELECT role, content[m
+[31m-        FROM messages[m
+[31m-        WHERE node_id = ? AND role IN ('user', 'assistant')[m
+[31m-        ORDER BY created_at ASC[m
+[31m-        LIMIT 24[m
+[31m-        """,[m
+[31m-        (node_id,),[m
+[31m-    ).fetchall()[m
+[32m+[m[32m    rows = list_effective_messages(conn, node_id, limit=24, ascending=True)[m
+     if not rows:[m
+         return None[m
+ [m
+[36m@@ -629,7 +638,7 @@[m [mdef maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_[m
+     if not summary:[m
+         return None[m
+ [m
+[31m-    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))[m
+[32m+[m[32m    conn.execute("UPDATE nodes SET summary = ?, summary_stale = 0, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))[m
+     return summary[m
+ [m
+ [m
+[36m@@ -645,16 +654,7 @@[m [mdef maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na[m
+     if not node:[m
+         return None[m
+ [m
+[31m-    rows = conn.execute([m
+[31m-        """[m
+[31m-        SELECT role, content[m
+[31m-        FROM messages[m
+[31m-        WHERE node_id = ? AND role IN ('user', 'assistant')[m
+[31m-        ORDER BY created_at ASC[m
+[31m-        LIMIT 24[m
+[31m-        """,[m
+[31m-        (node_id,),[m
+[31m-    ).fetchall()[m
+[32m+[m[32m    rows = list_effective_messages(conn, node_id, limit=24, ascending=True)[m
+     if not rows:[m
+         return None[m
+ [m
+[36m@@ -688,7 +688,7 @@[m [mdef maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na[m
+     if not summary:[m
+         return None[m
+ [m
+[31m-    conn.execute("UPDATE nodes SET summary = ?, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))[m
+[32m+[m[32m    conn.execute("UPDATE nodes SET summary = ?, summary_stale = 0, updated_at = ? WHERE id = ?", (summary, now_iso(), node_id))[m
+     return summary[m
+ [m
+ [m
+[36m@@ -1043,6 +1043,35 @@[m [mdef node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:[m
+         return {"messages": list_messages(conn, node_id)}[m
+ [m
+ [m
+[32m+[m[32m@app.get("/api/messages/{message_id}/patches")[m
+[32m+[m[32mdef message_patches(message_id: str, user: dict = Depends(require_user)) -> dict:[m
+[32m+[m[32m    with connect() as conn:[m
+[32m+[m[32m        return {"patches": list_message_patches(conn, user["id"], message_id)}[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@app.post("/api/backfill/patches", status_code=201)[m
+[32m+[m[32mdef create_backfill_patch(payload: BackfillPatchCreate, user: dict = Depends(require_user)) -> dict:[m
+[32m+[m[32m    with connect() as conn:[m
+[32m+[m[32m        patch = create_and_apply_patch([m
+[32m+[m[32m            conn,[m
+[32m+[m[32m            user["id"],[m
+[32m+[m[32m            source_child_node_id=payload.sourceChildNodeId,[m
+[32m+[m[32m            target_message_id=payload.targetMessageId,[m
+[32m+[m[32m            edit_type=payload.editType,[m
+[32m+[m[32m            target_range_start=payload.targetRangeStart,[m
+[32m+[m[32m            target_range_end=payload.targetRangeEnd,[m
+[32m+[m[32m            replacement_text=payload.replacementText,[m
+[32m+[m[32m        )[m
+[32m+[m[32m        return {"patch": patch}[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@app.post("/api/backfill/patches/{patch_id}/archive")[m
+[32m+[m[32mdef archive_backfill_patch(patch_id: str, user: dict = Depends(require_user)) -> dict:[m
+[32m+[m[32m    with connect() as conn:[m
+[32m+[m[32m        patch = archive_patch(conn, user["id"], patch_id)[m
+[32m+[m[32m        return {"patch": patch}[m
+[32m+[m
+[32m+[m
+ @app.post("/api/nodes/{node_id}/web-search")[m
+ async def node_web_search(node_id: str, payload: NodeWebSearchRequest, user: dict = Depends(require_user)) -> dict:[m
+     with connect() as conn:[m
+[36m@@ -1066,12 +1095,20 @@[m [mdef create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict[m
+     ts = now_iso()[m
+ [m
+     with connect() as conn:[m
+[32m+[m[32m        source_metadata_json: str | None = None[m
+         if payload.parentId:[m
+             parent = get_node_for_user(conn, payload.parentId, user["id"])[m
+             if not parent:[m
+                 raise HTTPException(status_code=404, detail="Parent node not found")[m
+             notebook_id = parent["notebook_id"][m
+             context_mode = payload.contextWeight[m
+[32m+[m[32m            if payload.sourceMetadata is not None:[m
+[32m+[m[32m                source_metadata_json = normalize_source_metadata_for_storage([m
+[32m+[m[32m                    conn,[m
+[32m+[m[32m                    user["id"],[m
+[32m+[m[32m                    payload.parentId,[m
+[32m+[m[32m                    payload.sourceMetadata,[m
+[32m+[m[32m                )[m
+         else:[m
+             notebook_id = payload.notebookId or node_id[m
+             context_mode = "mainline"[m
+[36m@@ -1095,14 +1132,15 @@[m [mdef create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict[m
+         conn.execute([m
+             """[m
+             INSERT INTO nodes([m
+[31m-              id, notebook_id, parent_id, title, summary, selected_text,[m
+[32m+[m[32m              id, notebook_id, parent_id, title, summary, selected_text, source_metadata_json,[m
+               context_mode, position, created_at, updated_at[m
+             )[m
+[31m-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)[m
+[32m+[m[32m            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)[m
+             ON CONFLICT(id) DO UPDATE SET[m
+               title = excluded.title,[m
+               summary = excluded.summary,[m
+               selected_text = excluded.selected_text,[m
+[32m+[m[32m              source_metadata_json = excluded.source_metadata_json,[m
+               context_mode = excluded.context_mode,[m
+               updated_at = excluded.updated_at[m
+             """,[m
+[36m@@ -1113,6 +1151,7 @@[m [mdef create_node(payload: NodeCreate, user: dict = Depends(require_user)) -> dict[m
+                 payload.title,[m
+                 payload.summary,[m
+                 payload.selectedText,[m
+[32m+[m[32m                source_metadata_json,[m
+                 context_mode,[m
+                 sibling_count,[m
+                 ts,[m
+[36m@@ -1297,6 +1336,12 @@[m [mdef retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->[m
+             raise HTTPException(status_code=400, detail="No user message found to retry")[m
+ [m
+         model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)[m
+[32m+[m[32m        archived_patch_count = archive_patches_for_message([m
+[32m+[m[32m            conn,[m
+[32m+[m[32m            user["id"],[m
+[32m+[m[32m            payload.assistantMessageId,[m
+[32m+[m[32m            "target_message_regenerated",[m
+[32m+[m[32m        )[m
+ [m
+         try:[m
+             content = call_model(model_messages, payload.modelName, payload.thinkingMode)[m
+[36m@@ -1317,6 +1362,7 @@[m [mdef retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->[m
+             "nodeId": payload.nodeId,[m
+             "nodeTitle": node_title,[m
+             "nodeSummary": node_summary,[m
+[32m+[m[32m            "archivedPatchCount": archived_patch_count,[m
+         }[m
+ [m
+ [m
+[36m@@ -1352,6 +1398,12 @@[m [mdef retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us[m
+             raise HTTPException(status_code=400, detail="No user message found to retry")[m
+ [m
+         model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)[m
+[32m+[m[32m        archived_patch_count = archive_patches_for_message([m
+[32m+[m[32m            conn,[m
+[32m+[m[32m            user["id"],[m
+[32m+[m[32m            payload.assistantMessageId,[m
+[32m+[m[32m            "target_message_regenerated",[m
+[32m+[m[32m        )[m
+         previous_user_content = previous_user_message["content"][m
+ [m
+     def generate():[m
+[36m@@ -1378,6 +1430,7 @@[m [mdef retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us[m
+                     "nodeId": payload.nodeId,[m
+                     "nodeTitle": node_title,[m
+                     "nodeSummary": node_summary,[m
+[32m+[m[32m                    "archivedPatchCount": archived_patch_count,[m
+                 },[m
+                 "done",[m
+             )[m
