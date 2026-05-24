@@ -6,7 +6,6 @@ import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
 import type { KnowledgeNode } from "../types/treelearn";
-import { LongTaskPanel } from "./LongTaskPanel";
 import { BackfillPanel } from "./BackfillPanel";
 
 interface NodePanelProps {
@@ -113,7 +112,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {!compact && <BackfillPanel node={node} />}
-                    {!compact && <LongTaskPanel nodeId={node.id} notebookId={notebookId} nodeTitle={node.title} panelId={panelId} />}
                   </div>
                 </div>
               </div>
