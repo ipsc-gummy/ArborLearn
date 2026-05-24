@@ -213,6 +213,35 @@ export function createBackfillPatch(payload: {
   });
 }
 
+export function createBackfillDraft(payload: {
+  sourceChildNodeId: string;
+  targetMessageId: string;
+  editType: EditType;
+  userInstruction?: string;
+  modelName?: DeepSeekModelId;
+  thinkingMode?: DeepSeekThinkingModeId;
+}) {
+  return request<{
+    draft: {
+      sourceChildNodeId: string;
+      targetMessageId: string;
+      editType: EditType;
+      targetRangeStart: number;
+      targetRangeEnd: number;
+      originalText: string;
+      replacementText: string;
+      rangeSuggestion?: null | {
+        targetRangeStart: number;
+        targetRangeEnd: number;
+        reason: string;
+      };
+    };
+  }>("/api/backfill/draft", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function archiveBackfillPatch(patchId: string) {
   return request<{ patch: ConversationPatch }>(`/api/backfill/patches/${patchId}/archive`, {
     method: "POST",

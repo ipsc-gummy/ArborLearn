@@ -14,11 +14,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
 from .backfill import (
+    MAX_REPLACEMENT_CHARS,
+    UNLIMITED_REPLACEMENT_EDIT_TYPES,
+    active_patch_overlap,
     archive_patch,
     archive_patches_for_message,
     create_and_apply_patch,
     list_message_patches,
+    message_for_user,
     normalize_source_metadata_for_storage,
+    parse_source_metadata,
+    resolve_anchor_range,
+    source_node_for_user,
 )
 from .context_builder import build_model_messages
 from .db import (
@@ -44,7 +51,7 @@ from .db import (
     update_long_task_status,
     uid,
 )
-from .effective_context import list_effective_messages
+from .effective_context import content_hash, list_effective_messages
 from .long_task_context import build_step_context
 from .long_task_runner import LongTaskRunner
 from .long_task_schemas import LongTaskCreateRequest
@@ -154,6 +161,15 @@ class BackfillPatchCreate(BaseModel):
     targetRangeStart: int
     targetRangeEnd: int
     replacementText: str = Field(min_length=1)
+
+
+class BackfillDraftCreate(BaseModel):
+    sourceChildNodeId: str
+    targetMessageId: str
+    editType: Literal["correct", "expand", "compress", "reframe"]
+    userInstruction: str | None = Field(default=None, max_length=2000)
+    modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
+    thinkingMode: Literal["fast", "deep", "challenge"] | None = None
 
 
 class WebSearchRequest(BaseModel):
@@ -1047,6 +1063,186 @@ def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
 def message_patches(message_id: str, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
         return {"patches": list_message_patches(conn, user["id"], message_id)}
+
+
+EDIT_TYPE_GENERATION_GUIDE = {
+    "correct": "纠错：修正原选区中的事实、术语、表达错误。保持范围尽量短，不扩写。",
+    "expand": "补充：把子对话中已经明确沉淀的结论补进原选区，可以适度扩展信息密度。",
+    "compress": "压缩：保留核心意思，减少冗余，让原选区更紧凑。",
+    "reframe": "重构：在不改变选区外内容的前提下，重新组织原选区表达，使逻辑更清晰。",
+}
+
+
+def clean_backfill_draft(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    text = text.strip(" \t\r\n")
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+    return text
+
+
+def backfill_conflict_detail(conflict: sqlite3.Row) -> dict:
+    return {
+        "code": "BACKFILL_RANGE_OVERLAP",
+        "message": "这段内容已经存在其他回填，不能直接覆盖。你可以保留原回填、撤回旧回填后再应用，或取消本次操作。",
+        "conflictPatch": {
+            "id": conflict["id"],
+            "sourceChildNodeId": conflict["source_child_node_id"],
+            "targetRangeStart": conflict["target_range_start"],
+            "targetRangeEnd": conflict["target_range_end"],
+            "anchorText": conflict["anchor_text"],
+            "originalText": conflict["original_text"],
+            "replacementText": conflict["replacement_text"],
+            "editType": conflict["edit_type"],
+        },
+    }
+
+
+def build_backfill_draft_messages(
+    *,
+    edit_type: str,
+    user_instruction: str | None,
+    parent_content: str,
+    original_text: str,
+    source_metadata: dict,
+    child_messages: list[dict],
+    existing_patches: list[dict],
+) -> list[dict[str, str]]:
+    child_text = "\n".join(
+        f"{message['role']}: {message['content']}" for message in child_messages if message.get("content")
+    )
+    patch_text = "\n".join(
+        f"- {patch['editType']} [{patch['targetRangeStart']}, {patch['targetRangeEnd']}]: {patch['originalText']} => {patch['replacementText']}"
+        for patch in existing_patches
+        if patch.get("status") == "applied"
+    ) or "无"
+    instruction_text = user_instruction.strip() if user_instruction else "无"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是 ArborLearn 的回填草稿生成器。只生成目标选区的替换内容，不要重写整条父消息。"
+                "必须保持父消息原有风格；不能引入子对话没有支持的新事实；不能改变选区外内容。"
+                "输出必须是纯文本或 Markdown 片段，不要标题、解释、引号、项目说明。"
+                "如果子对话信息不足以形成可靠回填，只输出 __INSUFFICIENT_CONTEXT__。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"回填类型：{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"父消息原文：\n{parent_content}\n\n"
+                f"目标选区原文：\n{original_text}\n\n"
+                f"选区锚点：\n"
+                f"- prefix: {source_metadata.get('anchorPrefix') or ''}\n"
+                f"- anchor: {source_metadata.get('anchorText') or ''}\n"
+                f"- suffix: {source_metadata.get('anchorSuffix') or ''}\n\n"
+                f"已有已生效回填：\n{patch_text}\n\n"
+                f"用户额外生成提示：\n{instruction_text}\n\n"
+                f"子对话内容：\n{child_text}\n\n"
+                "请根据子对话内容生成 replacementText。"
+            ),
+        },
+    ]
+
+
+@app.post("/api/backfill/draft", status_code=201)
+def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        source_node = source_node_for_user(conn, user["id"], payload.sourceChildNodeId)
+        if not source_node:
+            raise HTTPException(status_code=404, detail="Source child node not found")
+        source_metadata = parse_source_metadata(source_node["source_metadata_json"])
+        if not source_metadata:
+            raise HTTPException(status_code=400, detail="Source child node does not contain backfill metadata")
+        if source_metadata.get("targetMessageId") != payload.targetMessageId:
+            raise HTTPException(status_code=400, detail="Target message does not match source metadata")
+
+        target_message = message_for_user(conn, payload.targetMessageId, user["id"])
+        if not target_message:
+            raise HTTPException(status_code=404, detail="Target message not found")
+        if source_metadata.get("baseMessageContentHash") != content_hash(target_message["content"]):
+            raise HTTPException(status_code=409, detail="Target message version has changed")
+
+        target_start, target_end = resolve_anchor_range(target_message["content"], source_metadata)
+        conflict = active_patch_overlap(
+            conn,
+            payload.targetMessageId,
+            target_start,
+            target_end,
+            exclude_source_child_node_id=payload.sourceChildNodeId,
+        )
+        if conflict:
+            raise HTTPException(status_code=409, detail=backfill_conflict_detail(conflict))
+
+        child_messages = list_effective_messages(conn, payload.sourceChildNodeId, ascending=True)
+        meaningful_child_messages = [
+            message for message in child_messages if message["role"] in {"user", "assistant"} and message["content"].strip()
+        ]
+        assistant_signal = " ".join(
+            message["content"].strip() for message in meaningful_child_messages if message["role"] == "assistant"
+        )
+        if len(meaningful_child_messages) < 2 or len(assistant_signal) < 20:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "BACKFILL_INSUFFICIENT_CONTEXT",
+                    "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
+                },
+            )
+
+        existing_patches = list_message_patches(conn, user["id"], payload.targetMessageId)
+        parent_content = target_message["content"]
+        original_text = parent_content[target_start:target_end]
+        model_messages = build_backfill_draft_messages(
+            edit_type=payload.editType,
+            user_instruction=payload.userInstruction,
+            parent_content=parent_content,
+            original_text=original_text,
+            source_metadata=source_metadata,
+            child_messages=meaningful_child_messages,
+            existing_patches=existing_patches,
+        )
+
+    try:
+        draft_text = clean_backfill_draft(call_model(model_messages, payload.modelName, payload.thinkingMode or "fast"))
+    except ModelConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ModelProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if draft_text == "__INSUFFICIENT_CONTEXT__" or not draft_text:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BACKFILL_INSUFFICIENT_CONTEXT",
+                "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
+            },
+        )
+    if payload.editType not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(draft_text) > MAX_REPLACEMENT_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "BACKFILL_DRAFT_TOO_LONG",
+                "message": "生成的回填内容过长，可能会破坏原文节奏。请缩短回填内容，或改用“补充/重构”方式重新生成。",
+            },
+        )
+
+    return {
+        "draft": {
+            "sourceChildNodeId": payload.sourceChildNodeId,
+            "targetMessageId": payload.targetMessageId,
+            "editType": payload.editType,
+            "targetRangeStart": target_start,
+            "targetRangeEnd": target_end,
+            "originalText": original_text,
+            "replacementText": draft_text,
+            "rangeSuggestion": None,
+        }
+    }
 
 
 @app.post("/api/backfill/patches", status_code=201)

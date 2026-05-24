@@ -13,6 +13,7 @@ from .effective_context import content_hash, public_patch_view
 EDIT_TYPES = {"correct", "expand", "compress", "reframe"}
 ACTIVE_PATCH_STATUSES = {"draft", "applied"}
 MAX_REPLACEMENT_CHARS = 20000
+UNLIMITED_REPLACEMENT_EDIT_TYPES = {"expand", "reframe"}
 CONTEXT_SLICE_CHARS = 80
 
 
@@ -239,7 +240,7 @@ def create_and_apply_patch(
     replacement_text = replacement_text.strip()
     if not replacement_text:
         raise HTTPException(status_code=400, detail="replacementText cannot be empty")
-    if len(replacement_text) > MAX_REPLACEMENT_CHARS:
+    if edit_type not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(replacement_text) > MAX_REPLACEMENT_CHARS:
         raise HTTPException(status_code=400, detail="replacementText is too long")
 
     source_node = source_node_for_user(conn, user_id, source_child_node_id)
