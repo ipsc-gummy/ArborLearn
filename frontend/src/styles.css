@@ -566,12 +566,7 @@ input {
     --tl-notebook-spine: var(--tl-notebook-spine-light);
     --tl-notebook-ink: rgba(238, 246, 242, 0.94);
     --tl-notebook-muted: rgba(190, 211, 207, 0.68);
-    --tl-notebook-page-text: rgba(48, 43, 34, 0.82);
-    --tl-notebook-page-muted: rgba(88, 76, 57, 0.7);
-    --tl-notebook-page-line: rgba(129, 111, 78, 0.18);
     isolation: isolate;
-    perspective: 1400px;
-    transform-style: preserve-3d;
   }
 
   .tl-new-notebook-dropzone {
@@ -629,9 +624,32 @@ input {
     --tl-notebook-spine: var(--tl-notebook-spine-dark);
     --tl-notebook-ink: rgba(244, 250, 247, 0.94);
     --tl-notebook-muted: rgba(219, 236, 231, 0.66);
-    --tl-notebook-page-text: rgba(40, 35, 28, 0.88);
-    --tl-notebook-page-muted: rgba(86, 74, 54, 0.72);
-    --tl-notebook-page-line: rgba(113, 94, 62, 0.19);
+  }
+
+  .tl-notebook-book::before {
+    content: "";
+    position: absolute;
+    inset: 0.55rem -0.38rem -0.42rem 0.42rem;
+    border-radius: 0.56rem 0.64rem 0.72rem 0.56rem;
+    background:
+      linear-gradient(90deg, rgba(103, 86, 54, 0.24) 0 0.16rem, transparent 0.16rem 1rem, rgba(103, 86, 54, 0.1) 1rem 1.08rem, transparent 1.08rem),
+      repeating-linear-gradient(180deg, #efe4ca 0 0.32rem, #d8c9a9 0.34rem 0.41rem);
+    border: 1px solid rgba(81, 65, 39, 0.26);
+    box-shadow:
+      0 22px 42px rgba(4, 22, 22, 0.18),
+      -0.5rem 0 1rem rgba(0, 0, 0, 0.1) inset;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  :root.dark .tl-notebook-book::before {
+    background:
+      linear-gradient(90deg, rgba(103, 86, 54, 0.28) 0 0.16rem, transparent 0.16rem 1rem, rgba(103, 86, 54, 0.14) 1rem 1.08rem, transparent 1.08rem),
+      repeating-linear-gradient(180deg, #e0d2b5 0 0.32rem, #bcae8e 0.34rem 0.41rem);
+    border-color: rgba(178, 149, 96, 0.2);
+    box-shadow:
+      0 24px 58px rgba(0, 0, 0, 0.34),
+      -0.5rem 0 1rem rgba(0, 0, 0, 0.14) inset;
   }
 
   .tl-notebook-book::after {
@@ -649,170 +667,15 @@ input {
     z-index: -1;
   }
 
-  .tl-notebook-pages,
-  .tl-notebook-paper,
   .tl-notebook-cover {
     position: absolute;
     inset: 0.2rem 0 0;
     border-radius: 0.58rem;
   }
 
-  .tl-notebook-pages {
-    transform: translate(0.38rem, 0.48rem);
-    background:
-      linear-gradient(90deg, rgba(103, 86, 54, 0.28) 0 0.18rem, transparent 0.18rem 1.05rem, rgba(103, 86, 54, 0.12) 1.05rem 1.12rem, transparent 1.12rem),
-      repeating-linear-gradient(180deg, #efe4ca 0 0.33rem, #d8c9a9 0.35rem 0.42rem);
-    border: 1px solid rgba(81, 65, 39, 0.28);
-    box-shadow:
-      0 22px 42px rgba(4, 22, 22, 0.22),
-      -0.5rem 0 1.1rem rgba(0, 0, 0, 0.12) inset;
-  }
-
-  :root.dark .tl-notebook-pages {
-    background:
-      linear-gradient(90deg, rgba(103, 86, 54, 0.3) 0 0.18rem, transparent 0.18rem 1.05rem, rgba(103, 86, 54, 0.16) 1.05rem 1.12rem, transparent 1.12rem),
-      repeating-linear-gradient(180deg, #e0d2b5 0 0.33rem, #bcae8e 0.35rem 0.42rem);
-    border-color: rgba(178, 149, 96, 0.2);
-    box-shadow:
-      0 24px 58px rgba(0, 0, 0, 0.38),
-      -0.5rem 0 1.1rem rgba(0, 0, 0, 0.14) inset;
-  }
-
-  .tl-notebook-paper {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 0.75rem;
-    overflow: hidden;
-    padding: 2.15rem 1.15rem 1.05rem 2rem;
-    background:
-      linear-gradient(90deg, rgba(151, 82, 62, 0.24) 0 1px, transparent 1px) 1.35rem 0 / 1px 100% no-repeat,
-      repeating-linear-gradient(180deg, transparent 0 1.42rem, var(--tl-notebook-page-line) 1.47rem 1.52rem),
-      radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.38), transparent 7.5rem),
-      radial-gradient(circle at 18% 78%, rgba(98, 75, 42, 0.1), transparent 8rem),
-      linear-gradient(110deg, rgba(255, 255, 255, 0.22), transparent 34%),
-      var(--tl-notebook-paper);
-    border: 1px solid rgba(102, 82, 48, 0.28);
-    color: rgba(29, 49, 47, 0.92);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.72) inset,
-      -0.42rem 0 1.2rem rgba(95, 72, 42, 0.14) inset,
-      0 22px 48px rgba(4, 22, 22, 0.16);
-    transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .tl-notebook-paper::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      radial-gradient(circle at 18% 24%, rgba(116, 88, 53, 0.16) 0 1px, transparent 1.5px),
-      radial-gradient(circle at 72% 64%, rgba(116, 88, 53, 0.11) 0 1px, transparent 1.4px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.32), transparent 12%, transparent 88%, rgba(92, 69, 41, 0.1));
-    background-size: 18px 18px, 23px 23px, auto;
-    mix-blend-mode: multiply;
-    opacity: 0.42;
-  }
-
-  .tl-notebook-paper::after {
-    content: "";
-    position: absolute;
-    inset: 0.45rem 0.45rem 0.45rem auto;
-    width: 0.35rem;
-    border-radius: 999px;
-    background: linear-gradient(90deg, transparent, rgba(88, 67, 39, 0.14));
-    opacity: 0.65;
-  }
-
-  :root.dark .tl-notebook-paper {
-    background:
-      linear-gradient(90deg, rgba(151, 82, 62, 0.24) 0 1px, transparent 1px) 1.35rem 0 / 1px 100% no-repeat,
-      repeating-linear-gradient(180deg, transparent 0 1.42rem, var(--tl-notebook-page-line) 1.47rem 1.52rem),
-      radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.24), transparent 7.5rem),
-      radial-gradient(circle at 18% 78%, rgba(98, 75, 42, 0.14), transparent 8rem),
-      linear-gradient(110deg, rgba(255, 255, 255, 0.16), transparent 34%),
-      color-mix(in srgb, var(--tl-notebook-paper) 78%, #172326);
-    border-color: rgba(178, 149, 96, 0.22);
-    color: rgba(30, 42, 40, 0.94);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.26) inset,
-      -0.42rem 0 1.2rem rgba(95, 72, 42, 0.16) inset,
-      0 24px 62px rgba(0, 0, 0, 0.34);
-  }
-
-  .tl-notebook-paper-rule {
-    position: absolute;
-    left: 1.25rem;
-    top: 1.15rem;
-    bottom: 1.05rem;
-    width: 1px;
-    background: rgba(151, 82, 62, 0.26);
-  }
-
-  .tl-notebook-summary {
-    position: relative;
-    z-index: 1;
-    color: var(--tl-notebook-page-text);
-    font-family:
-      "LXGW WenKai", "STKaiti", "KaiTi", "Noto Serif SC", "Microsoft YaHei", serif;
-    font-size: 0.98rem;
-    font-weight: 600;
-    line-height: 1.72;
-    text-indent: 2em;
-    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.34);
-  }
-
-  .tl-notebook-paper .tl-notebook-diagram > div {
-    background:
-      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-notebook-accent) 12%, transparent), transparent 8rem),
-      linear-gradient(var(--tl-notebook-page-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--tl-notebook-page-line) 1px, transparent 1px),
-      rgba(255, 252, 242, 0.36) !important;
-    border-color: rgba(112, 92, 56, 0.2);
-    color: var(--tl-notebook-page-text);
-    box-shadow:
-      0 0.75rem 1.3rem rgba(84, 63, 34, 0.08) inset,
-      0 1px 0 rgba(255, 255, 255, 0.34);
-  }
-
-  .tl-notebook-paper svg path {
-    stroke: rgba(96, 82, 55, 0.42);
-  }
-
-  .tl-notebook-paper svg rect {
-    fill: rgba(255, 248, 229, 0.78);
-    stroke: rgba(87, 73, 48, 0.28);
-  }
-
-  .tl-notebook-paper svg text {
-    fill: rgba(47, 42, 33, 0.78);
-  }
-
-  .tl-notebook-node-count {
-    color: rgba(70, 58, 40, 0.74);
-    background:
-      linear-gradient(135deg, rgba(255, 248, 224, 0.78), rgba(223, 204, 159, 0.48));
-    border-color: rgba(117, 93, 54, 0.24);
-    font-family:
-      "LXGW WenKai", "STKaiti", "KaiTi", "Noto Serif SC", "Microsoft YaHei", serif;
-    font-size: 0.78rem;
-    font-weight: 700;
-    line-height: 1;
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.44) inset,
-      0 0.4rem 0.8rem rgba(84, 63, 34, 0.08);
-  }
-
-  .tl-notebook-paper .tl-notebook-diagram .text-muted-foreground {
-    color: var(--tl-notebook-page-muted);
-  }
-
   .tl-notebook-cover {
     overflow: hidden;
     pointer-events: none;
-    transform-origin: left center;
-    transform: rotateY(0deg) translateZ(1px);
     background:
       linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 7%, rgba(58, 45, 30, 0.12) 88%, rgba(255, 255, 255, 0.12)),
       radial-gradient(circle at 20% 18%, color-mix(in srgb, var(--tl-notebook-accent) 12%, transparent), transparent 7rem),
@@ -828,7 +691,6 @@ input {
       0 0 0 1px rgba(255, 255, 255, 0.08) inset,
       -0.8rem 0 1.1rem rgba(0, 0, 0, 0.22) inset;
     transition:
-      transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
       box-shadow 240ms ease,
       filter 240ms ease;
     z-index: 3;
@@ -957,14 +819,14 @@ input {
     opacity: 0;
     pointer-events: none;
     transform: translateY(-2px) scale(0.94);
-    color: rgba(246, 252, 249, 0.84);
+    color: color-mix(in srgb, var(--tl-notebook-accent) 70%, #1a2a28);
     background:
-      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.18), transparent 52%),
-      rgba(5, 18, 19, 0.52);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.92), transparent 54%),
+      rgba(255, 252, 236, 0.88);
+    border: 1px solid rgba(84, 66, 37, 0.3);
     box-shadow:
-      0 0.7rem 1.3rem rgba(0, 0, 0, 0.26),
-      0 1px 0 rgba(255, 255, 255, 0.1) inset;
+      0 0.7rem 1.3rem rgba(0, 0, 0, 0.28),
+      0 0 0 1px rgba(255, 255, 255, 0.72) inset;
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     transition:
@@ -977,11 +839,11 @@ input {
 
   .tl-notebook-menu-button:hover,
   .tl-notebook-menu-button:focus-visible {
-    color: #ffffff;
+    color: #132320;
     background:
-      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.22), transparent 52%),
-      color-mix(in srgb, var(--tl-notebook-accent) 24%, rgba(5, 18, 19, 0.62));
-    border-color: color-mix(in srgb, var(--tl-notebook-accent) 42%, rgba(255, 255, 255, 0.18));
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.96), transparent 54%),
+      color-mix(in srgb, var(--tl-notebook-accent) 18%, rgba(255, 252, 236, 0.94));
+    border-color: color-mix(in srgb, var(--tl-notebook-accent) 48%, rgba(84, 66, 37, 0.34));
     transform: translateY(-1px);
   }
 
@@ -990,13 +852,36 @@ input {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0) scale(1);
-    color: rgba(72, 59, 39, 0.82);
+    color: color-mix(in srgb, var(--tl-notebook-accent) 58%, #172521);
     background:
-      linear-gradient(135deg, rgba(255, 248, 224, 0.88), rgba(219, 199, 151, 0.62));
-    border-color: rgba(117, 93, 54, 0.28);
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.96), transparent 54%),
+      rgba(255, 252, 236, 0.92);
+    border-color: rgba(84, 66, 37, 0.34);
     box-shadow:
-      0 0.45rem 0.9rem rgba(84, 63, 34, 0.13),
-      0 1px 0 rgba(255, 255, 255, 0.5) inset;
+      0 0.58rem 1rem rgba(28, 22, 13, 0.24),
+      0 0 0 1px rgba(255, 255, 255, 0.72) inset;
+  }
+
+  :root.dark .tl-notebook-menu-button {
+    color: rgba(244, 252, 249, 0.96);
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.18), transparent 54%),
+      rgba(4, 13, 15, 0.78);
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow:
+      0 0.7rem 1.3rem rgba(0, 0, 0, 0.38),
+      0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  }
+
+  :root.dark .tl-notebook-menu-button:hover,
+  :root.dark .tl-notebook-menu-button:focus-visible,
+  :root.dark .tl-notebook-book:hover .tl-notebook-menu-button,
+  :root.dark .tl-notebook-book:focus-within .tl-notebook-menu-button {
+    color: #ffffff;
+    background:
+      radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.2), transparent 54%),
+      color-mix(in srgb, var(--tl-notebook-accent) 28%, rgba(4, 13, 15, 0.82));
+    border-color: color-mix(in srgb, var(--tl-notebook-accent) 44%, rgba(255, 255, 255, 0.22));
   }
 
   .tl-notebook-emboss {
@@ -1048,50 +933,6 @@ input {
   .tl-notebook-book:focus-within::after {
     opacity: 0.72;
     transform: translateY(0.28rem) scaleX(1.04);
-  }
-
-  .tl-notebook-book:hover .tl-notebook-cover,
-  .tl-notebook-book:focus-within .tl-notebook-cover {
-    transform: rotateY(-112deg) translateZ(1px);
-    box-shadow:
-      0 30px 64px rgba(0, 0, 0, 0.34),
-      -0.8rem 0 1.1rem rgba(0, 0, 0, 0.26) inset;
-    filter: saturate(1.04);
-  }
-
-  .tl-notebook-book:hover .tl-notebook-paper,
-  .tl-notebook-book:focus-within .tl-notebook-paper {
-    transform: translateX(0.12rem);
-  }
-
-  .tl-notebook-book.is-menu-open .tl-notebook-cover {
-    transform: rotateY(-112deg) translateZ(1px);
-    box-shadow:
-      0 30px 64px rgba(0, 0, 0, 0.34),
-      -0.8rem 0 1.1rem rgba(0, 0, 0, 0.26) inset;
-  }
-
-  .tl-notebook-book.is-menu-open .tl-notebook-paper {
-    transform: translateX(0.12rem);
-  }
-
-  .tl-notebook-book.is-cover-locked:hover .tl-notebook-cover,
-  .tl-notebook-book.is-cover-locked:focus-within .tl-notebook-cover {
-    transform: rotateY(0deg) translateZ(1px);
-    box-shadow:
-      0 28px 54px rgba(0, 0, 0, 0.16),
-      0 1px 0 rgba(255, 255, 255, 0.32) inset;
-  }
-
-  .tl-notebook-book.is-cover-locked:hover .tl-notebook-paper,
-  .tl-notebook-book.is-cover-locked:focus-within .tl-notebook-paper {
-    transform: translateX(0);
-  }
-
-  .tl-notebook-book .tl-notebook-paper .tl-notebook-diagram {
-    margin-top: 0.95rem;
-    max-height: 8.35rem;
-    opacity: 1;
   }
 
   .tl-landing-page {
@@ -2830,7 +2671,6 @@ input {
   .tl-modal-panel,
   .tl-panel[data-state="open"],
   .tl-notebook-book::after,
-  .tl-notebook-diagram,
   .tl-child-conversation-layout,
   .tl-child-parent-panel,
   .tl-child-active-panel,
