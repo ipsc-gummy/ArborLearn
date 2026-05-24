@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Undo2 } from "lucide-react";
-import { createBackfillPatch } from "../lib/api";
+import { Check, Sparkles, Undo2 } from "lucide-react";
+import { createBackfillDraft, createBackfillPatch } from "../lib/api";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import type { EditType, KnowledgeNode } from "../types/treelearn";
 import { Button } from "./ui/button";
@@ -29,6 +29,13 @@ function formatApplyError(error: unknown) {
       message?: string;
       conflictPatch?: { anchorText?: string; sourceChildNodeId?: string };
     };
+    if (detail.message) {
+      if (detail.code === "BACKFILL_RANGE_OVERLAP") {
+        const text = detail.conflictPatch?.anchorText ? `：${detail.conflictPatch.anchorText}` : "";
+        return `${detail.message}${text}`;
+      }
+      return detail.message;
+    }
     if (detail.code === "BACKFILL_RANGE_OVERLAP") {
       const text = detail.conflictPatch?.anchorText ? `：${detail.conflictPatch.anchorText}` : "";
       return `${detail.message ?? "回填范围与其他子对话冲突"}${text}`;
@@ -42,10 +49,15 @@ function formatApplyError(error: unknown) {
 export function BackfillPanel({ node }: BackfillPanelProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
   const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
+  const selectedModel = useTreeLearnStore((state) => state.selectedModel);
+  const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
   const [open, setOpen] = useState(false);
   const [editType, setEditType] = useState<EditType>("expand");
+  const [draftPromptTag, setDraftPromptTag] = useState<EditType | null>(null);
+  const [draftPrompt, setDraftPrompt] = useState("");
   const [replacementText, setReplacementText] = useState(node.sourceMetadata?.anchorText ?? "");
   const [isApplying, setIsApplying] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const source = node.sourceMetadata;
 
@@ -83,6 +95,8 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
     if (!open) return;
     setReplacementText(existingPatch?.replacementText ?? source?.anchorText ?? "");
     setEditType(existingPatch?.editType ?? "expand");
+    setDraftPromptTag(null);
+    setDraftPrompt("");
     setError(null);
   }, [existingPatch?.editType, existingPatch?.replacementText, open, source?.anchorText]);
 
@@ -111,6 +125,34 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
     }
   };
 
+  const generateDraft = async () => {
+    if (!source || isGenerating || conflictingPatch) return;
+    setIsGenerating(true);
+    setError(null);
+    const tagLabel = editTypeOptions.find((option) => option.id === draftPromptTag)?.label;
+    const userInstruction = [tagLabel ? `#${tagLabel}` : "", draftPrompt.trim()].filter(Boolean).join(" ");
+    try {
+      const response = await createBackfillDraft({
+        sourceChildNodeId: node.id,
+        targetMessageId: source.targetMessageId,
+        editType,
+        userInstruction,
+        modelName: selectedModel,
+        thinkingMode: selectedThinkingMode,
+      });
+      setReplacementText(response.draft.replacementText);
+    } catch (draftError) {
+      setError(formatApplyError(draftError));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const selectDraftTag = (option: { id: EditType; label: string }) => {
+    setEditType(option.id);
+    setDraftPromptTag(option.id);
+  };
+
   return (
     <div className="relative">
       <Button variant="outline" size="sm" onClick={() => setOpen((current) => !current)}>
@@ -124,7 +166,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
           <div className="mb-3">
             <p className="font-semibold">手动回填</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              第一版只回填普通段落中的原始 Markdown 精确选区。
+              AI 只生成草稿，确认后才会写回父对话。
             </p>
           </div>
           <div className="mb-3 rounded-xl border border-border bg-muted/45 px-3 py-2">
@@ -141,15 +183,42 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
               <button
                 key={option.id}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                  editType === option.id
-                    ? "border-primary/40 bg-primary/10 text-primary"
+                  draftPromptTag === option.id
+                    ? "border-violet-500 bg-violet-600 text-white"
                     : "border-border text-muted-foreground hover:text-foreground"
                 }`}
-                onClick={() => setEditType(option.id)}
+                onClick={() => selectDraftTag(option)}
               >
                 {option.label}
               </button>
             ))}
+          </div>
+          <div className="mb-3 rounded-xl border border-border bg-background px-3 py-2 transition focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15">
+            <div className="flex items-start gap-2">
+              {draftPromptTag && (
+                <span className="mt-0.5 rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white">
+                  #{editTypeOptions.find((option) => option.id === draftPromptTag)?.label}
+                </span>
+              )}
+              <textarea
+                value={draftPrompt}
+                onChange={(event) => setDraftPrompt(event.target.value)}
+                rows={2}
+                placeholder="给 AI 生成草稿的额外要求，例如：更口语一点、保留原句节奏、只补充结论。"
+                className="min-h-12 flex-1 resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+            <div className="mt-2 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateDraft}
+                disabled={isGenerating || Boolean(conflictingPatch)}
+              >
+                <Sparkles className="h-4 w-4" />
+                {isGenerating ? "生成中" : "生成草稿"}
+              </Button>
+            </div>
           </div>
           <textarea
             value={replacementText}
