@@ -43,6 +43,7 @@ from .db import (
     init_db,
     insert_model_call_log,
     list_long_task_steps,
+    list_long_tasks_for_node,
     list_messages,
     list_step_outputs,
     list_task_evidence,
@@ -876,6 +877,24 @@ def run_long_task_endpoint(task_id: str, background_tasks: BackgroundTasks, user
         update_long_task_status(conn, user["id"], task_id, "RUNNING")
     background_tasks.add_task(LongTaskRunner().run, user["id"], task_id)
     return {"task_id": task_id, "status": "RUNNING", "message": "Long task started"}
+
+
+@app.get("/api/nodes/{node_id}/long-tasks")
+def list_node_long_tasks_endpoint(
+    node_id: str,
+    limit: int = Query(20, ge=1, le=50),
+    user: dict = Depends(require_user),
+) -> dict:
+    with connect() as conn:
+        node = get_node_for_user(conn, node_id, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+        tasks = list_long_tasks_for_node(conn, user["id"], node_id, limit)
+        task_payloads = [
+            long_task_public_view(task, list_long_task_steps(conn, user["id"], task["id"]))
+            for task in tasks
+        ]
+    return {"tasks": task_payloads}
 
 
 @app.get("/api/long-tasks/{task_id}")

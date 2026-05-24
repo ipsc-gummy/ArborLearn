@@ -300,6 +300,10 @@ export function fetchLongTask(taskId: string) {
   return request<LongTask>(`/api/long-tasks/${taskId}`);
 }
 
+export function fetchNodeLongTasks(nodeId: string) {
+  return request<{ tasks: LongTask[] }>(`/api/nodes/${nodeId}/long-tasks`);
+}
+
 export function fetchLongTaskStep(taskId: string, stepId: string) {
   return request<LongTaskStepDetail>(`/api/long-tasks/${taskId}/steps/${stepId}`);
 }
