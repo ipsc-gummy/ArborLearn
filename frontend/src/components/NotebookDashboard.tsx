@@ -11,6 +11,7 @@ import {
   List,
   MessageSquareText,
   MoreHorizontal,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -21,7 +22,6 @@ import {
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
-import { DIAGRAM_NODE_HEIGHT, DIAGRAM_NODE_WIDTH, DIAGRAM_PADDING, buildDiagram, linkPath } from "../lib/diagramLayout";
 import { cn } from "../lib/utils";
 import type { AuthUser } from "../lib/api";
 import type { KnowledgeNode } from "../types/treelearn";
@@ -55,7 +55,6 @@ const notebookCoverPalettes = [
     darkCover: "#102324",
     darkSpine: "#16484d",
     accent: "#25c6bd",
-    paper: "#f4ead1",
   },
   {
     lightCover: "#c9bea2",
@@ -63,7 +62,6 @@ const notebookCoverPalettes = [
     darkCover: "#191f20",
     darkSpine: "#3e5352",
     accent: "#7fb8a8",
-    paper: "#f1e5ca",
   },
   {
     lightCover: "#b5cad2",
@@ -71,7 +69,6 @@ const notebookCoverPalettes = [
     darkCover: "#142123",
     darkSpine: "#23585e",
     accent: "#42bac7",
-    paper: "#efe3c7",
   },
   {
     lightCover: "#c0caa8",
@@ -79,7 +76,6 @@ const notebookCoverPalettes = [
     darkCover: "#1e211f",
     darkSpine: "#4b574b",
     accent: "#93b977",
-    paper: "#f5ecd4",
   },
   {
     lightCover: "#c4bfd0",
@@ -87,7 +83,6 @@ const notebookCoverPalettes = [
     darkCover: "#171b20",
     darkSpine: "#3c5265",
     accent: "#76b9d6",
-    paper: "#eee4ca",
   },
 ];
 
@@ -519,35 +514,22 @@ export function NotebookDashboard({
               if (!node) return null;
               const isPinned = pinnedRootIds.includes(id);
               const isEditing = editingId === id;
-              const isMenuOpen = openMenuId === id;
-              const isCoverLocked = isEditing || deleteTarget?.id === id;
               const coverPalette = notebookCoverPalettes[index % notebookCoverPalettes.length];
               return (
                 <div
                   key={id}
-                  className={cn(
-                    "tl-notebook-book group relative min-h-[18.5rem] text-left",
-                    isMenuOpen && "is-menu-open",
-                    isCoverLocked && "is-cover-locked",
-                  )}
+                  className="tl-notebook-book group relative min-h-[18.5rem] text-left"
                   style={{
                     "--tl-notebook-cover-light": coverPalette.lightCover,
                     "--tl-notebook-spine-light": coverPalette.lightSpine,
                     "--tl-notebook-cover-dark": coverPalette.darkCover,
                     "--tl-notebook-spine-dark": coverPalette.darkSpine,
                     "--tl-notebook-accent": coverPalette.accent,
-                    "--tl-notebook-paper": coverPalette.paper,
                   } as React.CSSProperties}
                 >
                   {!isEditing && (
                     <button className="absolute inset-0 z-10 rounded-[1.2rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
                   )}
-                  <div className="tl-notebook-pages" aria-hidden="true" />
-                  <div className="tl-notebook-paper">
-                    <div className="tl-notebook-paper-rule" aria-hidden="true" />
-                    <p className="tl-notebook-summary pointer-events-none line-clamp-3">{node.summary}</p>
-                    <NotebookHoverDiagram nodes={nodes} rootId={node.id} />
-                  </div>
                   <div className="tl-notebook-cover">
                     <div className="tl-notebook-spine" />
                     <div className="tl-notebook-elastic" />
@@ -593,10 +575,10 @@ export function NotebookDashboard({
                   <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
                     <Popover.Trigger asChild>
                       <button
-                        className="tl-notebook-menu-button absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full"
+                        className="tl-notebook-menu-button absolute bottom-3 right-3 z-20 flex h-8 w-8 items-center justify-center rounded-full"
                         aria-label="打开笔记本菜单"
                       >
-                        <MoreHorizontal className="h-4 w-4" />
+                        <MoreVertical className="h-4 w-4" />
                       </button>
                     </Popover.Trigger>
                     <Popover.Portal>
@@ -800,87 +782,6 @@ function PreviewNode({ className, title, meta, active }: { className: string; ti
     >
       <p className="truncate text-xs font-semibold">{title}</p>
       <p className="mt-1 truncate text-[11px] text-muted-foreground">{meta}</p>
-    </div>
-  );
-}
-
-function splitPreviewTitle(title: string) {
-  const normalized = title.trim() || "Untitled";
-  const maxLineLength = 10;
-  const firstLine = normalized.slice(0, maxLineLength);
-  const secondLine = normalized.slice(maxLineLength, maxLineLength * 2);
-  return secondLine ? [firstLine, secondLine] : [firstLine];
-}
-
-function NotebookHoverDiagram({ nodes, rootId }: { nodes: Record<string, KnowledgeNode>; rootId: string }) {
-  const diagram = buildDiagram(nodes, rootId);
-  const previewWidth = 260;
-  const previewHeight = 140;
-  const scale = Math.min(previewWidth / diagram.width, previewHeight / diagram.height);
-  const offsetX = (previewWidth - diagram.width * scale) / 2;
-  const offsetY = (previewHeight - diagram.height * scale) / 2;
-
-  return (
-    <div className="tl-notebook-diagram pointer-events-none max-h-0 overflow-hidden opacity-0 transition-all duration-300 ease-out group-hover:mt-4 group-hover:max-h-32 group-hover:opacity-100">
-      <div className="relative h-32 overflow-hidden rounded-xl border border-border/55 bg-[radial-gradient(circle_at_24%_20%,color-mix(in_srgb,var(--tl-brand)_10%,transparent),transparent_11rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_34%,transparent)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px]">
-        <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${previewWidth} ${previewHeight}`} aria-hidden="true">
-          <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
-            {diagram.links.map((link) => (
-            <path
-              key={link.id}
-              d={linkPath({
-                ...link,
-                fromX: link.fromX + DIAGRAM_PADDING,
-                fromY: link.fromY + DIAGRAM_PADDING,
-                toX: link.toX + DIAGRAM_PADDING,
-                toY: link.toY + DIAGRAM_PADDING,
-              })}
-              fill="none"
-              stroke="var(--tl-border)"
-              strokeWidth="6"
-              strokeLinecap="round"
-            />
-          ))}
-            {diagram.nodes.map((node) => {
-              const x = DIAGRAM_PADDING + node.x;
-              const y = DIAGRAM_PADDING + node.y;
-              const titleLines = splitPreviewTitle(node.title);
-              return (
-                <g key={node.id}>
-                  <rect
-                    x={x}
-                    y={y}
-                    width={DIAGRAM_NODE_WIDTH}
-                    height={DIAGRAM_NODE_HEIGHT}
-                    rx="16"
-                    fill="var(--tl-panel-solid)"
-                    stroke={node.id === rootId ? "color-mix(in srgb, var(--tl-brand) 44%, var(--tl-border))" : "var(--tl-border)"}
-                    strokeWidth={node.id === rootId ? "4" : "3"}
-                  />
-                  <text
-                    x={x + DIAGRAM_NODE_WIDTH / 2}
-                    y={y + (titleLines.length === 1 ? 36 : 29)}
-                    fill="currentColor"
-                    fontSize="24"
-                    fontWeight="650"
-                    dominantBaseline="middle"
-                    textAnchor="middle"
-                  >
-                    {titleLines.map((line, index) => (
-                      <tspan key={`${node.id}-${index}`} x={x + DIAGRAM_NODE_WIDTH / 2} dy={index === 0 ? 0 : 24}>
-                        {line}
-                      </tspan>
-                    ))}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-        </svg>
-        <div className="tl-notebook-node-count absolute bottom-2 left-3 rounded-full border px-2.5 py-1">
-          {diagram.nodes.length} nodes
-        </div>
-      </div>
     </div>
   );
 }
