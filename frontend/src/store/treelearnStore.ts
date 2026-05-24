@@ -36,6 +36,7 @@ import {
 
 type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
+const CHAT_STREAM_TIMEOUT_MS = 90_000;
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
@@ -543,6 +544,11 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const assistantMessageId = uid("msg");
     const controller = new AbortController();
     activeChatControllers.set(nodeId, controller);
+    let streamTimedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      streamTimedOut = true;
+      controller.abort();
+    }, CHAT_STREAM_TIMEOUT_MS);
     const assistantMessage: ChatMessage = {
       id: assistantMessageId,
       role: "assistant",
@@ -565,6 +571,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
 
     let streamedContent = "";
     const clearRunStatus = () => {
+      window.clearTimeout(timeoutId);
       activeChatControllers.delete(nodeId);
       set((current) => {
         const { [nodeId]: _removed, ...nextStatuses } = current.chatRunStatusByNode;
@@ -644,6 +651,12 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         if (error instanceof DOMException && error.name === "AbortError") {
           const stoppedAt = new Date().toISOString();
           const stoppedContent = streamedContent.trim();
+          const timeoutMessage: ChatMessage = {
+            id: uid("msg"),
+            role: "system",
+            content: "模型响应超时，请稍后重试，或切换到 Instant 模式后再发送。",
+            createdAt: stoppedAt,
+          };
           const stoppedMessage: ChatMessage = {
             id: assistantMessageId,
             role: "assistant",
@@ -656,7 +669,9 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
             if (!node) return {};
             const messages = stoppedContent
               ? node.messages.map((message) => (message.id === assistantMessageId ? stoppedMessage : message))
-              : node.messages.filter((message) => message.id !== assistantMessageId);
+              : streamTimedOut
+                ? node.messages.map((message) => (message.id === assistantMessageId ? timeoutMessage : message))
+                : node.messages.filter((message) => message.id !== assistantMessageId);
             return {
               nodes: touchNotebookRoot({
                 ...current.nodes,
@@ -666,8 +681,8 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
                   updatedAt: stoppedAt,
                 },
               }, nodeId, stoppedAt),
-              apiStatus: "ready",
-              apiError: null,
+              apiStatus: streamTimedOut ? "error" : "ready",
+              apiError: streamTimedOut ? timeoutMessage.content : null,
             };
           });
           if (stoppedContent) {
@@ -803,6 +818,11 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
     const now = new Date().toISOString();
     const controller = new AbortController();
     activeChatControllers.set(nodeId, controller);
+    let streamTimedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      streamTimedOut = true;
+      controller.abort();
+    }, CHAT_STREAM_TIMEOUT_MS);
     set((current) => {
       const currentNode = current.nodes[nodeId];
       if (!currentNode) return {};
@@ -883,14 +903,14 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       controller.signal,
     )
       .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError" && !streamTimedOut) return;
         const message = error instanceof Error ? error.message : "重新生成失败";
         set((current) => {
           const currentNode = current.nodes[nodeId];
           if (!currentNode) return { apiStatus: "error", apiError: message };
           return {
             apiStatus: "error",
-            apiError: message,
+            apiError: streamTimedOut ? "模型响应超时，请稍后重试，或切换到 Instant 模式后再发送。" : message,
             nodes: {
               ...current.nodes,
               [nodeId]: {
@@ -904,6 +924,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         });
       })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         activeChatControllers.delete(nodeId);
         set((current) => {
           const { [nodeId]: _removed, ...nextStatuses } = current.chatRunStatusByNode;
