@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from .db import get_parent_chain
 from .openviking import openviking_rag
+from .effective_context import list_effective_messages
 from .web_search import classify_source_url, select_relevant_evidence
 
 
@@ -32,32 +33,28 @@ def _model_identity_context(model_name: str | None = None) -> str:
     )
 
 
-def _recent_turns(conn: sqlite3.Connection, node_id: str, limit: int, before_created_at: str | None = None) -> list[sqlite3.Row]:
-    created_filter = "AND created_at <= ?" if before_created_at else ""
-    params: tuple[str, str, int] | tuple[str, int]
-    params = (node_id, before_created_at, limit) if before_created_at else (node_id, limit)
-    return list(
-        reversed(
-            conn.execute(
-                f"""
-                SELECT role, content
-                FROM messages
-                WHERE node_id = ? AND role IN ('user', 'assistant')
-                {created_filter}
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                params,
-            ).fetchall()
-        )
+def _recent_turns(conn: sqlite3.Connection, node_id: str, limit: int, before_created_at: str | None = None) -> list[dict]:
+    return list_effective_messages(
+        conn,
+        node_id,
+        limit=limit,
+        before_created_at=before_created_at,
+        ascending=False,
     )
 
 
-def _format_turns(rows: list[sqlite3.Row]) -> str:
+def _format_turns(rows: list[dict]) -> str:
     if not rows:
         return "无"
     labels = {"user": "用户", "assistant": "助手"}
     return "\n".join(f"- {labels.get(row['role'], row['role'])}: {row['content']}" for row in rows)
+
+
+def _summary_text(row: sqlite3.Row) -> str:
+    summary = row["summary"] or "无"
+    if row["summary_stale"]:
+        return f"{summary}\n[提示] 该摘要可能基于回填前内容生成，不能当作完全可靠上下文。"
+    return summary
 
 
 def _format_web_evidence(web_sources: list[dict] | None, user_query: str | None = None) -> str:
@@ -214,6 +211,31 @@ def build_model_messages(
     hierarchical_context = _build_hierarchical_context(conn, chain, before_created_at)
     
     # 获取当前节点的对话历史（用于追加到 messages）
+    root = chain[0]
+    current = chain[-1]
+    parent = chain[-2] if len(chain) > 1 else None
+
+    path = " / ".join(row["title"] for row in chain)
+    context_lines = [
+        f"当前路径: {path}",
+        f"根节点标题: {root['title']}",
+        f"根节点摘要: {_summary_text(root)}",
+        f"当前节点标题: {current['title']}",
+        f"当前节点摘要: {_summary_text(current)}",
+        f"当前节点上下文模式: {current['context_mode']}",
+    ]
+
+    if parent:
+        context_lines.extend(
+            [
+                f"父节点标题: {parent['title']}",
+                f"父节点摘要: {_summary_text(parent)}",
+                f"父节点触发片段 selectedText: {current['selected_text'] or parent['selected_text'] or '无'}",
+                "父节点最近 2 轮对话:",
+                _format_turns(_recent_turns(conn, parent["id"], 4)),
+            ]
+        )
+
     current_history = _recent_turns(conn, node_id, 12, before_created_at)
     
     # 格式化网页搜索证据

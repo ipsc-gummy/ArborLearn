@@ -6,6 +6,7 @@ import type { ComponentProps, ReactNode } from "react";
 interface TreeLink {
   id: string;
   text: string;
+  matchTexts?: string[];
   title: string;
   summary: string;
 }
@@ -48,8 +49,14 @@ function renderTreeLinkedText(text: string, treeLinks: TreeLink[], onTreeLinkCli
 
   while (rest) {
     const nextLink = treeLinks
-      .filter((link) => link.text && rest.includes(link.text))
-      .map((link) => ({ link, index: rest.indexOf(link.text) }))
+      .flatMap((link) => {
+        const candidates = [link.text, ...(link.matchTexts ?? [])]
+          .map((candidate) => candidate.trim())
+          .filter((candidate, index, array) => candidate && array.indexOf(candidate) === index);
+        return candidates
+          .filter((candidate) => rest.includes(candidate))
+          .map((candidate) => ({ link, text: candidate, index: rest.indexOf(candidate) }));
+      })
       .sort((a, b) => a.index - b.index)[0];
 
     if (!nextLink) {
@@ -61,11 +68,11 @@ function renderTreeLinkedText(text: string, treeLinks: TreeLink[], onTreeLinkCli
     nodes.push(
       <TreeLinkPreview
         key={`${nextLink.link.id}-${keyIndex}`}
-        link={nextLink.link}
+        link={{ ...nextLink.link, text: nextLink.text }}
         onTreeLinkClick={onTreeLinkClick}
       />,
     );
-    rest = rest.slice(nextLink.index + nextLink.link.text.length);
+    rest = rest.slice(nextLink.index + nextLink.text.length);
     keyIndex += 1;
   }
 

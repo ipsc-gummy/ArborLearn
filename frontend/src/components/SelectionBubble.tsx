@@ -68,7 +68,7 @@ export function SelectionBubble() {
         size="sm"
         title="创建子对话"
         onClick={() => {
-          createChildConversation(draft.sourceNodeId, draft.text);
+          createChildConversation(draft.sourceNodeId, draft.text, draft.sourceMetadata);
           setDraft(null);
         }}
       >

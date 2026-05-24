@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Iterable
@@ -53,6 +54,8 @@ def init_db() -> None:
               title TEXT NOT NULL,
               summary TEXT NOT NULL DEFAULT '',
               selected_text TEXT,
+              source_metadata_json TEXT,
+              summary_stale INTEGER NOT NULL DEFAULT 0,
               context_mode TEXT NOT NULL DEFAULT 'isolated',
               position INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
@@ -75,6 +78,46 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_messages_node_created
               ON messages(node_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS conversation_patches (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              parent_node_id TEXT NOT NULL,
+              source_child_node_id TEXT,
+              source_snapshot_json TEXT NOT NULL,
+              target_message_id TEXT NOT NULL,
+              target_message_role TEXT NOT NULL,
+              target_message_created_at TEXT NOT NULL,
+              base_message_content_hash TEXT NOT NULL,
+              base_content_length INTEGER NOT NULL,
+              coordinate_space TEXT NOT NULL DEFAULT 'raw_markdown',
+              selector_strategy TEXT NOT NULL,
+              anchor_range_start INTEGER NOT NULL,
+              anchor_range_end INTEGER NOT NULL,
+              target_range_start INTEGER NOT NULL,
+              target_range_end INTEGER NOT NULL,
+              anchor_text TEXT NOT NULL,
+              anchor_prefix TEXT NOT NULL DEFAULT '',
+              anchor_suffix TEXT NOT NULL DEFAULT '',
+              original_text TEXT NOT NULL,
+              replacement_text TEXT NOT NULL,
+              status TEXT NOT NULL CHECK(status IN ('draft', 'applied', 'rejected', 'archived')),
+              edit_type TEXT NOT NULL CHECK(edit_type IN ('correct', 'expand', 'compress', 'reframe')),
+              mapping_status TEXT NOT NULL DEFAULT 'exact' CHECK(mapping_status IN ('exact', 'stale', 'unmapped')),
+              conflict_patch_id TEXT,
+              archive_reason TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              applied_at TEXT,
+              archived_at TEXT,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversation_patches_target_status
+              ON conversation_patches(target_message_id, status);
+
+            CREATE INDEX IF NOT EXISTS idx_conversation_patches_user_source
+              ON conversation_patches(user_id, source_child_node_id);
 
             CREATE TABLE IF NOT EXISTS web_sources (
               id TEXT PRIMARY KEY,
@@ -239,6 +282,8 @@ def init_db() -> None:
         _ensure_column(conn, "long_tasks", "model_name", "TEXT")
         _ensure_column(conn, "long_tasks", "thinking_mode", "TEXT")
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
+        ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
+        ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
@@ -414,27 +459,23 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
     return notebook_id
 
 
-def row_to_message(row: sqlite3.Row) -> dict:
-    return {
-        "id": row["id"],
-        "role": row["role"],
-        "content": row["content"],
-        "createdAt": row["created_at"],
-        "selectedText": row["selected_text"],
-    }
+def row_to_message(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    from .effective_context import row_to_effective_message
+
+    return row_to_effective_message(conn, row)
 
 
 def list_messages(conn: sqlite3.Connection, node_id: str) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT id, role, content, selected_text, created_at
+        SELECT id, node_id, role, content, selected_text, created_at
         FROM messages
         WHERE node_id = ?
         ORDER BY created_at ASC
         """,
         (node_id,),
     ).fetchall()
-    return [row_to_message(row) for row in rows]
+    return [row_to_message(conn, row) for row in rows]
 
 
 def add_message(
@@ -459,6 +500,9 @@ def add_message(
         "id": msg_id,
         "role": role,
         "content": content,
+        "originalContent": None,
+        "patches": [],
+        "stale": False,
         "selectedText": selected_text,
         "createdAt": ts,
     }
@@ -1039,13 +1083,21 @@ def touch_node(conn: sqlite3.Connection, node_id: str, ts: str | None = None) ->
 
 
 def row_to_node(conn: sqlite3.Connection, row: sqlite3.Row, children: Iterable[str]) -> dict:
+    source_metadata = None
+    if row["source_metadata_json"]:
+        try:
+            source_metadata = json.loads(row["source_metadata_json"])
+        except json.JSONDecodeError:
+            source_metadata = None
     return {
         "id": row["id"],
         "parentId": row["parent_id"],
         "title": row["title"],
         "kind": "main" if row["parent_id"] is None else "branch",
         "summary": row["summary"],
+        "summaryStale": bool(row["summary_stale"]),
         "selectedText": row["selected_text"],
+        "sourceMetadata": source_metadata,
         "contextWeight": row["context_mode"],
         "children": list(children),
         "messages": list_messages(conn, row["id"]),
@@ -1062,7 +1114,8 @@ def get_notebook_state(conn: sqlite3.Connection, user_id: str, notebook_id: str 
         params.append(notebook_id)
     rows = conn.execute(
         f"""
-        SELECT id, notebook_id, parent_id, title, summary, selected_text, context_mode, updated_at, position
+        SELECT id, notebook_id, parent_id, title, summary, selected_text, source_metadata_json,
+               summary_stale, context_mode, updated_at, position
         FROM nodes
         {where}
         ORDER BY position ASC, created_at ASC
@@ -1096,7 +1149,7 @@ def get_notebook_state(conn: sqlite3.Connection, user_id: str, notebook_id: str 
 def get_node_for_user(conn: sqlite3.Connection, node_id: str, user_id: str) -> sqlite3.Row | None:
     return conn.execute(
         """
-        SELECT nodes.id, nodes.notebook_id, nodes.parent_id
+        SELECT nodes.id, nodes.notebook_id, nodes.parent_id, nodes.source_metadata_json
         FROM nodes
         JOIN notebooks ON notebooks.id = nodes.notebook_id
         WHERE nodes.id = ? AND notebooks.owner_user_id = ?
@@ -1122,7 +1175,8 @@ def get_parent_chain(conn: sqlite3.Connection, node_id: str) -> list[sqlite3.Row
         seen.add(current_id)
         row = conn.execute(
             """
-            SELECT id, notebook_id, parent_id, title, summary, selected_text, context_mode
+            SELECT id, notebook_id, parent_id, title, summary, selected_text, source_metadata_json,
+                   summary_stale, context_mode
             FROM nodes
             WHERE id = ?
             """,
