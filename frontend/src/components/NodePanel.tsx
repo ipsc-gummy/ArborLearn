@@ -6,6 +6,8 @@ import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
 import type { KnowledgeNode } from "../types/treelearn";
+import { LongTaskPanel } from "./LongTaskPanel";
+import { BackfillPanel } from "./BackfillPanel";
 
 interface NodePanelProps {
   node: KnowledgeNode;
@@ -15,7 +17,7 @@ interface NodePanelProps {
 
 export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
-  const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
+  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
   const closeChildConversation = useTreeLearnStore((state) => state.closeChildConversation);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(node.messages.length);
@@ -35,6 +37,9 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   const latestMessageContent = node.messages[node.messages.length - 1]?.content ?? "";
   const visibleMessages = node.messages.filter((message) => message.role !== "system");
+  const backfillChildren = node.children
+    .map((childId) => nodes[childId])
+    .filter((child): child is KnowledgeNode => Boolean(child?.sourceMetadata));
   const notebookId = path[0]?.id ?? node.id;
   const panelId = `${compact ? "compact" : "main"}:${showCloseChild ? "child" : "primary"}:${node.id}`;
   const nodeInfoPanelId = `${panelId}:node-info`;
@@ -67,14 +72,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
     });
   }, [node.id, node.messages.length, latestMessageContent]);
 
-  const handleMouseUp = () => {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-    if (!selection || !text || text.length < 2) return;
-    const range = selection.getRangeAt(0);
-    setSelectionDraft({ text, rect: range.getBoundingClientRect(), sourceNodeId: node.id });
-  };
-
   const handleScroll = () => {
     const scroller = scrollRef.current;
     if (!scroller) return;
@@ -104,8 +101,21 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
                   <Route className="h-4 w-4 shrink-0" />
                   <span className="truncate">{path.map((item) => item.title).join(" / ")}</span>
                 </div>
-                <h2 className={compact ? "truncate text-base font-semibold" : "text-xl font-semibold"}>{node.title}</h2>
-                {node.summary && <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className={compact ? "truncate text-base font-semibold" : "text-xl font-semibold"}>{node.title}</h2>
+                    {node.summary && <p className="mt-1 text-sm leading-6 text-muted-foreground">{node.summary}</p>}
+                    {node.summaryStale && (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                        摘要可能基于回填前内容生成
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {!compact && <BackfillPanel node={node} />}
+                    {!compact && <LongTaskPanel nodeId={node.id} notebookId={notebookId} nodeTitle={node.title} panelId={panelId} />}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -140,7 +150,6 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         ref={scrollRef}
         className="min-h-0 overflow-y-auto px-3 pb-5 pt-7"
         onScroll={handleScroll}
-        onMouseUp={handleMouseUp}
       >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
           {node.selectedText && (
@@ -150,6 +159,27 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
                 局部追问片段
               </div>
               <p className="text-muted-foreground">{node.selectedText}</p>
+            </div>
+          )}
+          {backfillChildren.length > 0 && (
+            <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-background/70 p-3 text-sm shadow-sm backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
+                <GitPullRequest className="h-4 w-4" />
+                回填候选
+              </div>
+              <div className="space-y-2">
+                {backfillChildren.map((child) => (
+                  <div key={child.id} className="flex items-center justify-between gap-3 rounded-lg bg-muted/45 px-3 py-2">
+                    <button
+                      className="min-w-0 flex-1 truncate text-left text-muted-foreground transition hover:text-foreground"
+                      onClick={() => setActiveNode(child.id)}
+                    >
+                      {child.selectedText || child.title}
+                    </button>
+                    <BackfillPanel node={child} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {visibleMessages.map((message) => (
