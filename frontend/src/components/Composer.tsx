@@ -34,11 +34,11 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const isStreaming = chatRunStatus === "streaming";
 
   const submit = () => {
-    if (isStreaming) {
+    if (isThinking || isStreaming) {
       stopMessage(nodeId);
       return;
     }
-    if (!value.trim() || isThinking) return;
+    if (!value.trim()) return;
     appendMessage(nodeId, value.trim(), scope);
     setValue("");
   };
@@ -92,14 +92,14 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             />
             <Button
               size="icon"
-              variant={isStreaming ? "danger" : "primary"}
+              variant={isThinking || isStreaming ? "danger" : "primary"}
               onClick={submit}
-              disabled={isThinking || (!isStreaming && !value.trim())}
-              aria-label={isStreaming ? "停止回复" : "发送"}
-              title={isStreaming ? "停止回复" : isThinking ? "正在思考" : "发送"}
+              disabled={!isThinking && !isStreaming && !value.trim()}
+              aria-label={isThinking || isStreaming ? "停止回复" : "发送"}
+              title={isThinking || isStreaming ? "停止回复" : "发送"}
               className="h-10 w-10 shrink-0 shadow-sm"
             >
-              {isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
+              {isThinking || isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
         </div>
