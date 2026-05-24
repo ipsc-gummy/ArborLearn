@@ -162,7 +162,8 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
       {open &&
         createPortal(
           <div className="fixed inset-0 z-[1000] pointer-events-none">
-            <div className="pointer-events-auto fixed right-4 top-20 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border bg-card p-4 text-sm shadow-2xl">
+            <div className="pointer-events-auto fixed bottom-4 right-4 top-20 flex w-[min(32rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-card text-sm shadow-2xl">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="mb-3">
             <p className="font-semibold">手动回填</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -227,7 +228,8 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
             className="min-h-32 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
           />
           {error && <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
-          <div className="mt-3 flex justify-end gap-2">
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card p-4">
             <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
               取消
             </Button>

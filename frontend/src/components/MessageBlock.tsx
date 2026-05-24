@@ -75,6 +75,45 @@ function findOccurrences(text: string, needle: string) {
   return starts;
 }
 
+function isWhitespace(char: string) {
+  return /\s/.test(char);
+}
+
+function findWhitespaceFlexibleOccurrences(text: string, needle: string) {
+  const matches: Array<{ start: number; end: number }> = [];
+  if (!needle) return matches;
+  const haystack = normalizeSearchText(text);
+  const target = normalizeSearchText(needle).trim();
+  if (!target) return matches;
+
+  for (let start = 0; start < haystack.length; start += 1) {
+    let textIndex = start;
+    let targetIndex = 0;
+
+    while (textIndex < haystack.length && targetIndex < target.length) {
+      const targetChar = target[targetIndex];
+      const textChar = haystack[textIndex];
+
+      if (isWhitespace(targetChar)) {
+        if (!isWhitespace(textChar)) break;
+        while (targetIndex < target.length && isWhitespace(target[targetIndex])) targetIndex += 1;
+        while (textIndex < haystack.length && isWhitespace(haystack[textIndex])) textIndex += 1;
+        continue;
+      }
+
+      if (targetChar !== textChar) break;
+      targetIndex += 1;
+      textIndex += 1;
+    }
+
+    if (targetIndex === target.length) {
+      matches.push({ start, end: textIndex });
+    }
+  }
+
+  return matches;
+}
+
 function buildRenderedMarkdownMap(rawContent: string) {
   let rendered = "";
   const rawByRenderedIndex: number[] = [];
@@ -132,11 +171,20 @@ function locateRawMarkdownSelection(rawContent: string, selectedText: string) {
     return buildLocatedSelection(rawContent, start, start + target.length, target);
   }
 
+  const flexibleRawMatches = findWhitespaceFlexibleOccurrences(rawContent, target);
+  if (flexibleRawMatches.length === 1) {
+    const { start, end } = flexibleRawMatches[0];
+    return buildLocatedSelection(rawContent, start, end, rawContent.slice(start, end));
+  }
+
   const mapped = buildRenderedMarkdownMap(rawContent);
   const renderedStarts = findOccurrences(normalizeSearchText(mapped.rendered), target);
-  if (renderedStarts.length !== 1) return null;
-  const renderedStart = renderedStarts[0];
-  const renderedEnd = renderedStart + target.length - 1;
+  const flexibleRenderedMatches = renderedStarts.length === 1
+    ? [{ start: renderedStarts[0], end: renderedStarts[0] + target.length }]
+    : findWhitespaceFlexibleOccurrences(mapped.rendered, target);
+  if (flexibleRenderedMatches.length !== 1) return null;
+  const renderedStart = flexibleRenderedMatches[0].start;
+  const renderedEnd = flexibleRenderedMatches[0].end - 1;
   const start = mapped.rawByRenderedIndex[renderedStart];
   const end = mapped.rawByRenderedIndex[renderedEnd] + 1;
   if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end) return null;
