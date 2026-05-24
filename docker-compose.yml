@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-https://api.deepseek.com}
+      - MODEL_NAME=${MODEL_NAME:-deepseek-v4-flash}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - DATABASE_PATH=/app/data/treelearn.sqlite3
+      - VECTOR_DB_PATH=/app/data/lancedb
+      - ENABLE_RAG=true
+      - VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  frontend:
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+    restart: unless-stopped

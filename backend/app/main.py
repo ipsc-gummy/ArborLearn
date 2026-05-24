@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
-from .context_builder import build_model_messages
+from .context_builder import build_model_messages, index_node_to_vector_store
 from .db import (
     add_message,
     add_web_source,
@@ -83,14 +83,23 @@ class ChatRequest(BaseModel):
     thinkingMode: Literal["fast", "deep", "challenge"] | None = None
     webSearch: bool = False
     webQuery: str | None = None
+    ragEnabled: bool = False
 
     @property
     def web_search(self) -> bool:
         return self.webSearch
+    
+    @property
+    def rag_enabled(self) -> bool:
+        return self.ragEnabled
 
     @property
     def web_query(self) -> str | None:
         return self.webQuery
+
+    @property
+    def rag_enabled(self) -> bool:
+        return self.ragEnabled
 
 
 class ChatStopRequest(BaseModel):
@@ -1245,6 +1254,7 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
             model_name=payload.modelName,
             web_sources=web_sources,
             user_query=(payload.web_query or payload.message).strip(),
+            enable_rag=payload.rag_enabled,
         )
 
         try:
@@ -1258,6 +1268,11 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
         node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
         node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+        
+        # 索引对话内容到向量存储（RAG）
+        if payload.ragEnabled:
+            index_node_to_vector_store(conn, payload.nodeId)
+        
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -1447,6 +1462,7 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
             model_name=payload.modelName,
             web_sources=web_sources,
             user_query=(payload.web_query or payload.message).strip(),
+            enable_rag=payload.rag_enabled,
         )
 
     def generate():
@@ -1467,6 +1483,9 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
                 node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
                 node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+                # 索引对话内容到向量存储（RAG）
+                if payload.ragEnabled:
+                    index_node_to_vector_store(conn, payload.nodeId)
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
