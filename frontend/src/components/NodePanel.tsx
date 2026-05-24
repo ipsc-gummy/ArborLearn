@@ -121,7 +121,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
               <p className="text-muted-foreground">{node.selectedText}</p>
             </div>
           )}
-          {!compact && backfillChildren.length > 0 && (
+          {backfillChildren.length > 0 && (
             <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-background/70 p-3 text-sm shadow-sm backdrop-blur">
               <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
                 <GitPullRequest className="h-4 w-4" />

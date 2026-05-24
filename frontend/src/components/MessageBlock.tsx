@@ -15,6 +15,7 @@ interface MessageBlockProps {
 interface MessageTreeLink {
   id: string;
   text: string;
+  matchTexts?: string[];
   title: string;
   summary: string;
 }
@@ -32,6 +33,35 @@ function normalizeSelectionText(text: string) {
 
 function normalizeSearchText(text: string) {
   return text.replace(/\u00a0/g, " ");
+}
+
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s+|[-*+]\s+|\d+\.\s+)/gm, "")
+    .trim();
+}
+
+function buildBackfillLinkMatches(text: string) {
+  const candidates = [
+    text,
+    stripInlineMarkdown(text),
+    ...text.split(/\n{2,}/),
+    ...stripInlineMarkdown(text).split(/\n{2,}/),
+  ];
+
+  return candidates
+    .map((candidate) => candidate.trim())
+    .filter((candidate, index, array) => candidate.length >= 2 && array.indexOf(candidate) === index);
+}
+
+function isMessageTreeLink(link: MessageTreeLink | null): link is MessageTreeLink {
+  return Boolean(link);
 }
 
 function findOccurrences(text: string, needle: string) {
@@ -166,18 +196,19 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const messageTreeLinks: MessageTreeLink[] = [
     ...patches
       .filter((patch) => patch.status === "applied" && patch.sourceChildNodeId && patch.replacementText)
-      .map((patch) => {
+      .map((patch): MessageTreeLink | null => {
         const child = nodes[patch.sourceChildNodeId ?? ""];
         return child
           ? {
               id: child.id,
               text: patch.replacementText,
+              matchTexts: buildBackfillLinkMatches(patch.replacementText),
               title: child.title,
               summary: child.summary,
             }
           : null;
       })
-      .filter((link): link is MessageTreeLink => Boolean(link)),
+      .filter(isMessageTreeLink),
     ...children
       .filter((child) => child.selectedText)
       .map((child) => ({
@@ -272,15 +303,20 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       const childSummary = link.summary.trim() || "摘要将在子对话更新后生成。";
       content = content.flatMap((part) => {
         // ReactElement 不再继续切分；没有匹配片段时保持原样。
-        if (typeof part !== "string" || !link.text || !part.includes(link.text)) return [part];
+        if (typeof part !== "string") return [part];
+        const matchText = [link.text, ...(link.matchTexts ?? [])]
+          .map((candidate) => candidate.trim())
+          .filter(Boolean)
+          .find((candidate) => part.includes(candidate));
+        if (!matchText) return [part];
 
-        const [before, ...rest] = part.split(link.text);
+        const [before, ...rest] = part.split(matchText);
 
         return [
           before,
           <span key={`${message.id}-${link.id}`} className="relative inline-flex">
             <button className="tree-link peer" onClick={() => setActiveNode(link.id)}>
-              {link.text}
+              {matchText}
             </button>
             {/* 使用 peer-hover 限定触发区域：只有鼠标真正悬停在超链接按钮上时才显示预览。 */}
             <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
@@ -291,7 +327,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
               <span className="line-clamp-3 block text-muted-foreground">{childSummary}</span>
             </span>
           </span>,
-          rest.join(link.text),
+          rest.join(matchText),
         ];
       });
     });
