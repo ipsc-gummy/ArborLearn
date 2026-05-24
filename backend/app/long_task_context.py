@@ -9,10 +9,10 @@ from .db import (
     get_long_task_step_for_user,
     get_parent_chain,
     list_long_task_steps,
-    list_messages,
     list_step_outputs,
     list_task_evidence,
 )
+from .effective_context import list_effective_messages
 
 
 @dataclass
@@ -70,17 +70,23 @@ def _tree_context(conn, node_id: str | None) -> str:
     root = chain[0]
     current = chain[-1]
     parent = chain[-2] if len(chain) > 1 else None
-    recent_messages = list_messages(conn, node_id)[-6:]
+    recent_messages = list_effective_messages(conn, node_id, limit=6, ascending=False)
     message_text = "\n".join(f"- {message['role']}: {message['content'][:600]}" for message in recent_messages) or "无"
+    def summary(row) -> str:
+        value = (row["summary"] or "无")
+        if row["summary_stale"]:
+            return f"{value}\n[提示] 该摘要可能基于回填前内容生成，不能当作完全可靠上下文。"
+        return value
+
     return "\n".join(
         [
             f"当前路径: {' / '.join(row['title'] for row in chain)}",
             f"根节点标题: {root['title']}",
-            f"根节点摘要: {(root['summary'] or '无')[:500]}",
+            f"根节点摘要: {summary(root)[:500]}",
             f"父节点标题: {parent['title'] if parent else '无'}",
-            f"父节点摘要: {((parent['summary'] if parent else '') or '无')[:800]}",
+            f"父节点摘要: {(summary(parent) if parent else '无')[:800]}",
             f"当前节点标题: {current['title']}",
-            f"当前节点摘要: {(current['summary'] or '无')[:1500]}",
+            f"当前节点摘要: {summary(current)[:1500]}",
             f"当前节点 selectedText: {(current['selected_text'] or '无')[:1000]}",
             "当前节点最近消息:",
             message_text,
