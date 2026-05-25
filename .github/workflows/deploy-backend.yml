@@ -12,12 +12,13 @@ jobs:
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
-      SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
       APP_DIR: ${{ vars.APP_DIR || '/opt/arborlearn' }}
       SERVICE_NAME: ${{ vars.BACKEND_SERVICE_NAME || 'arborlearn-backend.service' }}
 
     steps:
       - name: Validate deployment configuration
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
           missing=0
           for name in SERVER_HOST SERVER_USER SERVER_SSH_KEY; do
@@ -38,7 +39,7 @@ jobs:
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           envs: APP_DIR,SERVICE_NAME
           script: |
             set -e
