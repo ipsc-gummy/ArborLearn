@@ -31,19 +31,29 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy backend via SSH
-        uses: appleboy/ssh-action@v0.1.10
+      - name: Prepare SSH key
         env:
-          APP_DIR: ${{ env.APP_DIR }}
-          SERVICE_NAME: ${{ env.SERVICE_NAME }}
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: APP_DIR,SERVICE_NAME
-          script: |
-            set -e
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/arborlearn_deploy_key
+          chmod 600 ~/.ssh/arborlearn_deploy_key
+          ssh-keygen -y -f ~/.ssh/arborlearn_deploy_key > ~/.ssh/arborlearn_deploy_key.pub
+          echo "Deploy key fingerprint:"
+          ssh-keygen -lf ~/.ssh/arborlearn_deploy_key.pub
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
 
+      - name: Deploy backend via SSH
+        run: |
+          set -e
+          ssh -i ~/.ssh/arborlearn_deploy_key \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            "$SERVER_USER@$SERVER_HOST" \
+            "APP_DIR='$APP_DIR' SERVICE_NAME='$SERVICE_NAME' bash -s" <<'REMOTE_SCRIPT'
+            set -e
             if [ ! -d "$APP_DIR/.git" ]; then
               echo "Application repository not found at $APP_DIR"
               exit 1
@@ -76,3 +86,4 @@ jobs:
             sleep 3
             systemctl is-active --quiet "$SERVICE_NAME"
             curl -fsS http://127.0.0.1:8000/api/health
+          REMOTE_SCRIPT
