@@ -46,7 +46,7 @@ jobs:
           ssh-keygen -lf ~/.ssh/arborlearn_deploy_key.pub
           ssh-keyscan -H "$SSH_HOST" 2>/dev/null >> ~/.ssh/known_hosts
 
-      - name: Deploy backend via SSH
+      - name: Deploy app via SSH
         run: |
           set -e
           SSH_HOST="$(printf '%s' "$SERVER_HOST" | tr -d '[:space:]')"
@@ -76,6 +76,10 @@ jobs:
             cd "$APP_DIR"
             git fetch origin main
             git reset --hard origin/main
+
+            cd "$APP_DIR/frontend"
+            npm ci --include=dev
+            npm run build
 
             cd "$APP_DIR/backend"
             if [ ! -x .venv/bin/python ]; then
