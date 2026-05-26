@@ -8,18 +8,24 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  ArrowLeft,
+  Download,
+  GitBranch,
   GripVertical,
+  LogOut,
+  MessageSquareText,
   PanelLeftClose,
   MoreHorizontal,
   Pencil,
-  Pin,
   Plus,
+  Share2,
   Trash2,
   X,
 } from "lucide-react";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { SettingsMenu, type ThemeMode } from "./AppMenus";
 
 interface TreeItemProps {
   nodeId: string;
@@ -33,6 +39,16 @@ interface DeleteTarget {
   id: string;
   title: string;
 }
+
+interface KnowledgeTreeProps {
+  themeMode: ThemeMode;
+  onThemeChange: (mode: ThemeMode) => void;
+  onHome: () => void;
+  view: WorkspaceView;
+  onViewChange: (view: WorkspaceView) => void;
+}
+
+type WorkspaceView = "chat" | "diagram";
 
 // 给任意节点向上追溯到根节点，确保左侧只展示当前笔记本内的树。
 function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string) {
@@ -53,12 +69,10 @@ function countSubtreeNodes(nodes: ReturnType<typeof useTreeLearnStore.getState>[
 // 树中的单个节点行：负责展开折叠、选中、重命名、置顶、删除和拖拽入口。
 function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange }: TreeItemProps) {
   const node = useTreeLearnStore((state) => state.nodes[nodeId]);
-  const pinnedRootIds = useTreeLearnStore((state) => state.pinnedRootIds);
   const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
   const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
   const toggleNode = useTreeLearnStore((state) => state.toggleNode);
   const renameNode = useTreeLearnStore((state) => state.renameNode);
-  const togglePinRoot = useTreeLearnStore((state) => state.togglePinRoot);
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: nodeId });
   const { attributes, listeners, setNodeRef: setDragRef, transform } = useDraggable({ id: nodeId });
   const [isRenaming, setIsRenaming] = useState(false);
@@ -74,12 +88,24 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
 
   if (!node) return null;
   const hasChildren = node.children.length > 0;
-  const isRootConversation = node.parentId === null;
-  const isPinned = pinnedRootIds.includes(node.id);
 
   const beginRename = () => {
     setDraftTitle(node.title);
     setIsRenaming(true);
+  };
+
+  const shareNode = async () => {
+    const shareUrl = window.location.href;
+    const shareData = {
+      title: node.title,
+      text: node.summary || node.title,
+      url: shareUrl,
+    };
+    if (navigator.share) {
+      await navigator.share(shareData);
+      return;
+    }
+    await navigator.clipboard?.writeText(shareUrl);
   };
 
   const commitRename = () => {
@@ -133,7 +159,6 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
           />
         ) : (
           <button className="min-w-0 flex-1 truncate text-left transition group-hover:translate-x-0.5" onClick={() => setActiveNode(node.id)}>
-            {isPinned && isRootConversation && <Pin className="mr-1 inline h-3 w-3" />}
             {node.title}
           </button>
         )}
@@ -154,15 +179,10 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
                 <Pencil className="h-4 w-4" />
                 重命名
               </button>
-              {isRootConversation && (
-                <button
-                  className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left"
-                  onClick={() => togglePinRoot(node.id)}
-                >
-                  <Pin className="h-4 w-4" />
-                  {isPinned ? "取消置顶" : "置顶聊天"}
-                </button>
-              )}
+              <button className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left" onClick={() => void shareNode()}>
+                <Share2 className="h-4 w-4" />
+                分享
+              </button>
               <button
                 className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
                 onClick={() => {
@@ -205,18 +225,22 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   );
 }
 
-export function KnowledgeTree() {
+export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewChange }: KnowledgeTreeProps) {
   const nodes = useTreeLearnStore((state) => state.nodes);
   const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
   const moveNode = useTreeLearnStore((state) => state.moveNode);
   const createChildNodeUnderActive = useTreeLearnStore((state) => state.createChildNodeUnderActive);
   const deleteNode = useTreeLearnStore((state) => state.deleteNode);
   const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
+  const user = useTreeLearnStore((state) => state.user);
+  const logout = useTreeLearnStore((state) => state.logout);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const notebookRootId = getNotebookRootId(nodes, activeNodeId);
   const nodeCount = countSubtreeNodes(nodes, notebookRootId);
+  const notebookTitle = nodes[notebookRootId]?.title ?? "TreeLearn";
+  const userInitial = (user?.displayName || user?.email || "U").slice(0, 1).toUpperCase();
 
   const handleDragEnd = (event: DragEndEvent) => {
     // dnd-kit 的 over 是拖拽释放时命中的节点，把 active 节点移动到 over 节点下面。
@@ -233,21 +257,56 @@ export function KnowledgeTree() {
 
   return (
     <>
-    <aside className="tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
-      <div className="tl-border-soft border-b bg-background/30 p-3 backdrop-blur-xl">
-        <div className="mb-3 flex items-center justify-between gap-2 px-1">
-          <div>
-            <p className="text-sm font-medium">Nodes</p>
-            <p className="text-xs text-muted-foreground">{nodeCount} 个对话节点</p>
+    <aside className="tl-knowledge-tree tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
+      <div className="tl-knowledge-tree-header tl-border-soft border-b bg-background/30 p-3 backdrop-blur-xl">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              className="tl-gpt-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+              onClick={onHome}
+              title="返回笔记本列表"
+              aria-label="返回笔记本列表"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold">{notebookTitle}</p>
+              <p className="text-xs text-muted-foreground">{nodeCount} 个对话节点</p>
+            </div>
           </div>
           <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="收起 Nodes">
             <PanelLeftClose className="h-4 w-4" />
           </Button>
         </div>
-        <Button className="w-full" size="sm" onClick={createChildNodeUnderActive}>
-          <Plus className="h-4 w-4" />
-          添加对话节点
-        </Button>
+        <div className="space-y-2">
+          <div className="tl-sidebar-view-switch">
+            <button
+              type="button"
+              className={cn("tl-sidebar-action", view === "chat" && "is-active")}
+              onClick={() => onViewChange("chat")}
+            >
+              <MessageSquareText className="h-4 w-4" />
+              对话
+            </button>
+            <button
+              type="button"
+              className={cn("tl-sidebar-action", view === "diagram" && "is-active")}
+              onClick={() => onViewChange("diagram")}
+            >
+              <GitBranch className="h-4 w-4" />
+              思维导图
+            </button>
+          </div>
+          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" title="导出 .tree">
+            <Download className="h-4 w-4" />
+            导出
+          </Button>
+          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" onClick={createChildNodeUnderActive}>
+            <Plus className="h-4 w-4" />
+            添加对话节点
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
@@ -265,6 +324,22 @@ export function KnowledgeTree() {
             )}
           </div>
         </DndContext>
+      </div>
+
+      <div className="tl-sidebar-account border-t border-border/60 p-3">
+        <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+            {userInitial}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{user?.displayName || "用户"}</p>
+            <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>
+          </div>
+          <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
+          <button className="tl-gpt-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full" onClick={logout} title="退出账号" aria-label="退出账号">
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
     </aside>
