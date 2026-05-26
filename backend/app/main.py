@@ -87,6 +87,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+DEMO_ACCOUNT_EMAIL = "demo@treelearn.local"
+DEMO_ACCOUNT_PASSWORD = "TreeLearnDemo2026!"
+DEMO_ACCOUNT_DISPLAY_NAME = "演示账号"
+
 
 class ChatRequest(BaseModel):
     notebookId: str | None = None
@@ -721,6 +725,42 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    ensure_demo_account()
+
+
+def ensure_demo_account() -> None:
+    ts = now_iso()
+    email = normalize_email(os.getenv("DEMO_ACCOUNT_EMAIL", DEMO_ACCOUNT_EMAIL))
+    password = os.getenv("DEMO_ACCOUNT_PASSWORD", DEMO_ACCOUNT_PASSWORD)
+    display_name = os.getenv("DEMO_ACCOUNT_DISPLAY_NAME", DEMO_ACCOUNT_DISPLAY_NAME)
+    with connect() as conn:
+        row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if row:
+            user_id = row["id"]
+            conn.execute(
+                """
+                UPDATE users
+                SET display_name = ?, password_hash = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (display_name, password_hash(password), ts, user_id),
+            )
+        else:
+            user_id = uid("user")
+            conn.execute(
+                """
+                INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, email, display_name, password_hash(password), ts, ts),
+            )
+
+        notebook_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM notebooks WHERE owner_user_id = ?",
+            (user_id,),
+        ).fetchone()["count"]
+        if notebook_count == 0:
+            create_starter_notebook(conn, user_id)
 
 
 @app.get("/api/health")

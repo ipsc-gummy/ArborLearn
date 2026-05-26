@@ -43,6 +43,9 @@ interface AuthDialogProps {
   onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
 }
 
+const DEMO_EMAIL = "demo@treelearn.local";
+const DEMO_PASSWORD = "TreeLearnDemo2026!";
+
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
     <Popover.Root>
@@ -153,6 +156,18 @@ export function AuthDialog({
     setMode(mode === "login" ? "register" : "login");
   };
 
+  const loginWithDemoAccount = async () => {
+    setLocalError(null);
+    setMode("login");
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    try {
+      await onLogin(DEMO_EMAIL, DEMO_PASSWORD);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "演示账号登录失败");
+    }
+  };
+
   return (
     <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
@@ -222,6 +237,30 @@ export function AuthDialog({
         <button className="tl-hover mt-3 flex w-full items-center justify-center rounded-lg px-2 py-2 text-sm text-muted-foreground" onClick={switchMode}>
           {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
         </button>
+
+        {mode === "register" && (
+          <button
+            type="button"
+            className="tl-panel-soft group mt-4 w-full rounded-xl border p-3 text-left text-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
+            onClick={loginWithDemoAccount}
+            disabled={loading}
+            aria-label="使用演示账号进入"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">演示账号</p>
+              </div>
+              <span className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-background/70 px-3 text-xs font-medium text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
+                体验示例
+                <LogIn className="h-3.5 w-3.5" />
+              </span>
+            </div>
+            <div className="mt-3 space-y-1 rounded-lg bg-background/65 p-2 font-mono text-xs text-foreground/85 transition group-hover:bg-background/90">
+              <p>账号：{DEMO_EMAIL}</p>
+              <p>密码：{DEMO_PASSWORD}</p>
+            </div>
+          </button>
+        )}
       </div>
     </div>
   );

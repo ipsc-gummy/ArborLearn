@@ -456,6 +456,240 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
             ts,
         ),
     )
+    create_transformer_demo_notebook(conn, user_id)
+    return notebook_id
+
+
+def create_transformer_demo_notebook(conn: sqlite3.Connection, user_id: str) -> str:
+    notebook_id = uid("nb")
+    attention_id = uid("node")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at, pinned)
+        VALUES (?, ?, ?, ?, ?, 1)
+        """,
+        (notebook_id, user_id, "Transformer 是如何工作的", ts, ts),
+    )
+
+    nodes = [
+        (
+            notebook_id,
+            notebook_id,
+            None,
+            "Transformer 是如何工作的",
+            "学习路线：先理解它为什么替代 RNN/CNN，再拆输入表示、自注意力、多头注意力、Encoder/Decoder，最后用例子复盘。",
+            None,
+            "mainline",
+            0,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "1. 为什么需要 Transformer",
+            "RNN 顺序处理难并行，远距离依赖路径长；Transformer 用自注意力让任意两个位置直接交互。",
+            "1. 为什么需要 Transformer",
+            "mainline",
+            0,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "2. 输入：词向量 + 位置编码",
+            "Transformer 本身不按时间顺序递归，所以要把位置信息显式加进 embedding。",
+            "2. 输入：词向量 + 位置编码",
+            "mainline",
+            1,
+        ),
+        (
+            attention_id,
+            notebook_id,
+            notebook_id,
+            "3. 自注意力：每个词重新理解自己",
+            "自注意力让一个词基于全句上下文更新自己的表示，而不是孤立地保留原始词义。",
+            "3. 自注意力：每个词重新理解自己",
+            "mainline",
+            2,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            attention_id,
+            "3.1 Q/K/V：提问、匹配、取信息",
+            "Query 用来发问，Key 用来被匹配，Value 是真正被加权汇总的信息。",
+            "3.1 Q/K/V：提问、匹配、取信息",
+            "isolated",
+            0,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            attention_id,
+            "3.2 公式：softmax(QK^T / sqrt(d_k))V",
+            "点积给相关性，sqrt(d_k) 稳定尺度，softmax 变权重，最后加权求和 V。",
+            "3.2 公式：softmax(QK^T / sqrt(d_k))V",
+            "isolated",
+            1,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "4. 多头注意力：同时看多种关系",
+            "一个头可能看指代，一个头可能看语法，一个头可能看语义相似；最后拼接融合。",
+            "4. 多头注意力：同时看多种关系",
+            "mainline",
+            3,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "5. Encoder：理解输入序列",
+            "Encoder 层由多头自注意力、前馈网络、残差连接和 LayerNorm 组成，堆叠后得到上下文表示。",
+            "5. Encoder：理解输入序列",
+            "mainline",
+            4,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "6. Decoder：带遮罩地生成输出",
+            "Decoder 生成时不能偷看未来 token，用 masked self-attention；再通过 cross-attention 读取 Encoder 输出。",
+            "6. Decoder：带遮罩地生成输出",
+            "mainline",
+            5,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "7. 例子：it 指代谁，bank 是河岸还是银行",
+            "Transformer 的优势可以通过消歧例子看见：词义由全句关系决定，而不是孤立词表决定。",
+            "7. 例子：it 指代谁，bank 是河岸还是银行",
+            "isolated",
+            6,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "8. 一句话复盘",
+            "Transformer = 并行处理序列 + 用注意力动态建立 token 关系 + 堆叠层逐步抽象。",
+            "8. 一句话复盘",
+            "mainline",
+            7,
+        ),
+        (
+            uid("node"),
+            notebook_id,
+            notebook_id,
+            "资料来源与继续阅读",
+            "原始论文、Google Research 说明和可视化讲解，是这棵树的主要依据。",
+            "资料来源与继续阅读",
+            "isolated",
+            8,
+        ),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO nodes(
+          id, notebook_id, parent_id, title, summary, selected_text,
+          context_mode, position, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [(*node, ts, ts) for node in nodes],
+    )
+
+    message_pairs_by_title = {
+        "Transformer 是如何工作的": (
+            "我想系统理解 Transformer 是如何工作的，不只是背公式。",
+            "这棵树把 Transformer 拆成 8 个可点击分支：\n\n"
+            "分支一：1. 为什么需要 Transformer\n"
+            "分支二：2. 输入：词向量 + 位置编码\n"
+            "分支三：3. 自注意力：每个词重新理解自己\n"
+            "分支四：4. 多头注意力：同时看多种关系\n"
+            "分支五：5. Encoder：理解输入序列\n"
+            "分支六：6. Decoder：带遮罩地生成输出\n"
+            "分支七：7. 例子：it 指代谁，bank 是河岸还是银行\n"
+            "分支八：8. 一句话复盘\n\n"
+            "自注意力分支还继续展开为 3.1 Q/K/V：提问、匹配、取信息 和 3.2 公式：softmax(QK^T / sqrt(d_k))V。"
+            "最后可以用 资料来源与继续阅读 追溯原始资料。",
+        ),
+        "1. 为什么需要 Transformer": (
+            "Transformer 解决了什么问题？",
+            "传统 RNN 像从左到右读句子：后面的词要等前面的词处理完，训练很难充分并行；"
+            "如果两个词相距很远，信息传递要走很多步。Transformer 的核心改变是：每一层都让一个 token "
+            "直接和所有 token 计算关系，所以长距离依赖可以在少量层里建立，GPU/TPU 也更容易并行。",
+        ),
+        "2. 输入：词向量 + 位置编码": (
+            "Transformer 怎么知道词的顺序？",
+            "每个 token 先变成 embedding，表示它的语义；再加上 positional encoding，表示它在序列中的位置。"
+            "没有位置编码时，纯注意力对词序不敏感，“狗咬人”和“人咬狗”会更难区分。",
+        ),
+        "3. 自注意力：每个词重新理解自己": (
+            "Self-Attention 到底在做什么？",
+            "自注意力不是只给每个词一个固定向量，而是让每个词问：为了理解我，句子里的哪些词最重要？\n\n"
+            "例如处理 it 时，模型会看 animal、street、tired 等词，给它们不同权重，然后把相关词的信息混入 it 的新表示。"
+            "这样，一个词的向量就从“字面词义”变成“带上下文的词义”。\n\n"
+            "这个机制可以继续拆成 3.1 Q/K/V：提问、匹配、取信息 和 3.2 公式：softmax(QK^T / sqrt(d_k))V 两个分支。",
+        ),
+        "3.1 Q/K/V：提问、匹配、取信息": (
+            "Query、Key、Value 怎么理解？",
+            "Query 是当前 token 提出的问题，Key 是每个 token 展示的匹配标签，Value 是真正被取走的信息。"
+            "计算时，用 Query 和所有 Key 做相似度，得到权重；再按权重汇总 Value，形成当前词的新表示。",
+        ),
+        "3.2 公式：softmax(QK^T / sqrt(d_k))V": (
+            "注意力公式每一项是什么意思？",
+            "QK^T 给相关性分数，sqrt(d_k) 用来稳定尺度，softmax 把分数变成总和为 1 的权重，最后乘 V 完成信息汇总。"
+            "所以公式本质是：先判断“看谁”，再决定“拿多少信息”。",
+        ),
+        "4. 多头注意力：同时看多种关系": (
+            "为什么要多头，而不是一个注意力？",
+            "一个注意力头容易形成单一关注模式。多头注意力会在多个子空间里独立计算注意力，再拼接融合。"
+            "同一句话里可能同时有指代、修饰、语法和主题关系，多头机制让模型能并行捕捉这些不同关系。",
+        ),
+        "5. Encoder：理解输入序列": (
+            "Encoder 一层里面有什么？",
+            "典型 Encoder block 包含 Multi-Head Self-Attention、Add & Norm、Feed-Forward Network、再一次 Add & Norm。"
+            "多个 block 堆叠后，每个 token 的表示会包含越来越丰富的全局上下文。",
+        ),
+        "6. Decoder：带遮罩地生成输出": (
+            "Decoder 和 Encoder 最大区别是什么？",
+            "Decoder 要逐步生成下一个 token，所以 masked self-attention 不能看未来答案；同时它通过 cross-attention "
+            "读取 Encoder 输出。Encoder 更像理解器，Decoder 更像参考输入后逐步写作的生成器。",
+        ),
+        "7. 例子：it 指代谁，bank 是河岸还是银行": (
+            "能不能用一个句子看出注意力的作用？",
+            "例子：The animal did not cross the street because it was too tired。处理 it 时，注意力可能高权重看 animal 和 tired。"
+            "再如 I arrived at the bank after crossing the river，bank 会因为 river 更偏向“河岸”。这说明词义由上下文关系决定。",
+        ),
+        "8. 一句话复盘": (
+            "最后怎么把 Transformer 串起来？",
+            "Transformer 先把 token 变成带位置信息的向量，再用自注意力让每个 token 直接读取全句相关信息；"
+            "多头注意力提供多个关系视角；Encoder 理解输入，Decoder 在遮罩约束下参考 Encoder 输出并逐步生成。",
+        ),
+        "资料来源与继续阅读": (
+            "这些节点依据哪些资料？",
+            "主要来源包括 Vaswani et al. 的 Attention Is All You Need、Google Research 对 Transformer 架构的说明，"
+            "以及 The Illustrated Transformer。阅读顺序建议：先看动机和例子，再看 Q/K/V 与公式，最后回到原论文确认细节。",
+        ),
+    }
+    message_pairs = {node[0]: message_pairs_by_title[node[3]] for node in nodes}
+    for node_id, user_and_assistant in message_pairs.items():
+        for role, content in zip(("user", "assistant"), user_and_assistant):
+            conn.execute(
+                """
+                INSERT INTO messages(id, node_id, role, content, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (uid("msg"), node_id, role, content, ts),
+            )
+
     return notebook_id
 
 
