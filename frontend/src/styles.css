@@ -473,7 +473,7 @@ input {
   }
 
   .tl-workspace-page .tl-message-scroll {
-    padding-top: 0;
+    padding-top: 0.75rem;
   }
 
   .tl-workspace-page .tl-message-stack {
