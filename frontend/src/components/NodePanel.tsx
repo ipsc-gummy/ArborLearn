@@ -81,14 +81,14 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   return (
     <section className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent">
       <div
-        className="tl-border-soft relative z-20 h-5 shrink-0 border-b"
+        className="tl-node-info-strip tl-border-soft relative z-20 h-5 shrink-0 border-b"
         style={{ background: "color-mix(in srgb, var(--tl-panel) 10%, transparent)" }}
       >
         <div className="absolute left-3 right-3 top-full z-30 mx-auto max-w-4xl">
           <div
             id={nodeInfoPanelId}
             className={cn(
-              "grid overflow-hidden rounded-b-2xl border-x border-b border-border/55 shadow-sm backdrop-blur-xl transition-[grid-template-rows] duration-300 ease-out",
+              "tl-node-info-panel grid overflow-hidden rounded-b-2xl border-x border-b border-border/55 shadow-sm backdrop-blur-xl transition-[grid-template-rows] duration-300 ease-out",
               nodeInfoOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
             )}
             style={{ background: "color-mix(in srgb, var(--tl-panel-solid) 88%, transparent)" }}
@@ -120,7 +120,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
           <button
             type="button"
             onClick={() => setNodeInfoOpen((open) => !open)}
-            className="mx-auto flex h-5 w-14 items-center justify-center rounded-b-full border-x border-b border-border/55 bg-background/75 text-muted-foreground shadow-sm backdrop-blur-md transition-colors duration-200 hover:bg-background/90 hover:text-foreground"
+            className="tl-node-info-toggle mx-auto flex h-5 w-14 items-center justify-center rounded-b-full border-x border-b border-border/55 bg-background/75 text-muted-foreground shadow-sm backdrop-blur-md transition-colors duration-200 hover:bg-background/90 hover:text-foreground"
             aria-expanded={nodeInfoOpen}
             aria-controls={nodeInfoPanelId}
             aria-label={nodeInfoToggleLabel}
@@ -146,10 +146,10 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
       <div
         ref={scrollRef}
-        className="min-h-0 overflow-y-auto px-3 pb-5 pt-7"
+        className="tl-message-scroll min-h-0 overflow-y-auto px-3 pb-5 pt-7"
         onScroll={handleScroll}
       >
-        <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        <div className="tl-message-stack mx-auto flex max-w-4xl flex-col gap-4">
           {node.selectedText && (
             <div className="mx-auto w-full max-w-3xl rounded-xl border border-primary/20 bg-accent/55 p-3 text-sm shadow-sm backdrop-blur transition duration-200 hover:border-primary/35 hover:shadow-md">
               <div className="mb-1 flex items-center gap-2 font-medium text-accent-foreground">
