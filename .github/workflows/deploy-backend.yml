@@ -36,6 +36,7 @@ jobs:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
           set -e
+          SSH_HOST="$(printf '%s' "$SERVER_HOST" | tr -d '[:space:]')"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/arborlearn_deploy_key
@@ -43,15 +44,18 @@ jobs:
           ssh-keygen -y -f ~/.ssh/arborlearn_deploy_key > ~/.ssh/arborlearn_deploy_key.pub
           echo "Deploy key fingerprint:"
           ssh-keygen -lf ~/.ssh/arborlearn_deploy_key.pub
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$SSH_HOST" 2>/dev/null >> ~/.ssh/known_hosts
 
       - name: Deploy backend via SSH
         run: |
           set -e
+          SSH_HOST="$(printf '%s' "$SERVER_HOST" | tr -d '[:space:]')"
+          SSH_USER="$(printf '%s' "$SERVER_USER" | tr -d '[:space:]')"
           ssh -i ~/.ssh/arborlearn_deploy_key \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
-            "$SERVER_USER@$SERVER_HOST" \
+            -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" \
             "APP_DIR='$APP_DIR' SERVICE_NAME='$SERVICE_NAME' bash -s" <<'REMOTE_SCRIPT'
             set -e
             if [ ! -d "$APP_DIR/.git" ]; then
