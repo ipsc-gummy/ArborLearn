@@ -44,8 +44,8 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   };
 
   return (
-    <div className="shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
-      <div className="tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
+    <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
+      <div className="tl-composer-shell tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -56,7 +56,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             }
           }}
           rows={2}
-          className="max-h-32 min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
+          className="tl-composer-input max-h-32 min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
           placeholder="围绕当前节点继续追问..."
         />
         <div className="flex items-center justify-between gap-2 pt-1">
