@@ -285,7 +285,11 @@ export default function App() {
       正在恢复工作区...
     </div>
   ) : route.kind === "landing" || authStatus !== "authenticated" ? (
-    <LandingPage themeMode={themeMode} onThemeChange={setThemeMode} onRequestAuth={requestAuth} />
+    <LandingPage
+      themeMode={themeMode}
+      onThemeChange={setThemeMode}
+      onRequestAuth={requestAuth}
+    />
   ) : route.kind === "dashboard" ? (
     <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
   ) : (
@@ -339,7 +343,7 @@ export default function App() {
         authError={authError}
         onClose={() => setAuthDialogOpen(false)}
         onLogin={login}
-        onRegister={register}
+        onRegister={registerWithDefaultTheme}
       />
     </>
   );
