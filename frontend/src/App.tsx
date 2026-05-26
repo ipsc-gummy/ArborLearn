@@ -2,12 +2,10 @@ import { useEffect, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { KnowledgeTree } from "./components/KnowledgeTree";
-import { AmbientBackdrop } from "./components/AmbientBackdrop";
 import { LandingPage } from "./components/LandingPage";
 import { NotebookDashboard } from "./components/NotebookDashboard";
 import { PageTransition } from "./components/PageTransition";
 import { SelectionBubble } from "./components/SelectionBubble";
-import { TopBar } from "./components/TopBar";
 import { Workspace } from "./components/Workspace";
 import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
 import { useTreeLearnStore } from "./store/treelearnStore";
@@ -20,6 +18,8 @@ type AppRoute =
   | { kind: "landing" }
   | { kind: "dashboard" }
   | { kind: "workspace"; notebookId: string };
+
+type WorkspaceView = "chat" | "diagram";
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
@@ -144,6 +144,7 @@ export default function App() {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
 
   useEffect(() => {
     void initializeAuth();
@@ -288,11 +289,7 @@ export default function App() {
   ) : route.kind === "dashboard" ? (
     <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
   ) : (
-    <div className="tl-app-bg relative flex h-screen min-h-0 flex-col overflow-hidden">
-      <AmbientBackdrop variant="workspace" />
-      <div className="tl-workspace-stagger tl-workspace-stagger-topbar">
-        <TopBar onHome={goHome} {...menuProps} />
-      </div>
+    <div className="tl-app-bg tl-workspace-page relative flex h-screen min-h-0 flex-col overflow-hidden">
       <main className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">
         <div
           className={
@@ -303,7 +300,13 @@ export default function App() {
         >
           {sidebarOpen ? (
             <div className="tl-workspace-stagger tl-workspace-stagger-sidebar min-h-0">
-              <KnowledgeTree />
+              <KnowledgeTree
+                themeMode={themeMode}
+                onThemeChange={setThemeMode}
+                onHome={goHome}
+                view={workspaceView}
+                onViewChange={setWorkspaceView}
+              />
             </div>
           ) : (
             <aside className="tl-panel tl-workspace-stagger tl-workspace-stagger-sidebar flex h-full min-h-0 flex-col items-center rounded-[1.25rem] border py-3">
@@ -316,7 +319,7 @@ export default function App() {
             </aside>
           )}
           <div className="tl-workspace-stagger tl-workspace-stagger-main min-h-0 overflow-hidden">
-            <Workspace />
+            <Workspace view={workspaceView} onViewChange={setWorkspaceView} />
           </div>
         </div>
       </main>

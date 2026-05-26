@@ -465,14 +465,14 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   }
 
   return (
-    <article className={cn("flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
-      <div className={cn("group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
+    <article className={cn("tl-message-row flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
+      <div className={cn("tl-message-wrap group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
         <div
         className={cn(
-          "rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
+          "tl-message-bubble rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
           isUser
             ? "rounded-br-md border"
-            : "tl-panel rounded-bl-md border text-card-foreground",
+            : "tl-assistant-message tl-panel rounded-bl-md border text-card-foreground",
         )}
         style={
           isUser
