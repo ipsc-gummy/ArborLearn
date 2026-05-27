@@ -18,6 +18,8 @@ interface MessageTreeLink {
   matchTexts?: string[];
   title: string;
   summary: string;
+  anchorRangeStart?: number;
+  anchorRangeEnd?: number;
 }
 
 async function sha256(text: string) {
@@ -340,6 +342,16 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       .map((child) => ({
         id: child.id,
         text: child.selectedText ?? "",
+        anchorRangeStart:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeStart
+            : undefined,
+        anchorRangeEnd:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeEnd
+            : undefined,
         title: child.title,
         summary: child.summary,
       })),
