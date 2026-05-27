@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全局设计变量：上方是 Tailwind/shadcn 风格的 HSL token，下方是 TreeLearn 自定义表面色。 */
+/* 全局设计变量：上方是 Tailwind/shadcn 风格的 HSL token，下方是 ArborLearn 自定义表面色。 */
 :root {
   --background: 204 45% 97%;
   --foreground: 222 28% 12%;

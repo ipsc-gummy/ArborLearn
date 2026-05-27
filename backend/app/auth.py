@@ -56,7 +56,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 def _auth_secret() -> bytes:
-    secret = os.getenv("AUTH_SECRET") or os.getenv("MODEL_API_KEY") or "treelearn-development-secret"
+    secret = os.getenv("AUTH_SECRET") or os.getenv("MODEL_API_KEY") or "arborlearn-development-secret"
     return secret.encode("utf-8")
 
 

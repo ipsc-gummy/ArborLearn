@@ -24,7 +24,7 @@ export interface ChatMessage {
 }
 
 export interface KnowledgeNode {
-  // 节点是 TreeLearn 的核心数据单元；一棵树由 parentId 和 children 共同维护。
+  // 节点是 ArborLearn 的核心数据单元；一棵树由 parentId 和 children 共同维护。
   id: string;
   parentId: string | null;
   title: string;

@@ -309,14 +309,14 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     ts = now_iso()
     conn.execute(
         "INSERT INTO notebooks(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        ("root", "TreeLearn 项目学习", ts, ts),
+        ("root", "ArborLearn 项目学习", ts, ts),
     )
     nodes = [
         (
             "root",
             "root",
             None,
-            "TreeLearn 项目学习",
+            "ArborLearn 项目学习",
             "围绕树形上下文工程理解项目背景、核心功能、技术栈和后端协作边界。",
             None,
             "mainline",
@@ -369,7 +369,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
             "m-root-1",
             "root",
             "assistant",
-            "TreeLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
+            "ArborLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
         ),
         (
             "m-root-2",
@@ -410,7 +410,7 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
         INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (notebook_id, user_id, "TreeLearn 入门笔记本", ts, ts),
+        (notebook_id, user_id, "ArborLearn 入门笔记本", ts, ts),
     )
 
     nodes = [
@@ -418,7 +418,7 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
             notebook_id,
             notebook_id,
             None,
-            "TreeLearn 入门笔记本",
+            "ArborLearn 入门笔记本",
             "从这里开始创建学习主题、选中文本开支线，并观察树形上下文如何影响 AI 回答。",
             None,
             "mainline",

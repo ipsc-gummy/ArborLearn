@@ -10,7 +10,7 @@ from .effective_context import list_effective_messages
 from .web_search import classify_source_url, select_relevant_evidence
 
 
-SYSTEM_PROMPT = """你是 TreeLearn 的学习助手。
+SYSTEM_PROMPT = """你是 ArborLearn 的学习助手。
 你的任务不是闲聊，而是根据树状学习上下文回答当前节点的问题。
 优先使用提供的根节点、父节点和当前节点上下文；当上下文不足时，明确说明你在补充通用知识。
 回答要围绕当前局部问题，避免把兄弟分支或无关历史当成主线事实。
@@ -23,7 +23,7 @@ SYSTEM_PROMPT = """你是 TreeLearn 的学习助手。
 
 
 def _model_identity_context(model_name: str | None = None) -> str:
-    model_name = model_name or os.getenv("MODEL_NAME", "deepseek-v4-flash")
+    model_name = model_name or os.getenv("MODEL_NAME", "deepseek-v4-pro")
     base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com")
     return (
         "运行配置:\n"

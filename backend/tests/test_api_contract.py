@@ -14,7 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "treelearn-test.sqlite3"))
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "arborlearn-test.sqlite3"))
     monkeypatch.setenv("AUTH_SECRET", "test-secret")
     monkeypatch.setenv("MODEL_API_KEY", "test-key")
     monkeypatch.setenv("ENABLE_RAG", "false")
@@ -117,7 +117,7 @@ def test_registration_creates_starter_and_transformer_demo(client: TestClient) -
     payload = tree.json()
     root_ids = payload["rootIds"]
     titles = [payload["nodes"][root_id]["title"] for root_id in root_ids]
-    assert "TreeLearn 入门笔记本" in titles
+    assert "ArborLearn 入门笔记本" in titles
     assert "Transformer 是如何工作的" in titles
 
 
@@ -193,7 +193,7 @@ def test_long_task_metadata_lifecycle(client: TestClient) -> None:
             "question": "Break this test task into steps.",
             "title": "Pytest Long Task",
             "autoRun": False,
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-v4-pro",
             "thinkingMode": "fast",
         },
     )

@@ -22,7 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { SettingsMenu, type ThemeMode } from "./AppMenus";
@@ -51,7 +51,7 @@ interface KnowledgeTreeProps {
 type WorkspaceView = "chat" | "diagram";
 
 // 给任意节点向上追溯到根节点，确保左侧只展示当前笔记本内的树。
-function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string) {
+function getNotebookRootId(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string) {
   let current = nodes[nodeId];
   while (current?.parentId) {
     current = nodes[current.parentId];
@@ -60,7 +60,7 @@ function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>[
 }
 
 // 统计当前笔记本内节点数量，用于左侧标题区域展示。
-function countSubtreeNodes(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string): number {
+function countSubtreeNodes(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string): number {
   const node = nodes[nodeId];
   if (!node) return 0;
   return 1 + node.children.reduce((total, childId) => total + countSubtreeNodes(nodes, childId), 0);
@@ -68,11 +68,11 @@ function countSubtreeNodes(nodes: ReturnType<typeof useTreeLearnStore.getState>[
 
 // 树中的单个节点行：负责展开折叠、选中、重命名、置顶、删除和拖拽入口。
 function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange }: TreeItemProps) {
-  const node = useTreeLearnStore((state) => state.nodes[nodeId]);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const toggleNode = useTreeLearnStore((state) => state.toggleNode);
-  const renameNode = useTreeLearnStore((state) => state.renameNode);
+  const node = useArborLearnStore((state) => state.nodes[nodeId]);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
+  const toggleNode = useArborLearnStore((state) => state.toggleNode);
+  const renameNode = useArborLearnStore((state) => state.renameNode);
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: nodeId });
   const { attributes, listeners, setNodeRef: setDragRef, transform } = useDraggable({ id: nodeId });
   const [isRenaming, setIsRenaming] = useState(false);
@@ -226,20 +226,20 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
 }
 
 export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewChange }: KnowledgeTreeProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const moveNode = useTreeLearnStore((state) => state.moveNode);
-  const createChildNodeUnderActive = useTreeLearnStore((state) => state.createChildNodeUnderActive);
-  const deleteNode = useTreeLearnStore((state) => state.deleteNode);
-  const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
-  const user = useTreeLearnStore((state) => state.user);
-  const logout = useTreeLearnStore((state) => state.logout);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const moveNode = useArborLearnStore((state) => state.moveNode);
+  const createChildNodeUnderActive = useArborLearnStore((state) => state.createChildNodeUnderActive);
+  const deleteNode = useArborLearnStore((state) => state.deleteNode);
+  const toggleSidebar = useArborLearnStore((state) => state.toggleSidebar);
+  const user = useArborLearnStore((state) => state.user);
+  const logout = useArborLearnStore((state) => state.logout);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const notebookRootId = getNotebookRootId(nodes, activeNodeId);
   const nodeCount = countSubtreeNodes(nodes, notebookRootId);
-  const notebookTitle = nodes[notebookRootId]?.title ?? "TreeLearn";
+  const notebookTitle = nodes[notebookRootId]?.title ?? "ArborLearn";
   const userInitial = (user?.displayName || user?.email || "U").slice(0, 1).toUpperCase();
 
   const handleDragEnd = (event: DragEndEvent) => {

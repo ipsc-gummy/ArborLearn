@@ -18,7 +18,7 @@ import {
   setAuthToken,
   type AuthUser,
 } from "../lib/api";
-import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/treelearn";
+import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/arborlearn";
 import { uid } from "../lib/utils";
 import {
   DEFAULT_DEEPSEEK_MODEL_ID,
@@ -39,13 +39,13 @@ type ChatRunStatus = "thinking" | "streaming";
 const activeChatControllers = new Map<string, AbortController>();
 const CHAT_STREAM_TIMEOUT_MS = 90_000;
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
-const MODEL_SELECTION_KEY = "arborlearn.modelSelection";
+const MODEL_SELECTION_KEY = "arborlearn.modelSelection.v2";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
-const MODEL_CONFIGS_BY_SCOPE_KEY = "arborlearn:model-configs";
+const MODEL_CONFIGS_BY_SCOPE_KEY = "arborlearn:model-configs:v2";
 const WEB_SEARCH_ENABLED_BY_NODE_KEY = "arborlearn.webSearchEnabledByNode";
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
-interface TreeLearnState {
+interface ArborLearnState {
   // nodes 是扁平字典，便于按 id 快速读取、重命名、移动和删除。
   nodes: Record<string, KnowledgeNode>;
   // rootIds 记录所有笔记本根节点；pinnedRootIds 只保存被置顶的根节点 id。
@@ -256,7 +256,7 @@ function saveWebSearchEnabledByNode(settings: Record<string, boolean>) {
   }
 }
 
-export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
+export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
   nodes: {},
   rootIds: [],
   pinnedRootIds: [],
@@ -396,7 +396,7 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
         clearAuthToken();
         set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "" });
       }
-      set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "无法连接 TreeLearn API" });
+      set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "无法连接 ArborLearn API" });
     }
   },
   createRootConversation: () => {
