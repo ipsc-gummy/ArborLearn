@@ -3,9 +3,9 @@ import { ChevronDown, GitPullRequest, Route, X } from "lucide-react";
 import { Composer } from "./Composer";
 import { MessageBlock } from "./MessageBlock";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
-import type { KnowledgeNode } from "../types/treelearn";
+import type { KnowledgeNode } from "../types/arborlearn";
 import { BackfillPanel } from "./BackfillPanel";
 
 interface NodePanelProps {
@@ -15,9 +15,9 @@ interface NodePanelProps {
 }
 
 export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const closeChildConversation = useTreeLearnStore((state) => state.closeChildConversation);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
+  const closeChildConversation = useArborLearnStore((state) => state.closeChildConversation);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(node.messages.length);
   const previousNodeIdRef = useRef(node.id);

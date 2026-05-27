@@ -1,7 +1,7 @@
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { NodePanel } from "./NodePanel";
 import { NotebookDiagram } from "./NotebookDiagram";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 
 export type WorkspaceView = "chat" | "diagram";
 
@@ -11,9 +11,9 @@ interface WorkspaceProps {
 }
 
 export function Workspace({ view, onViewChange }: WorkspaceProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const compareNodeId = useTreeLearnStore((state) => state.compareNodeId);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const compareNodeId = useArborLearnStore((state) => state.compareNodeId);
   const activeNode = nodes[activeNodeId];
   const parentNode = compareNodeId ? nodes[compareNodeId] : null;
   const showChat = view === "chat";

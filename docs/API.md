@@ -66,7 +66,7 @@ Response:
 ```json
 {
   "ok": true,
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-v4-pro",
   "modelBaseUrl": "https://api.deepseek.com",
   "availableModels": ["deepseek-v4-flash", "deepseek-v4-pro"],
   "webSearch": {}
@@ -155,7 +155,7 @@ Response `201`:
   "token": "base64urlPayload.signature",
   "user": {
     "id": "user-...",
-    "email": "demo-...@treelearn.local",
+    "email": "demo-...@arborlearn.local",
     "displayName": "演示体验",
     "isTemporary": true
   }
@@ -323,7 +323,7 @@ Request:
   "message": "解释这个概念",
   "userMessageId": "msg-optional",
   "assistantMessageId": "msg-optional",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast",
   "webSearch": false,
   "webQuery": null,
@@ -413,7 +413,7 @@ Request:
 {
   "nodeId": "node-...",
   "assistantMessageId": "msg-...",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -453,7 +453,7 @@ Request:
   "question": "复杂学习问题",
   "title": "可选标题",
   "auto_run": false,
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -467,7 +467,7 @@ Response `201`:
   "title": "可选标题",
   "original_question": "复杂学习问题",
   "node_id": "node-...",
-  "model_name": "deepseek-v4-flash",
+  "model_name": "deepseek-v4-pro",
   "thinking_mode": "fast"
 }
 ```
@@ -525,7 +525,7 @@ Response:
   "plan_summary": "...",
   "node_id": "node-...",
   "notebook_id": "nb-...",
-  "model_name": "deepseek-v4-flash",
+  "model_name": "deepseek-v4-pro",
   "thinking_mode": "fast",
   "final_answer": null,
   "error_message": null,
@@ -620,7 +620,7 @@ Request:
   "targetMessageId": "msg-...",
   "editType": "expand",
   "userInstruction": "更口语一点",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -763,7 +763,7 @@ Query:
 node_id=node-...
 query=optional user query
 webSearch=true
-modelName=deepseek-v4-flash
+modelName=deepseek-v4-pro
 thinkingMode=fast
 ```
 
@@ -773,7 +773,7 @@ Response:
 {
   "node_id": "node-...",
   "model_config": {
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-v4-pro",
     "thinkingMode": "fast"
   },
   "sections": [],

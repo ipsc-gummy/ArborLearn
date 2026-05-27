@@ -14,7 +14,7 @@ import {
   Square,
 } from "lucide-react";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import {
   DEEPSEEK_MODELS,
   type DeepSeekModelId,
@@ -50,17 +50,17 @@ const branchQuickPrompts = [
 
 export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
   const [value, setValue] = useState("");
-  const node = useTreeLearnStore((state) => state.nodes[nodeId]);
-  const appendMessage = useTreeLearnStore((state) => state.appendMessage);
-  const stopMessage = useTreeLearnStore((state) => state.stopMessage);
+  const node = useArborLearnStore((state) => state.nodes[nodeId]);
+  const appendMessage = useArborLearnStore((state) => state.appendMessage);
+  const stopMessage = useArborLearnStore((state) => state.stopMessage);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
   const scopeId = getModelScopeId(scope);
-  const selectedModel = useTreeLearnStore((state) => state.getModelConfig(scope).model);
-  const setModelConfig = useTreeLearnStore((state) => state.setModelConfig);
-  const selectedThinkingMode = useTreeLearnStore((state) => state.getModelConfig(scope).thinkingMode);
-  const webSearchEnabled = useTreeLearnStore((state) => state.webSearchEnabledByNode[nodeId] ?? false);
-  const setWebSearchEnabled = useTreeLearnStore((state) => state.setWebSearchEnabled);
-  const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
+  const selectedModel = useArborLearnStore((state) => state.getModelConfig(scope).model);
+  const setModelConfig = useArborLearnStore((state) => state.setModelConfig);
+  const selectedThinkingMode = useArborLearnStore((state) => state.getModelConfig(scope).thinkingMode);
+  const webSearchEnabled = useArborLearnStore((state) => state.webSearchEnabledByNode[nodeId] ?? false);
+  const setWebSearchEnabled = useArborLearnStore((state) => state.setWebSearchEnabled);
+  const chatRunStatus = useArborLearnStore((state) => state.chatRunStatusByNode[nodeId]);
   const isThinking = chatRunStatus === "thinking";
   const isStreaming = chatRunStatus === "streaming";
   const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import {
   DIAGRAM_NODE_HEIGHT,
@@ -30,7 +30,7 @@ import {
   linkPath,
 } from "../lib/diagramLayout";
 import type { AuthUser } from "../lib/api";
-import type { KnowledgeNode } from "../types/treelearn";
+import type { KnowledgeNode } from "../types/arborlearn";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
@@ -132,7 +132,7 @@ function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId:
   return normalizeSearchText(textParts.join(" "));
 }
 
-// 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 TreeLearn 笔记本。
+// 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 ArborLearn 笔记本。
 export function NotebookDashboard({
   onOpenNotebook,
   themeMode,
@@ -145,12 +145,12 @@ export function NotebookDashboard({
   onLogout,
   onRequestAuth,
 }: NotebookDashboardProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const rootIds = useTreeLearnStore((state) => state.rootIds);
-  const pinnedRootIds = useTreeLearnStore((state) => state.pinnedRootIds);
-  const createRootConversation = useTreeLearnStore((state) => state.createRootConversation);
-  const renameNode = useTreeLearnStore((state) => state.renameNode);
-  const deleteNode = useTreeLearnStore((state) => state.deleteNode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const rootIds = useArborLearnStore((state) => state.rootIds);
+  const pinnedRootIds = useArborLearnStore((state) => state.pinnedRootIds);
+  const createRootConversation = useArborLearnStore((state) => state.createRootConversation);
+  const renameNode = useArborLearnStore((state) => state.renameNode);
+  const deleteNode = useArborLearnStore((state) => state.deleteNode);
   const isLoggedIn = Boolean(user);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -273,7 +273,7 @@ export function NotebookDashboard({
               <GitBranch className="tl-brand h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-base font-medium">TreeLearn</h1>
+              <h1 className="text-base font-medium">ArborLearn</h1>
               <p className="text-xs text-muted-foreground">面向知识学习的树形上下文工作台</p>
             </div>
           </div>
@@ -301,7 +301,7 @@ export function NotebookDashboard({
                 把资料变成可展开、可追问、可复盘的学习笔记本
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-                先为论文、课件或技术文档创建一个独立 TreeLearn 笔记本，再进入树形对话空间管理主线、支线和上下文调度。
+                先为论文、课件或技术文档创建一个独立 ArborLearn 笔记本，再进入树形对话空间管理主线、支线和上下文调度。
               </p>
             </div>
 
@@ -336,7 +336,7 @@ export function NotebookDashboard({
           <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
               <h3 className="tl-notebooks-title">
-                我的 <span>TreeLearn</span> 笔记本
+                我的 <span>ArborLearn</span> 笔记本
               </h3>
               <p className="mt-2 text-sm text-muted-foreground">每个笔记本都是一个放大思考的空间</p>
               <div className="tl-notebooks-title-mark" aria-hidden="true" />
@@ -449,7 +449,7 @@ export function NotebookDashboard({
                 className="tl-notebook-primary-action"
               >
                 <Plus className="h-4 w-4" />
-                新建 TreeLearn 笔记本
+                新建 ArborLearn 笔记本
               </Button>
             </div>
           </div>

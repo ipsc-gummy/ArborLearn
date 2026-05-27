@@ -4,7 +4,7 @@ export const DEEPSEEK_THINKING_MODE_IDS = ["fast", "deep", "challenge"] as const
 export type DeepSeekModelId = (typeof DEEPSEEK_MODEL_IDS)[number];
 export type DeepSeekThinkingModeId = (typeof DEEPSEEK_THINKING_MODE_IDS)[number];
 
-export const DEFAULT_DEEPSEEK_MODEL_ID: DeepSeekModelId = "deepseek-v4-flash";
+export const DEFAULT_DEEPSEEK_MODEL_ID: DeepSeekModelId = "deepseek-v4-pro";
 export const DEFAULT_DEEPSEEK_THINKING_MODE_ID: DeepSeekThinkingModeId = "fast";
 
 export const DEEPSEEK_MODELS: readonly {

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Sparkles, Undo2 } from "lucide-react";
 import { createBackfillDraft, createBackfillPatch } from "../lib/api";
-import { useTreeLearnStore } from "../store/treelearnStore";
-import type { EditType, KnowledgeNode } from "../types/treelearn";
+import { useArborLearnStore } from "../store/arborlearnStore";
+import type { EditType, KnowledgeNode } from "../types/arborlearn";
 import { Button } from "./ui/button";
 
 interface BackfillPanelProps {
@@ -47,10 +47,10 @@ function formatApplyError(error: unknown) {
 }
 
 export function BackfillPanel({ node }: BackfillPanelProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
-  const selectedModel = useTreeLearnStore((state) => state.selectedModel);
-  const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const hydrateFromBackend = useArborLearnStore((state) => state.hydrateFromBackend);
+  const selectedModel = useArborLearnStore((state) => state.selectedModel);
+  const selectedThinkingMode = useArborLearnStore((state) => state.selectedThinkingMode);
   const [open, setOpen] = useState(false);
   const [editType, setEditType] = useState<EditType>("expand");
   const [draftPromptTag, setDraftPromptTag] = useState<EditType | null>(null);

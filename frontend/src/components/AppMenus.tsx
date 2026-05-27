@@ -54,7 +54,7 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <MenuButton icon={HelpCircle} label="TreeLearn 帮助" />
+          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" />
           <MenuButton icon={MessageSquareWarning} label="发送反馈" />
           <MenuButton icon={Languages} label="语言" trailing="简体中文" />
           <div className="tl-border-soft my-2 border-t" />

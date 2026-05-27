@@ -1,10 +1,10 @@
-# ArborLearn / TreeLearn
+# ArborLearn
 
 > 中文 | [English](#english)
 
 ArborLearn 是一个 AI 问答驱动的树状学习平台。它把普通聊天里的零散问答整理成 notebook、树状节点和可回填的学习记录，让用户可以沿着主线学习，也可以从任意片段展开局部追问。
 
-TreeLearn 是 ArborLearn 的核心学习界面：每个 notebook 是一棵学习树，每个节点是一段聚焦对话，子节点用于承接选中文本、局部概念或延伸问题。
+ArborLearn 的核心学习界面围绕树状 notebook 展开：每个 notebook 是一棵学习树，每个节点是一段聚焦对话，子节点用于承接选中文本、局部概念或延伸问题。
 
 ## 核心体验
 
@@ -58,7 +58,7 @@ ArborLearn/
 │   │   ├── long_task_runner.py
 │   │   └── backfill.py
 │   └── requirements.txt
-├── frontend/             # React / Vite TreeLearn workspace
+├── frontend/             # React / Vite ArborLearn workspace
 │   └── src/
 │       ├── components/
 │       ├── store/
@@ -85,7 +85,7 @@ cp .env.example .env
 
 ```text
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 ```
 
 也可以通过修改 `MODEL_BASE_URL`、`MODEL_NAME`、`MODEL_API_KEY` 接入其他 OpenAI-compatible `/chat/completions` 服务。
@@ -112,10 +112,10 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 | --- | --- | --- |
 | `MODEL_API_KEY` | 是 | OpenAI-compatible 模型服务的 API key |
 | `MODEL_BASE_URL` | 是 | 默认 `https://api.deepseek.com` |
-| `MODEL_NAME` | 是 | 默认 `deepseek-v4-flash` |
+| `MODEL_NAME` | 是 | 默认 `deepseek-v4-pro` |
 | `AUTH_SECRET` | 生产必填 | 登录 token 签名密钥，生产环境必须换成长随机值 |
 | `CORS_ORIGINS` | 是 | 允许访问后端的前端 origin 列表 |
-| `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/treelearn.sqlite3` |
+| `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/arborlearn.sqlite3` |
 | `ENABLE_RAG` | 否 | 是否启用 RAG |
 | `VECTOR_DB_PATH` | 否 | LanceDB / vector store 路径 |
 | `TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SEARXNG_BASE_URL` | 否 | Web search provider 配置 |
@@ -180,7 +180,7 @@ python3 scripts/smoke_check.py \
 
 新注册账号会自动获得两个默认 notebook：
 
-- `TreeLearn 入门笔记本`：说明基础操作和树形上下文。
+- `ArborLearn 入门笔记本`：说明基础操作和树形上下文。
 - `Transformer 是如何工作的`：完整演示树，包含自注意力、Q/K/V、多头注意力、Encoder/Decoder 等分支。
 
 前端的“体验示例”不会登录共享账号。每次点击都会创建独立的临时演示会话，默认包含 Transformer 示例树；不同访问者不会共享笔记本、节点或聊天记录，浏览器会话结束后也不会自动恢复该体验账号。
@@ -201,7 +201,7 @@ docs/DEPLOYMENT.md
 
 ArborLearn is an AI question-answering learning workspace built around a tree-shaped knowledge structure. It turns scattered chat-based learning into notebooks, structured nodes, and reusable learning records.
 
-TreeLearn is the core learning interface: each notebook is a learning tree, each node is a focused conversation, and child nodes let learners branch from selected context without losing the main learning path.
+ArborLearn is the core learning interface: each notebook is a learning tree, each node is a focused conversation, and child nodes let learners branch from selected context without losing the main learning path.
 
 ## Core Experience
 
@@ -248,7 +248,7 @@ ArborLearn is organized as a learning workspace, not a plain chatbot.
 ```text
 ArborLearn/
 ├── backend/              # FastAPI backend, SQLite data access, AI orchestration
-├── frontend/             # React / Vite TreeLearn workspace
+├── frontend/             # React / Vite ArborLearn workspace
 ├── docs/                 # Architecture, API, testing, report and deployment docs
 ├── deploy/               # Nginx and systemd deployment files
 └── scripts/              # Smoke checks and local utilities
@@ -271,7 +271,7 @@ The default model endpoint is DeepSeek-compatible:
 
 ```text
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 ```
 
 Any OpenAI-compatible `/chat/completions` service can be used by changing `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY`.
@@ -298,7 +298,7 @@ Backend:
 | --- | --- | --- |
 | `MODEL_API_KEY` | Yes | API key for the OpenAI-compatible model service |
 | `MODEL_BASE_URL` | Yes | Default `https://api.deepseek.com` |
-| `MODEL_NAME` | Yes | Default `deepseek-v4-flash` |
+| `MODEL_NAME` | Yes | Default `deepseek-v4-pro` |
 | `AUTH_SECRET` | Production | Signing secret for login tokens |
 | `CORS_ORIGINS` | Yes | Allowed frontend origins |
 | `DATABASE_PATH` | No | SQLite path |
@@ -366,7 +366,7 @@ python3 scripts/smoke_check.py \
 
 New registered accounts automatically receive two default notebooks:
 
-- `TreeLearn 入门笔记本`: a lightweight guide to the core workflow and tree context.
+- `ArborLearn 入门笔记本`: a lightweight guide to the core workflow and tree context.
 - `Transformer 是如何工作的`: a complete demo tree covering self-attention, Q/K/V, multi-head attention, Encoder/Decoder, and examples.
 
 The frontend demo entry does not log into a shared account. Each click creates an isolated temporary demo session with the Transformer notebook, so visitors do not share notebooks, nodes, or chat history. The temporary demo token is stored only for the browser session.
