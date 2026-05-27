@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   CircleHelp,
   Globe,
   Lightbulb,
@@ -194,22 +195,28 @@ function ModelModeSelector({
 }) {
   const [open, setOpen] = useState(false);
   const [thinkingOptionsOpen, setThinkingOptionsOpen] = useState(false);
+  const [modelOptionsOpen, setModelOptionsOpen] = useState(false);
   const activeModel = DEEPSEEK_MODELS.find((model) => model.id === selectedModel) ?? DEEPSEEK_MODELS[0];
+  const modelMenuOptions = [...DEEPSEEK_MODELS].reverse();
   const activeCopy = thinkingModeCopy[selectedMode] ?? thinkingModeCopy.fast;
   const thinkingRowSuffix = selectedMode === "challenge" ? thinkingModeCopy.challenge.title : "";
+  const activeModelLabel = `DeepSeek ${activeModel.label}`;
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
       setThinkingOptionsOpen(false);
+      setModelOptionsOpen(false);
     }
   };
   const selectModel = (model: DeepSeekModelId) => {
     onChange({ model, thinkingMode: selectedMode });
+    setModelOptionsOpen(false);
   };
   const selectMode = (thinkingMode: DeepSeekThinkingModeId) => {
     onChange({ model: selectedModel, thinkingMode });
     setOpen(false);
     setThinkingOptionsOpen(false);
+    setModelOptionsOpen(false);
   };
 
   return (
@@ -232,45 +239,11 @@ function ModelModeSelector({
           side="top"
           align="end"
           sideOffset={8}
-          className="tl-panel z-50 w-72 overflow-visible rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
+          className="tl-panel z-50 w-44 overflow-visible rounded-2xl border p-1.5 text-sm shadow-panel outline-none"
         >
-          <div className="px-2.5 pb-1.5 pt-1">
-            <p className="text-sm font-semibold leading-5">DeepSeek</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">Flash / Pro · Instant / Thinking</p>
+          <div className="px-2.5 pb-1 pt-1">
+            <p className="text-sm font-semibold leading-5">思考强度</p>
           </div>
-
-          <div className="overflow-hidden rounded-lg">
-            {DEEPSEEK_MODELS.map((model) => {
-              const active = selectedModel === model.id;
-              return (
-                <button
-                  key={model.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  className={cn(
-                    "flex min-h-[3.15rem] w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition",
-                    active
-                      ? "bg-primary/10 ring-1 ring-inset ring-primary/45"
-                      : "hover:bg-foreground/5 dark:hover:bg-white/10",
-                  )}
-                  onClick={() => selectModel(model.id)}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-sm font-semibold leading-5">{model.label}</span>
-                    <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{model.description}</span>
-                  </span>
-                  {active && (
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mx-2 my-1.5 h-px bg-border" />
 
           <div className="overflow-visible rounded-lg">
             <button
@@ -330,7 +303,7 @@ function ModelModeSelector({
               </div>
 
               {thinkingOptionsOpen && (
-                <div className="tl-panel absolute left-[calc(100%-0.1rem)] top-0 z-50 w-28 rounded-2xl border p-1.5 shadow-panel">
+                <div className="tl-panel absolute left-[calc(100%-0.1rem)] top-0 z-50 w-24 rounded-2xl border p-1.5 shadow-panel">
                   {(["deep", "challenge"] as const).map((mode) => {
                     const active = selectedMode === mode;
                     return (
@@ -357,12 +330,51 @@ function ModelModeSelector({
             </div>
 
             <div className="mx-2 my-1 h-px bg-border" />
-            <button
-              type="button"
-              className="flex min-h-9 w-full items-center rounded-lg px-2 py-1 text-left text-sm font-semibold transition hover:bg-foreground/5 dark:hover:bg-white/10"
-            >
-              配置...
-            </button>
+            <div className="group/model relative overflow-visible">
+              <button
+                type="button"
+                className={cn(
+                  "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-sm font-semibold transition hover:bg-foreground/5 dark:hover:bg-white/10",
+                  modelOptionsOpen && "bg-foreground/10",
+                )}
+                aria-haspopup="menu"
+                aria-expanded={modelOptionsOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setThinkingOptionsOpen(false);
+                  setModelOptionsOpen((current) => !current);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{activeModelLabel}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+
+              {modelOptionsOpen && (
+                <div className="tl-panel absolute right-[calc(100%-0.1rem)] bottom-0 z-50 w-40 rounded-2xl border p-1.5 shadow-panel">
+                  {modelMenuOptions.map((model) => {
+                    const active = selectedModel === model.id;
+                    return (
+                      <button
+                        key={model.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={cn(
+                          "flex min-h-9 w-full items-center gap-2 rounded-lg px-2 py-1 text-left transition",
+                          active ? "bg-foreground/10" : "hover:bg-foreground/5 dark:hover:bg-white/10",
+                        )}
+                        onClick={() => selectModel(model.id)}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold leading-5">DeepSeek {model.label}</span>
+                        </span>
+                        {active && <Check className="h-3.5 w-3.5 shrink-0 text-foreground" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </Popover.Content>
       </Popover.Portal>
