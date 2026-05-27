@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Sparkles, Undo2 } from "lucide-react";
-import { createBackfillDraft, createBackfillPatch } from "../lib/api";
+import { Check, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import { archiveBackfillPatch, createBackfillDraft, createBackfillPatch } from "../lib/api";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import type { EditType, KnowledgeNode } from "../types/treelearn";
 import { Button } from "./ui/button";
@@ -57,6 +57,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
   const [draftPrompt, setDraftPrompt] = useState("");
   const [replacementText, setReplacementText] = useState(node.sourceMetadata?.anchorText ?? "");
   const [isApplying, setIsApplying] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const source = node.sourceMetadata;
@@ -125,6 +126,21 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
     }
   };
 
+  const archiveExistingPatch = async () => {
+    if (!existingPatch || isArchiving) return;
+    setIsArchiving(true);
+    setError(null);
+    try {
+      await archiveBackfillPatch(existingPatch.id);
+      await hydrateFromBackend();
+      setOpen(false);
+    } catch (archiveError) {
+      setError(formatApplyError(archiveError));
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
   const generateDraft = async () => {
     if (!source || isGenerating || conflictingPatch) return;
     setIsGenerating(true);
@@ -155,7 +171,14 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
 
   return (
     <div className="relative">
-      <Button variant="outline" size="sm" onClick={() => setOpen((current) => !current)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen((current) => !current)}
+        data-tour-backfill-open
+        data-tour-backfill-open-id={node.id}
+        data-tour-backfill-open-title={node.title}
+      >
         <Undo2 className="h-4 w-4" />
         {existingPatch ? "编辑回填" : "手动回填"}
       </Button>
@@ -183,6 +206,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
             {editTypeOptions.map((option) => (
               <button
                 key={option.id}
+                data-tour-backfill-option={option.id}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
                   draftPromptTag === option.id
                     ? "border-violet-500 bg-violet-600 text-white"
@@ -213,6 +237,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
               <Button
                 variant="outline"
                 size="sm"
+                data-tour-backfill-generate
                 onClick={generateDraft}
                 disabled={isGenerating || Boolean(conflictingPatch)}
               >
@@ -229,13 +254,20 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
           />
           {error && <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
           </div>
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card p-4">
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card p-4">
+            {existingPatch && (
+              <Button variant="outline" size="sm" onClick={archiveExistingPatch} disabled={isArchiving || isApplying}>
+                <RotateCcw className="h-4 w-4" />
+                {isArchiving ? "撤回中" : "撤回回填"}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
               取消
             </Button>
             <Button
               variant="primary"
               size="sm"
+              data-tour-backfill-apply
               onClick={applyPatch}
               disabled={isApplying || !replacementText.trim() || Boolean(conflictingPatch)}
             >

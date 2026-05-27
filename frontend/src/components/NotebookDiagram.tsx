@@ -183,6 +183,7 @@ export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
 
   return (
     <div
+      data-tour-diagram
       className="relative h-full min-h-0 cursor-grab overflow-hidden active:cursor-grabbing"
       style={{
         background:
