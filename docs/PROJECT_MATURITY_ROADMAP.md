@@ -227,7 +227,26 @@ README 应保持短而清楚，不承载全部细节。
 - backfill 流程。
 - web search / RAG 作为证据补充的边界。
 
-### 4.3 `docs/API.md`
+### 4.3 `docs/USER_FLOW.md`
+
+面向产品说明、答辩讲解和回归设计，说明：
+
+- 注册登录到 notebook 初始化。
+- notebook / node / message 的用户路径。
+- 从片段展开子对话。
+- 节点问答如何使用树状上下文。
+- 长任务、回填、搜索和 RAG 如何接入学习闭环。
+
+### 4.4 `docs/FEATURE_MATRIX.md`
+
+面向项目管理和答辩范围控制，说明：
+
+- 哪些能力已经完成。
+- 哪些能力可演示但依赖配置。
+- 哪些能力需要测试或体验补强。
+- 报告章节可以映射到哪些实现能力。
+
+### 4.5 `docs/API.md`
 
 面向前后端协作，说明：
 
@@ -240,7 +259,7 @@ README 应保持短而清楚，不承载全部细节。
 - 认证要求。
 - 常见错误码和错误语义。
 
-### 4.4 `docs/TESTING.md`
+### 4.6 `docs/TESTING.md`
 
 面向交付和回归，说明：
 
@@ -250,7 +269,7 @@ README 应保持短而清楚，不承载全部细节。
 - 哪些检查依赖真实模型 API。
 - 哪些检查可以离线完成。
 
-### 4.5 `docs/DEPLOYMENT.md`
+### 4.7 `docs/DEPLOYMENT.md`
 
 可以由现有 `DEPLOYMENT.md` 和 `deploy/README.md` 整理而来，说明：
 
