@@ -20,12 +20,14 @@ from .backfill import (
     archive_patch,
     archive_patches_for_message,
     create_and_apply_patch,
+    decide_target_range,
     list_message_patches,
     message_for_user,
     normalize_source_metadata_for_storage,
     parse_source_metadata,
     resolve_anchor_range,
     source_node_for_user,
+    validate_target_range_contains_anchor,
 )
 from .context_builder import build_model_messages, index_node_to_vector_store
 from .db import (
@@ -181,6 +183,27 @@ class BackfillDraftCreate(BaseModel):
     sourceChildNodeId: str
     targetMessageId: str
     editType: Literal["correct", "expand", "compress", "reframe"]
+    targetRangeStart: int | None = None
+    targetRangeEnd: int | None = None
+    userInstruction: str | None = Field(default=None, max_length=2000)
+    modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
+    thinkingMode: Literal["fast", "deep", "challenge"] | None = None
+
+
+class BackfillRangeDecisionCreate(BaseModel):
+    sourceChildNodeId: str
+    targetMessageId: str
+    editType: Literal["correct", "expand", "compress", "reframe"]
+    userInstruction: str | None = Field(default=None, max_length=2000)
+
+
+class BackfillReviewCreate(BaseModel):
+    sourceChildNodeId: str
+    targetMessageId: str
+    editType: Literal["correct", "expand", "compress", "reframe"]
+    targetRangeStart: int
+    targetRangeEnd: int
+    replacementText: str = Field(min_length=1)
     userInstruction: str | None = Field(default=None, max_length=2000)
     modelName: Literal["deepseek-v4-flash", "deepseek-v4-pro"] | None = None
     thinkingMode: Literal["fast", "deep", "challenge"] | None = None
@@ -1139,14 +1162,30 @@ EDIT_TYPE_GENERATION_GUIDE = {
     "compress": "压缩：保留核心意思，减少冗余，让原选区更紧凑。",
     "reframe": "重构：在不改变选区外内容的前提下，重新组织原选区表达，使逻辑更清晰。",
 }
+EDIT_TYPE_TAG_RE = re.compile(r"#(?:纠错|补充|压缩|重构|correct|expand|compress|reframe)", re.IGNORECASE)
+
+
+def normalize_backfill_instruction(user_instruction: str | None) -> str:
+    return (user_instruction or "").strip()
+
+
+def backfill_instruction_is_thin(user_instruction: str | None) -> bool:
+    instruction = normalize_backfill_instruction(user_instruction)
+    if not instruction:
+        return True
+    if EDIT_TYPE_TAG_RE.search(instruction):
+        return False
+    content = EDIT_TYPE_TAG_RE.sub("", instruction)
+    content = re.sub(r"[\s#，。,.!！?？：:；;、-]+", "", content)
+    return len(content) < 2
 
 
 def clean_backfill_draft(raw: str) -> str:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
-        text = re.sub(r"\s*```$", "", text).strip()
-    text = text.strip(" \t\r\n")
+    text = raw.strip("\r\n")
+    if text.lstrip().startswith("```"):
+        text = re.sub(r"^\s*```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip("\r\n")
+    text = text.strip("\r\n")
     if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1].strip()
     return text
@@ -1169,6 +1208,67 @@ def backfill_conflict_detail(conflict: sqlite3.Row) -> dict:
     }
 
 
+def load_backfill_generation_context(
+    conn: sqlite3.Connection,
+    user_id: str,
+    source_child_node_id: str,
+    target_message_id: str,
+    edit_type: str,
+    user_instruction: str | None,
+) -> dict:
+    source_node = source_node_for_user(conn, user_id, source_child_node_id)
+    if not source_node:
+        raise HTTPException(status_code=404, detail="Source child node not found")
+    source_metadata = parse_source_metadata(source_node["source_metadata_json"])
+    if not source_metadata:
+        raise HTTPException(status_code=400, detail="Source child node does not contain backfill metadata")
+    if source_metadata.get("targetMessageId") != target_message_id:
+        raise HTTPException(status_code=400, detail="Target message does not match source metadata")
+
+    target_message = message_for_user(conn, target_message_id, user_id)
+    if not target_message:
+        raise HTTPException(status_code=404, detail="Target message not found")
+    if source_metadata.get("baseMessageContentHash") != content_hash(target_message["content"]):
+        raise HTTPException(status_code=409, detail="Target message version has changed")
+
+    child_messages = list_effective_messages(conn, source_child_node_id, ascending=True)
+    meaningful_child_messages = [
+        message for message in child_messages if message["role"] in {"user", "assistant"} and message["content"].strip()
+    ]
+    effective_edit_type = (
+        "reframe"
+        if not meaningful_child_messages and backfill_instruction_is_thin(user_instruction)
+        else edit_type
+    )
+    anchor_start, anchor_end = resolve_anchor_range(target_message["content"], source_metadata)
+    return {
+        "source_metadata": source_metadata,
+        "target_message": target_message,
+        "meaningful_child_messages": meaningful_child_messages,
+        "effective_edit_type": effective_edit_type,
+        "anchor_start": anchor_start,
+        "anchor_end": anchor_end,
+    }
+
+
+def validate_backfill_conflict(
+    conn: sqlite3.Connection,
+    target_message_id: str,
+    start: int,
+    end: int,
+    source_child_node_id: str,
+) -> None:
+    conflict = active_patch_overlap(
+        conn,
+        target_message_id,
+        start,
+        end,
+        exclude_source_child_node_id=source_child_node_id,
+    )
+    if conflict:
+        raise HTTPException(status_code=409, detail=backfill_conflict_detail(conflict))
+
+
 def build_backfill_draft_messages(
     *,
     edit_type: str,
@@ -1187,15 +1287,20 @@ def build_backfill_draft_messages(
         for patch in existing_patches
         if patch.get("status") == "applied"
     ) or "无"
-    instruction_text = user_instruction.strip() if user_instruction else "无"
+    instruction_text = normalize_backfill_instruction(user_instruction) or "无"
     return [
         {
             "role": "system",
             "content": (
-                "你是 ArborLearn 的回填草稿生成器。只生成目标选区的替换内容，不要重写整条父消息。"
-                "必须保持父消息原有风格；不能引入子对话没有支持的新事实；不能改变选区外内容。"
+                "你是 ArborLearn 的回填草稿生成器。只生成目标范围的替换内容，不要重写整条父消息。"
+                "目标范围可能是一句话、一个 Markdown 结构块，或跨多个段落；你必须为整个目标范围生成可直接替换的完整片段。"
+                "必须保持父消息原有风格；不能引入子对话没有支持的新事实；不能改变目标范围外内容。"
+                "如果目标范围包含列表、引用、表格、代码块或多段落，输出必须补全对应 Markdown 格式，保持列表标记、表格列、代码围栏和段落空行闭合。"
+                "如果目标范围包含紧贴锚点的行内 Markdown 标记（如 **、__、`、~~），除非用户明确要求移除格式，否则 replacement 必须保留并正确闭合这些标记。"
+                "子对话内容可能为空；这种情况下根据父消息、目标范围、选区锚点、回填类型和用户额外生成提示生成一个保守草稿。"
+                "如果用户意图很少或难以理解，默认按“重构”处理：优化目标范围表达、补全 Markdown 格式、保持原意。"
                 "输出必须是纯文本或 Markdown 片段，不要标题、解释、引号、项目说明。"
-                "如果子对话信息不足以形成可靠回填，只输出 __INSUFFICIENT_CONTEXT__。"
+                "不要输出 __INSUFFICIENT_CONTEXT__；必须给出 replacementText。"
             ),
         },
         {
@@ -1203,7 +1308,7 @@ def build_backfill_draft_messages(
             "content": (
                 f"回填类型：{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
                 f"父消息原文：\n{parent_content}\n\n"
-                f"目标选区原文：\n{original_text}\n\n"
+                f"目标范围原文：\n{original_text}\n\n"
                 f"选区锚点：\n"
                 f"- prefix: {source_metadata.get('anchorPrefix') or ''}\n"
                 f"- anchor: {source_metadata.get('anchorText') or ''}\n"
@@ -1211,67 +1316,149 @@ def build_backfill_draft_messages(
                 f"已有已生效回填：\n{patch_text}\n\n"
                 f"用户额外生成提示：\n{instruction_text}\n\n"
                 f"子对话内容：\n{child_text}\n\n"
-                "请根据子对话内容生成 replacementText。"
+                "请生成 replacementText。"
             ),
         },
     ]
 
 
+def build_backfill_review_messages(
+    *,
+    edit_type: str,
+    user_instruction: str | None,
+    parent_content: str,
+    original_text: str,
+    replacement_text: str,
+    source_metadata: dict,
+) -> list[dict[str, str]]:
+    instruction_text = normalize_backfill_instruction(user_instruction) or "无"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是 ArborLearn 的回填审核器。你的任务不是重新创作，而是审核并修正当前 replacementText，"
+                "使它可以无缝替换目标范围原文。请在内部按以下步骤审核，但最终只输出修正后的 replacementText："
+                "1. 替换性检查：replacementText 必须能直接替换目标范围原文；不要包含目标范围外的前后文；不要重写整条父消息。"
+                "2. 上下文检查：替换后必须与父消息中的前后语义衔接自然；修复指代断裂、重复转折、重复主语、因果不通顺等问题。"
+                "3. Markdown 检查：如果目标范围原文包含 Markdown 标记，replacementText 必须保持结构完整。"
+                "   - 行内格式：**、__、`、~~、*、_ 必须成对闭合；除非用户明确要求去掉格式，否则保留原格式作用。"
+                "   - 列表/引用：保留项目符号、编号、引用符号和必要缩进。"
+                "   - 表格：保留列数、分隔行和单元格边界。"
+                "   - 代码块：保留完整围栏、语言标记和代码缩进。"
+                "   - 多段落：保留必要空行，不把多个段落硬挤成一段。"
+                "4. 信息边界检查：不能引入父消息、子对话或用户指令都没有支持的新事实；不能改变目标范围外的论证方向。"
+                "5. 最小改动检查：如果 replacementText 已经合格，原样输出；只在确实有格式、语义或上下文问题时修正。"
+                "输出要求：只输出最终 replacementText，不要解释、不要标题、不要引号、不要审核报告。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"回填类型：{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"父消息原文：\n{parent_content}\n\n"
+                f"目标范围原文：\n{original_text}\n\n"
+                f"当前 replacementText：\n{replacement_text}\n\n"
+                f"选区锚点：\n"
+                f"- prefix: {source_metadata.get('anchorPrefix') or ''}\n"
+                f"- anchor: {source_metadata.get('anchorText') or ''}\n"
+                f"- suffix: {source_metadata.get('anchorSuffix') or ''}\n\n"
+                f"用户选区所在段落前文：\n{source_metadata.get('beforeContext') or ''}\n\n"
+                f"用户选区所在段落后文：\n{source_metadata.get('afterContext') or ''}\n\n"
+                f"用户额外生成提示：\n{instruction_text}\n\n"
+                "请输出审核后的 replacementText。"
+            ),
+        },
+    ]
+
+
+@app.post("/api/backfill/range-decision", status_code=200)
+def decide_backfill_range(payload: BackfillRangeDecisionCreate, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        context = load_backfill_generation_context(
+            conn,
+            user["id"],
+            payload.sourceChildNodeId,
+            payload.targetMessageId,
+            payload.editType,
+            payload.userInstruction,
+        )
+        target_message = context["target_message"]
+        anchor_start = context["anchor_start"]
+        anchor_end = context["anchor_end"]
+        target_start, target_end, range_reason = decide_target_range(
+            target_message["content"],
+            anchor_start,
+            anchor_end,
+            context["effective_edit_type"],
+            payload.userInstruction,
+        )
+        validate_backfill_conflict(conn, payload.targetMessageId, target_start, target_end, payload.sourceChildNodeId)
+        original_text = target_message["content"][target_start:target_end]
+        anchor_text = target_message["content"][anchor_start:anchor_end]
+        return {
+            "decision": {
+                "sourceChildNodeId": payload.sourceChildNodeId,
+                "targetMessageId": payload.targetMessageId,
+                "editType": context["effective_edit_type"],
+                "anchorRangeStart": anchor_start,
+                "anchorRangeEnd": anchor_end,
+                "anchorText": anchor_text,
+                "targetRangeStart": target_start,
+                "targetRangeEnd": target_end,
+                "originalText": original_text,
+                "reason": range_reason,
+                "expanded": target_start != anchor_start or target_end != anchor_end,
+            }
+        }
+
+
 @app.post("/api/backfill/draft", status_code=201)
 def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        source_node = source_node_for_user(conn, user["id"], payload.sourceChildNodeId)
-        if not source_node:
-            raise HTTPException(status_code=404, detail="Source child node not found")
-        source_metadata = parse_source_metadata(source_node["source_metadata_json"])
-        if not source_metadata:
-            raise HTTPException(status_code=400, detail="Source child node does not contain backfill metadata")
-        if source_metadata.get("targetMessageId") != payload.targetMessageId:
-            raise HTTPException(status_code=400, detail="Target message does not match source metadata")
-
-        target_message = message_for_user(conn, payload.targetMessageId, user["id"])
-        if not target_message:
-            raise HTTPException(status_code=404, detail="Target message not found")
-        if source_metadata.get("baseMessageContentHash") != content_hash(target_message["content"]):
-            raise HTTPException(status_code=409, detail="Target message version has changed")
-
-        target_start, target_end = resolve_anchor_range(target_message["content"], source_metadata)
-        conflict = active_patch_overlap(
+        context = load_backfill_generation_context(
             conn,
+            user["id"],
+            payload.sourceChildNodeId,
             payload.targetMessageId,
-            target_start,
-            target_end,
-            exclude_source_child_node_id=payload.sourceChildNodeId,
+            payload.editType,
+            payload.userInstruction,
         )
-        if conflict:
-            raise HTTPException(status_code=409, detail=backfill_conflict_detail(conflict))
-
-        child_messages = list_effective_messages(conn, payload.sourceChildNodeId, ascending=True)
-        meaningful_child_messages = [
-            message for message in child_messages if message["role"] in {"user", "assistant"} and message["content"].strip()
-        ]
-        assistant_signal = " ".join(
-            message["content"].strip() for message in meaningful_child_messages if message["role"] == "assistant"
-        )
-        if len(meaningful_child_messages) < 2 or len(assistant_signal) < 20:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "BACKFILL_INSUFFICIENT_CONTEXT",
-                    "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
-                },
+        source_metadata = context["source_metadata"]
+        target_message = context["target_message"]
+        effective_edit_type = context["effective_edit_type"]
+        anchor_start = context["anchor_start"]
+        anchor_end = context["anchor_end"]
+        if payload.targetRangeStart is not None and payload.targetRangeEnd is not None:
+            target_start = payload.targetRangeStart
+            target_end = payload.targetRangeEnd
+            original_text = validate_target_range_contains_anchor(
+                target_message["content"],
+                target_start,
+                target_end,
+                anchor_start,
+                anchor_end,
             )
+            range_reason = None
+        else:
+            target_start, target_end, range_reason = decide_target_range(
+                target_message["content"],
+                anchor_start,
+                anchor_end,
+                effective_edit_type,
+                payload.userInstruction,
+            )
+            original_text = target_message["content"][target_start:target_end]
+        validate_backfill_conflict(conn, payload.targetMessageId, target_start, target_end, payload.sourceChildNodeId)
 
         existing_patches = list_message_patches(conn, user["id"], payload.targetMessageId)
         parent_content = target_message["content"]
-        original_text = parent_content[target_start:target_end]
         model_messages = build_backfill_draft_messages(
-            edit_type=payload.editType,
+            edit_type=effective_edit_type,
             user_instruction=payload.userInstruction,
             parent_content=parent_content,
             original_text=original_text,
             source_metadata=source_metadata,
-            child_messages=meaningful_child_messages,
+            child_messages=context["meaningful_child_messages"],
             existing_patches=existing_patches,
         )
 
@@ -1283,14 +1470,8 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if draft_text == "__INSUFFICIENT_CONTEXT__" or not draft_text:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "BACKFILL_INSUFFICIENT_CONTEXT",
-                "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
-            },
-        )
-    if payload.editType not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(draft_text) > MAX_REPLACEMENT_CHARS:
+        draft_text = original_text
+    if effective_edit_type not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(draft_text) > MAX_REPLACEMENT_CHARS:
         raise HTTPException(
             status_code=400,
             detail={
@@ -1303,12 +1484,78 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
         "draft": {
             "sourceChildNodeId": payload.sourceChildNodeId,
             "targetMessageId": payload.targetMessageId,
-            "editType": payload.editType,
+            "editType": effective_edit_type,
             "targetRangeStart": target_start,
             "targetRangeEnd": target_end,
             "originalText": original_text,
             "replacementText": draft_text,
-            "rangeSuggestion": None,
+            "rangeSuggestion": {
+                "targetRangeStart": target_start,
+                "targetRangeEnd": target_end,
+                "reason": range_reason,
+            }
+            if range_reason
+            else None,
+        }
+    }
+
+
+@app.post("/api/backfill/review", status_code=200)
+def review_backfill_replacement(payload: BackfillReviewCreate, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        context = load_backfill_generation_context(
+            conn,
+            user["id"],
+            payload.sourceChildNodeId,
+            payload.targetMessageId,
+            payload.editType,
+            payload.userInstruction,
+        )
+        target_message = context["target_message"]
+        original_text = validate_target_range_contains_anchor(
+            target_message["content"],
+            payload.targetRangeStart,
+            payload.targetRangeEnd,
+            context["anchor_start"],
+            context["anchor_end"],
+        )
+        validate_backfill_conflict(
+            conn,
+            payload.targetMessageId,
+            payload.targetRangeStart,
+            payload.targetRangeEnd,
+            payload.sourceChildNodeId,
+        )
+        replacement_text = payload.replacementText.strip("\r\n")
+        if not replacement_text.strip():
+            raise HTTPException(status_code=400, detail="replacementText cannot be empty")
+        model_messages = build_backfill_review_messages(
+            edit_type=context["effective_edit_type"],
+            user_instruction=payload.userInstruction,
+            parent_content=target_message["content"],
+            original_text=original_text,
+            replacement_text=replacement_text,
+            source_metadata=context["source_metadata"],
+        )
+
+    try:
+        reviewed_text = clean_backfill_draft(call_model(model_messages, payload.modelName, payload.thinkingMode or "fast"))
+    except ModelConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ModelProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not reviewed_text:
+        reviewed_text = replacement_text
+    return {
+        "review": {
+            "sourceChildNodeId": payload.sourceChildNodeId,
+            "targetMessageId": payload.targetMessageId,
+            "editType": context["effective_edit_type"],
+            "targetRangeStart": payload.targetRangeStart,
+            "targetRangeEnd": payload.targetRangeEnd,
+            "originalText": original_text,
+            "replacementText": reviewed_text,
+            "changed": reviewed_text != replacement_text,
         }
     }
 
