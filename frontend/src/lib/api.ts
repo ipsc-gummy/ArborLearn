@@ -4,11 +4,13 @@ import type { DeepSeekModelId, DeepSeekThinkingModeId } from "./models";
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const TOKEN_KEY = "arborlearn.authToken";
+const SESSION_TOKEN_KEY = "arborlearn.sessionAuthToken";
 
 export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  isTemporary?: boolean;
 }
 
 interface AuthResponse {
@@ -149,15 +151,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getAuthToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(SESSION_TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY);
 }
 
-export function setAuthToken(token: string) {
+export function setAuthToken(token: string, options?: { persist?: boolean }) {
+  if (options?.persist === false) {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    return;
+  }
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearAuthToken() {
   localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
 export function register(payload: { email: string; password: string; displayName?: string }) {
@@ -171,6 +180,13 @@ export function login(payload: { email: string; password: string }) {
   return request<AuthResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function createDemoSession() {
+  return request<AuthResponse>("/api/auth/demo", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 
