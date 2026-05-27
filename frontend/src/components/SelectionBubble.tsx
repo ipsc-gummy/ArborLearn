@@ -66,6 +66,7 @@ export function SelectionBubble() {
       </Button>
       <Button
         size="sm"
+        data-tour-selection-create
         title="创建子对话"
         onClick={() => {
           createChildConversation(draft.sourceNodeId, draft.text, draft.sourceMetadata);

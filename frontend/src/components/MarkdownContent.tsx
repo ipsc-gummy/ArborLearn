@@ -32,7 +32,7 @@ function TreeLinkPreview({
 
   return (
     <span className="relative inline-flex">
-      <button className="tree-link peer" onClick={() => onTreeLinkClick?.(link.id)}>
+      <button className="tree-link peer" data-tour-tree-link={link.title} onClick={() => onTreeLinkClick?.(link.id)}>
         {children ?? link.text}
       </button>
       <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
