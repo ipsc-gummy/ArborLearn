@@ -3,6 +3,7 @@ import { seedSkills } from "../data/seed";
 import {
   clearAuthToken,
   createBackendNode,
+  createDemoSession as createDemoSessionRequest,
   deleteBackendNode,
   fetchMe,
   fetchTreeState,
@@ -70,6 +71,7 @@ interface TreeLearnState {
   initializeAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
+  createDemoSession: () => Promise<void>;
   logout: () => void;
   hydrateFromBackend: () => Promise<void>;
   createRootConversation: () => string;
@@ -326,6 +328,23 @@ export const useTreeLearnStore = create<TreeLearnState>((set, get) => ({
       set({
         authStatus: "error",
         authError: error instanceof Error ? error.message : "注册失败",
+        user: null,
+      });
+      throw error;
+    }
+  },
+  createDemoSession: async () => {
+    set({ authStatus: "checking", authError: null });
+    try {
+      const response = await createDemoSessionRequest();
+      setAuthToken(response.token, { persist: false });
+      set({ user: response.user, authStatus: "authenticated", authError: null });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      clearAuthToken();
+      set({
+        authStatus: "error",
+        authError: error instanceof Error ? error.message : "进入演示失败",
         user: null,
       });
       throw error;

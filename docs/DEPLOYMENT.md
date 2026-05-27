@@ -242,7 +242,22 @@ python3 scripts/smoke_check.py \
 
 `--include-chat-live` 需要 `MODEL_API_KEY` 可用。`--include-web-search` 需要配置搜索 provider。
 
-## 11. 数据目录与备份
+## 11. 演示会话与默认 Notebook
+
+后端不再创建固定共享演示账号。前端“体验示例”会调用：
+
+```text
+POST /api/auth/demo
+```
+
+该接口每次创建一个独立临时用户，并自动初始化默认 notebook：
+
+- `TreeLearn 入门笔记本`
+- `Transformer 是如何工作的`
+
+临时演示用户不会和其他访问者共享笔记本、节点或聊天记录。后端启动和创建新演示会话时会清理过期临时用户，前端只把演示 token 保存在浏览器 session 中。
+
+## 12. 数据目录与备份
 
 默认数据：
 
@@ -264,7 +279,7 @@ sqlite3 data/treelearn.sqlite3 ".backup data/treelearn-$(date +%Y%m%d-%H%M%S).sq
 sudo apt install -y sqlite3
 ```
 
-## 12. 常见问题
+## 13. 常见问题
 
 ### 401 或登录状态丢失
 

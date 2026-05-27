@@ -41,10 +41,8 @@ interface AuthDialogProps {
   onClose: () => void;
   onLogin: (email: string, password: string) => Promise<void>;
   onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
+  onCreateDemoSession: () => Promise<void>;
 }
-
-const DEMO_EMAIL = "demo@treelearn.local";
-const DEMO_PASSWORD = "TreeLearnDemo2026!";
 
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
@@ -89,7 +87,14 @@ export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps)
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
           <div className="tl-panel-soft rounded-lg border p-3">
-            <p className="font-semibold">{user.displayName}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold">{user.displayName}</p>
+              {user.isTemporary && (
+                <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  临时体验
+                </span>
+              )}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
           </div>
           <MenuButton icon={CircleUserRound} label="账号信息" />
@@ -114,6 +119,7 @@ export function AuthDialog({
   onClose,
   onLogin,
   onRegister,
+  onCreateDemoSession,
 }: AuthDialogProps) {
   const [mode, setMode] = useState<AuthDialogMode>(initialMode);
   const [email, setEmail] = useState("");
@@ -121,6 +127,9 @@ export function AuthDialog({
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const loading = authStatus === "checking";
+  const normalizedEmail = email.trim();
+  const hasRequiredCredentials = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && password.length >= 8;
+  const canSubmit = hasRequiredCredentials && !loading;
 
   useEffect(() => {
     if (!open) return;
@@ -156,15 +165,12 @@ export function AuthDialog({
     setMode(mode === "login" ? "register" : "login");
   };
 
-  const loginWithDemoAccount = async () => {
+  const startDemoSession = async () => {
     setLocalError(null);
-    setMode("login");
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
     try {
-      await onLogin(DEMO_EMAIL, DEMO_PASSWORD);
+      await onCreateDemoSession();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "演示账号登录失败");
+      setLocalError(error instanceof Error ? error.message : "进入演示失败");
     }
   };
 
@@ -228,13 +234,24 @@ export function AuthDialog({
             </p>
           )}
 
-          <Button className="h-11 w-full" type="submit" disabled={loading}>
+          <Button
+            className={cn(
+              "h-11 w-full",
+              !hasRequiredCredentials &&
+                "border-white/55 bg-background/35 text-muted-foreground shadow-[0_10px_30px_rgba(25,45,64,0.08),inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-md hover:translate-y-0 hover:bg-background/45 hover:brightness-100 hover:shadow-[0_10px_30px_rgba(25,45,64,0.08),inset_0_1px_0_rgba(255,255,255,0.5)] disabled:border-white/55 disabled:bg-background/35 disabled:text-muted-foreground disabled:opacity-100 dark:border-white/15 dark:bg-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-white/12 dark:disabled:bg-white/10",
+            )}
+            type="submit"
+            disabled={!canSubmit}
+          >
             {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
             {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
           </Button>
         </form>
 
-        <button className="tl-hover mt-3 flex w-full items-center justify-center rounded-lg px-2 py-2 text-sm text-muted-foreground" onClick={switchMode}>
+        <button
+          className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
+          onClick={switchMode}
+        >
           {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
         </button>
 
@@ -242,22 +259,21 @@ export function AuthDialog({
           <button
             type="button"
             className="tl-panel-soft group mt-4 w-full rounded-xl border p-3 text-left text-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
-            onClick={loginWithDemoAccount}
+            onClick={startDemoSession}
             disabled={loading}
-            aria-label="使用演示账号进入"
+            aria-label="进入独立演示体验"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">演示账号</p>
+                <p className="font-semibold">独立演示体验</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  自动打开 Transformer 示例，不写入长期账号，也不和其他访问者共享记录。
+                </p>
               </div>
               <span className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-background/70 px-3 text-xs font-medium text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
                 体验示例
                 <LogIn className="h-3.5 w-3.5" />
               </span>
-            </div>
-            <div className="mt-3 space-y-1 rounded-lg bg-background/65 p-2 font-mono text-xs text-foreground/85 transition group-hover:bg-background/90">
-              <p>账号：{DEMO_EMAIL}</p>
-              <p>密码：{DEMO_PASSWORD}</p>
             </div>
           </button>
         )}

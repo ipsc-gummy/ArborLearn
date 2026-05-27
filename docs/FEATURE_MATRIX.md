@@ -27,6 +27,8 @@
 | Backfill workflow | Demo Ready | 支持草稿、应用、归档和冲突检测 | 补 anchor/hash/conflict 测试 |
 | Web search | Config Required | 支持 provider 配置与节点级搜索 | 加 `--include-web-search` live check |
 | RAG / vector store | Config Required | 有 vector store 与 context builder 接入 | 标注模型下载、缓存和降级策略 |
+| Transformer demo notebook | Done | 注册账号和独立演示会话默认包含完整 Transformer 示例树 | 继续根据课堂展示反馈打磨示例内容 |
+| Isolated demo session | Done | “体验示例”每次创建临时用户，不复用共享账号 | 定期清理过期临时数据 |
 
 ## 后端工程
 
@@ -40,7 +42,7 @@
 | Long task runner | Needs Hardening | 状态、步骤、evidence、outputs 已具备 | 增加状态机和失败路径测试 |
 | Model call logs | Done | 记录模型调用规模、耗时和错误 | 文档补排障用法 |
 | Smoke check | Done | 默认不依赖外部服务 | 增加 live flags |
-| Pytest suite | Needs Hardening | 当前缺少正式测试目录 | 新增最小 API pytest |
+| Pytest suite | Needs Hardening | 已有最小 API contract tests | 继续补充 backfill、stream 和失败路径测试 |
 
 ## 前端工程
 
