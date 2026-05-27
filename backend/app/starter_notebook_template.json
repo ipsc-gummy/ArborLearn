@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "title": "TreeLearn入门笔记",
+  "pinned": 0,
+  "sourceNotebookId": "node-ix815po",
+  "nodes": [
+    {
+      "id": "node-ix815po",
+      "parent_id": null,
+      "title": "TreeLearn入门笔记",
+      "summary": "贪心算法是一种每一步都选当前最优、希望达到全局最优的策略，适用于活动选择、找零、哈夫曼编码等问题，但需满足贪心选择与最优子结构性质。",
+      "selected_text": null,
+      "source_metadata_json": null,
+      "summary_stale": 1,
+      "context_mode": "mainline",
+      "position": 0
+    },
+    {
+      "id": "node-3w6w9os",
+      "parent_id": "node-ix815po",
+      "title": "哈夫曼编码",
+      "summary": "介绍了哈夫曼编码基于贪心算法，通过频率高低分配可变长度编码实现无损压缩，并说明了构造步骤与最优前缀码性质。",
+      "selected_text": "哈夫曼编码",
+      "source_metadata_json": "{\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-ix815po\", \"targetMessageId\": \"msg-0d83b13a03e7\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:32:28.597663+00:00\", \"baseMessageContentHash\": \"sha256:944d3850199bf80ab44e87369863421a5a9731ec03934b0984b4ef8012a2a4e3\", \"baseContentLength\": 1566, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 668, \"anchorRangeEnd\": 673, \"anchorText\": \"哈夫曼编码\", \"anchorPrefix\": \"次选择面额最大且不超过剩余金额的硬币**。例如，要凑出163元，先选100元，再选50元，再选10元，最后选3个1元，总共6枚硬币。这是最优解。\\n\\n3.  **\", \"anchorSuffix\": \"**：用于数据压缩，通过构建最优二叉树，为不同字符分配不同长度的二进制编码，使得总编码长度最短。\\n    -   **贪心策略**：**每次从频率最低的两个节点\", \"beforeContext\": \"3.  **\", \"afterContext\": \"**：用于数据压缩，通过构建最优二叉树，为不同字符分配不同长度的二进制编码，使得总编码长度最短。\\n    -   **贪心策略**：**每次从频率最低的两个节点合并成一个新节点**，直到所有节点合并成一棵树。\"}",
+      "summary_stale": 1,
+      "context_mode": "isolated",
+      "position": 0
+    },
+    {
+      "id": "node-lesx8ew",
+      "parent_id": "node-hgfcqfz",
+      "title": "Kruskal 算法",
+      "summary": "Kruskal 算法通过按权重排序边并避免环，贪心地构建最小生成树，适合边稀疏图。",
+      "selected_text": "Kruskal 算法",
+      "source_metadata_json": "{\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-hgfcqfz\", \"targetMessageId\": \"msg-942a3ca72816\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:35:48.190440+00:00\", \"baseMessageContentHash\": \"sha256:5ce2f46d143c59898d9542439be5c4df271a21fb079d503910118401d5c40b7a\", \"baseContentLength\": 617, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 325, \"anchorRangeEnd\": 335, \"anchorText\": \"Kruskal 算法\", \"anchorPrefix\": \"最小生成树恰好有 N-1 条边。\\n- 最小生成树不一定唯一（当存在权重相等的边时，可能有多个解）。\\n\\n**与贪心算法的关联：**\\n求解最小生成树的经典算法（如 \", \"anchorSuffix\": \"和 Prim 算法）正是**贪心算法**的典型应用。它们每一步都选择当前“代价最小”且不形成环的边，最终得到全局最优解。这体现了贪心算法所需的**贪心选择性质*\", \"beforeContext\": \"**与贪心算法的关联：**\\n求解最小生成树的经典算法（如 \", \"afterContext\": \"和 Prim 算法）正是**贪心算法**的典型应用。它们每一步都选择当前“代价最小”且不形成环的边，最终得到全局最优解。这体现了贪心算法所需的**贪心选择性质**和**最优子结构性质**。\"}",
+      "summary_stale": 0,
+      "context_mode": "isolated",
+      "position": 0
+    },
+    {
+      "id": "node-v8r3xqd",
+      "parent_id": "node-lesx8ew",
+      "title": "Kruskal 算法的代码实现",
+      "summary": "用并查集和贪心策略实现了Kruskal算法，按边权重排序后依次加入，避免形成环，最终得到最小生成树。",
+      "selected_text": null,
+      "source_metadata_json": null,
+      "summary_stale": 0,
+      "context_mode": "isolated",
+      "position": 0
+    },
+    {
+      "id": "node-j37pyaj",
+      "parent_id": "node-3w6w9os",
+      "title": "前缀码",
+      "summary": "哈夫曼编码是前缀码，每个字符编码不是其他编码的前缀，确保解码唯一无歧义。",
+      "selected_text": "生成的编码是前缀码，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+      "source_metadata_json": "{\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-3w6w9os\", \"targetMessageId\": \"msg-db8cf16f3bce\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:34:09.815038+00:00\", \"baseMessageContentHash\": \"sha256:f278b45ea92b1a8bb33c92b3473aeddf9c9f9a53a5fab35f4b3e8b9a67f7fe6a\", \"baseContentLength\": 952, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 176, \"anchorRangeEnd\": 225, \"anchorText\": \"生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义\", \"anchorPrefix\": \"储空间。\\n\\n### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"anchorSuffix\": \"。\\n\\n### 构造步骤\\n1. **统计频率**：统计每个字符出现的频率。\\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。\", \"beforeContext\": \"### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"afterContext\": \"。\"}",
+      "summary_stale": 0,
+      "context_mode": "isolated",
+      "position": 0
+    },
+    {
+      "id": "node-hgfcqfz",
+      "parent_id": "node-ix815po",
+      "title": "最小生成树",
+      "summary": "解释最小生成树的定义、性质及与贪心算法的关联，并举例说明其应用。",
+      "selected_text": "最小生成树",
+      "source_metadata_json": "{\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-ix815po\", \"targetMessageId\": \"msg-0d83b13a03e7\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:32:28.597663+00:00\", \"baseMessageContentHash\": \"sha256:944d3850199bf80ab44e87369863421a5a9731ec03934b0984b4ef8012a2a4e3\", \"baseContentLength\": 1566, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 785, \"anchorRangeEnd\": 790, \"anchorText\": \"最小生成树\", \"anchorPrefix\": \"二进制编码，使得总编码长度最短。\\n    -   **贪心策略**：**每次从频率最低的两个节点合并成一个新节点**，直到所有节点合并成一棵树。\\n\\n4.  **\", \"anchorSuffix\": \"**：在带权无向图中，找到一棵连接所有顶点且总权重最小的树。\\n    -   **Prim算法**：从一个顶点开始，**每次选择连接已选顶点集合和未选顶点集合的\", \"beforeContext\": \"4.  **\", \"afterContext\": \"**：在带权无向图中，找到一棵连接所有顶点且总权重最小的树。\\n    -   **Prim算法**：从一个顶点开始，**每次选择连接已选顶点集合和未选顶点集合的最小权值边**。\\n    -   **Kruskal算法**：**每次选择当前权值最小且不形成环的边**。\"}",
+      "summary_stale": 0,
+      "context_mode": "isolated",
+      "position": 1
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg-xgjppqx",
+      "node_id": "node-ix815po",
+      "role": "system",
+      "content": "已创建新的主对话。后端接入后，这里应同步创建一个根知识节点。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-4knn8t8",
+      "node_id": "node-ix815po",
+      "role": "user",
+      "content": "解释贪心算法及其应用",
+      "selected_text": null
+    },
+    {
+      "id": "msg-0d83b13a03e7",
+      "node_id": "node-ix815po",
+      "role": "assistant",
+      "content": "好的，我们开始学习。根据你当前所处的根节点，这是一个全新的学习主题。我将基于你的问题，为你构建关于“贪心算法”的知识分支。\n\n**贪心算法** 是一种在每一步选择中都采取当前状态下最优（即最有利）的选择，从而希望导致结果是全局最优的算法策略。\n\n简单来说，它的核心思想是：**“只顾眼前，不管未来”**。它不会从整体最优上加以考虑，它所做出的仅仅是在某种意义上的局部最优解。\n\n### 核心特征\n\n1.  **贪心选择性质**：问题的全局最优解可以通过一系列局部最优的选择（即贪心选择）来达到。这是贪心算法可行的基本要素。\n2.  **最优子结构性质**：当一个问题的最优解包含其子问题的最优解时，称此问题具有最优子结构性质。这是动态规划和贪心算法共有的特征。\n\n### 典型应用场景\n\n贪心算法并不总能得到全局最优解，但它对于某些特定问题非常高效。以下是一些经典的应用：\n\n1.  **活动选择问题**：给定一系列活动，每个活动有开始和结束时间，目标是选择尽可能多的互不重叠的活动。\n    -   **贪心策略**：**每次选择结束时间最早的活动**。因为结束时间越早，留给后续活动的时间就越多。\n\n2.  **找零问题**：在硬币面额满足特定条件时（如人民币的1、5、10、20、50、100元），用最少数量的硬币凑出指定金额。\n    -   **贪心策略**：**每次选择面额最大且不超过剩余金额的硬币**。例如，要凑出163元，先选100元，再选50元，再选10元，最后选3个1元，总共6枚硬币。这是最优解。\n\n3.  **哈夫曼编码**：用于数据压缩，通过构建最优二叉树，为不同字符分配不同长度的二进制编码，使得总编码长度最短。\n    -   **贪心策略**：**每次从频率最低的两个节点合并成一个新节点**，直到所有节点合并成一棵树。\n\n4.  **最小生成树**：在带权无向图中，找到一棵连接所有顶点且总权重最小的树。\n    -   **Prim算法**：从一个顶点开始，**每次选择连接已选顶点集合和未选顶点集合的最小权值边**。\n    -   **Kruskal算法**：**每次选择当前权值最小且不形成环的边**。\n\n5.  **单源最短路径（Dijkstra算法）**：在非负权图中，求一个顶点到其他所有顶点的最短路径。\n    -   **贪心策略**：**每次从未处理的顶点中选择距离源点最近的顶点**，然后更新其邻居的距离。\n\n### 如何判断一个问题是否适合用贪心算法？\n\n-   **验证贪心选择性质**：需要证明局部最优解能导向全局最优解。这通常需要数学归纳法或反证法。\n-   **验证最优子结构**：问题能否分解为独立的子问题，且子问题的最优解能组合成原问题的最优解。\n\n### 与动态规划的区别\n\n| 特性 | 贪心算法 | 动态规划 |\n| :--- | :--- | :--- |\n| **决策方式** | 每一步只做一次选择，不回溯 | 保存子问题的解，并可能回溯比较 |\n| **依赖关系** | 当前选择只依赖于之前的选择，不依赖于未来的选择 | 当前选择依赖于所有子问题的解 |\n| **效率** | 通常更快，时间复杂度低 | 通常较慢，但能解决更广泛的问题 |\n| **正确性** | 需要严格证明，并非所有问题都适用 | 通常能保证全局最优解 |\n\n**总结**：贪心算法是一种简单、高效的算法设计思想，但它的适用范围有限。关键在于识别问题是否具备贪心选择性质和最优子结构性质。在适用的情况下，它能以极低的复杂度给出最优解。\n\n如果你想深入了解某个具体应用（比如如何用代码实现活动选择问题），或者想探讨一个具体问题是否能用贪心算法解决，我们可以继续深入这个分支。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-vbceaeh",
+      "node_id": "node-3w6w9os",
+      "role": "system",
+      "content": "已创建子对话。后端对接时，请使用 sourceNodeId、selectedText、路径摘要和启用的 Skill 构造局部上下文。",
+      "selected_text": "哈夫曼编码"
+    },
+    {
+      "id": "msg-piufaxz",
+      "node_id": "node-3w6w9os",
+      "role": "user",
+      "content": "解释哈夫曼编码",
+      "selected_text": null
+    },
+    {
+      "id": "msg-db8cf16f3bce",
+      "node_id": "node-3w6w9os",
+      "role": "assistant",
+      "content": "哈夫曼编码是一种基于**贪心算法**的无损数据压缩方法。它通过为不同字符分配**可变长度**的二进制编码，使得出现频率高的字符使用较短的编码，出现频率低的字符使用较长的编码，从而在整体上减少存储空间。\n\n### 核心思想\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\n- **最优前缀码**：生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义。\n\n### 构造步骤\n1. **统计频率**：统计每个字符出现的频率。\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。\n3. **重复合并**：\n   - 从队列中取出频率最小的两个节点。\n   - 创建一个新节点，其频率为这两个节点频率之和，左右子节点分别为取出的两个节点。\n   - 将新节点放回队列。\n4. **生成编码**：重复步骤3，直到队列中只剩一个节点（即根节点）。从根节点出发，向左走标记为`0`，向右走标记为`1`，到达叶子节点的路径即为该字符的编码。\n\n### 示例\n假设字符集：`A:5次, B:9次, C:12次, D:13次, E:16次, F:45次`\n\n1. 初始：`A(5), B(9), C(12), D(13), E(16), F(45)`\n2. 合并A(5)和B(9) → 新节点AB(14)\n3. 合并C(12)和D(13) → 新节点CD(25)\n4. 合并AB(14)和E(16) → 新节点ABE(30)\n5. 合并CD(25)和ABE(30) → 新节点CDABE(55)\n6. 合并CDABE(55)和F(45) → 根节点(100)\n\n最终编码示例（假设左0右1）：\n- F: 0\n- C: 100\n- D: 101\n- A: 1100\n- B: 1101\n- E: 111\n\n### 性质\n- **最优性**：哈夫曼编码是给定频率下平均编码长度最短的编码方式。\n- **无损压缩**：解码时严格按前缀规则还原，信息不丢失。\n- **应用**：广泛用于文件压缩（如ZIP）、图像压缩（JPEG）、视频编码等。\n\n如果你需要更具体的例子或代码实现，可以继续提问。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-malt4a4",
+      "node_id": "node-hgfcqfz",
+      "role": "system",
+      "content": "已创建子对话。后端对接时，请使用 sourceNodeId、selectedText、路径摘要和启用的 Skill 构造局部上下文。",
+      "selected_text": "最小生成树"
+    },
+    {
+      "id": "msg-cwj60z6",
+      "node_id": "node-hgfcqfz",
+      "role": "user",
+      "content": "解释最小生成树",
+      "selected_text": null
+    },
+    {
+      "id": "msg-942a3ca72816",
+      "node_id": "node-hgfcqfz",
+      "role": "assistant",
+      "content": "根据当前节点，我们聚焦于“最小生成树”这一概念。\n\n**最小生成树（Minimum Spanning Tree, MST）** 是图论中的一个核心概念，常用于网络设计（如铺设电缆、修建道路）等场景。\n\n**定义：**\n在一个**连通、带权无向图**中，最小生成树是指：\n1.  **生成树**：包含原图中所有顶点，且是一个**树**（即无环、边数为顶点数-1）的子图。\n2.  **最小**：在所有可能的生成树中，**边的权重之和最小**。\n\n**核心性质：**\n- 如果图有 N 个顶点，最小生成树恰好有 N-1 条边。\n- 最小生成树不一定唯一（当存在权重相等的边时，可能有多个解）。\n\n**与贪心算法的关联：**\n求解最小生成树的经典算法（如 Kruskal 算法和 Prim 算法）正是**贪心算法**的典型应用。它们每一步都选择当前“代价最小”且不形成环的边，最终得到全局最优解。这体现了贪心算法所需的**贪心选择性质**和**最优子结构性质**。\n\n**简单例子：**\n假设有三个城市 A、B、C，需要铺设光缆连接它们。已知：\n- A-B 成本 10\n- B-C 成本 15\n- A-C 成本 20\n\n最小生成树会选择 A-B 和 B-C（总成本 25），而不是 A-C 和任意一条（总成本 30 或 35）。这样用最少的成本连通了所有城市。\n\n如果你需要，我可以进一步解释 Kruskal 或 Prim 算法的具体步骤。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-z85pb0i",
+      "node_id": "node-lesx8ew",
+      "role": "system",
+      "content": "已创建子对话。后端对接时，请使用 sourceNodeId、selectedText、路径摘要和启用的 Skill 构造局部上下文。",
+      "selected_text": "Kruskal 算法"
+    },
+    {
+      "id": "msg-3soyv2e",
+      "node_id": "node-lesx8ew",
+      "role": "user",
+      "content": "请解释我选中的这段内容。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-ec7e1572748f",
+      "node_id": "node-lesx8ew",
+      "role": "assistant",
+      "content": "好的，我们来聚焦于你当前选中的节点 —— **Kruskal 算法**。\n\n根据父节点的上下文，我们知道最小生成树问题与贪心算法紧密相关。Kruskal 算法正是解决这个问题的经典贪心算法之一。\n\n**Kruskal 算法的核心思想是：**\n\n1.  **全局贪心**：它不关心图的结构，而是着眼于所有边。算法会维护一个森林（即多棵树），初始时每个顶点都是一棵独立的树。\n2.  **按权重排序**：首先，将图中所有的边按照权重从小到大进行排序。\n3.  **逐步连接**：然后，从权重最小的边开始，依次检查每条边。如果这条边连接的两个顶点**属于不同的树**（即不会形成环），就将这条边加入最小生成树中，并将这两棵树合并为一棵。如果这条边连接的两个顶点已经在同一棵树中（会形成环），则跳过这条边。\n4.  **终止条件**：重复步骤3，直到所有顶点都连通（即森林中只剩下一棵树），或者已经加入了 `(顶点数 - 1)` 条边。\n\n**为什么它是贪心算法？**\n\n因为它在每一步都做出了当前看来最优的选择：**选择当前未被考虑过的、权重最小的、且不会导致环的边**。这种局部最优的选择，最终能够导向全局最优（即总权重最小的生成树）。\n\n**简单例子：**\n想象有4个城市（A, B, C, D）和它们之间的道路及修建成本。\n- 边 AB 成本 1\n- 边 AC 成本 3\n- 边 BC 成本 2\n- 边 BD 成本 4\n- 边 CD 成本 5\n\nKruskal 算法的步骤：\n1.  排序：AB(1), BC(2), AC(3), BD(4), CD(5)\n2.  选 AB(1)：A和B不连通，加入。现在树：{A-B}, {C}, {D}\n3.  选 BC(2)：B和C不连通，加入。现在树：{A-B-C}, {D}\n4.  选 AC(3)：A和C已经在同一棵树中（A-B-C），跳过（否则会形成环 A-B-C-A）。\n5.  选 BD(4)：B和D不连通，加入。现在树：{A-B-C-D}，所有点连通，算法结束。\n\n最终最小生成树包含边 AB(1), BC(2), BD(4)，总成本为 7。\n\n**总结：**\nKruskal 算法通过**排序边**和**避免环**（通常使用并查集数据结构高效实现），以贪心的方式构建出最小生成树。它非常适合处理**边稀疏**的图。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-bt2bu6a",
+      "node_id": "node-v8r3xqd",
+      "role": "system",
+      "content": "已添加新的子对话节点。后端接入后，这里应创建父子节点关系并初始化上下文摘要。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-zw3pgzq",
+      "node_id": "node-v8r3xqd",
+      "role": "user",
+      "content": "用代码实现Kruskal算法",
+      "selected_text": null
+    },
+    {
+      "id": "msg-f2e1770cdb0d",
+      "node_id": "node-v8r3xqd",
+      "role": "assistant",
+      "content": "好的，我们来用代码实现Kruskal算法。\n\n根据我们当前的学习路径，Kruskal算法是一种贪心算法，用于在**边稀疏**的图中高效地找到最小生成树。它的核心思想是：**将所有边按权重从小到大排序，然后依次尝试加入，如果加入这条边不会形成环，就保留它。**\n\n判断是否形成环的关键数据结构是**并查集（Union-Find）**。\n\n下面是一个Python实现，包含详细的注释：\n\n```python\nclass UnionFind:\n    \"\"\"并查集，用于高效检测图中是否形成环\"\"\"\n    def __init__(self, n):\n        # parent[i] 表示节点 i 的父节点，初始时每个节点指向自己\n        self.parent = list(range(n))\n        # rank[i] 表示以 i 为根的树的高度（近似值），用于优化合并\n        self.rank = [0] * n\n\n    def find(self, x):\n        \"\"\"查找节点 x 所属集合的根节点（带路径压缩）\"\"\"\n        if self.parent[x] != x:\n            # 路径压缩：将 x 直接指向根节点，加速后续查找\n            self.parent[x] = self.find(self.parent[x])\n        return self.parent[x]\n\n    def union(self, x, y):\n        \"\"\"合并两个节点所在的集合（按秩合并）\"\"\"\n        root_x = self.find(x)\n        root_y = self.find(y)\n\n        # 如果已经在同一个集合中，说明加入这条边会形成环\n        if root_x == root_y:\n            return False\n\n        # 将较矮的树合并到较高的树上，保持树平衡\n        if self.rank[root_x] < self.rank[root_y]:\n            self.parent[root_x] = root_y\n        elif self.rank[root_x] > self.rank[root_y]:\n            self.parent[root_y] = root_x\n        else:\n            # 如果高度相同，合并后高度增加1\n            self.parent[root_y] = root_x\n            self.rank[root_x] += 1\n        return True\n\n\ndef kruskal(n, edges):\n    \"\"\"\n    Kruskal 算法求最小生成树\n\n    参数:\n        n: 图中节点的数量（节点编号从 0 到 n-1）\n        edges: 边的列表，每条边表示为 (weight, u, v)\n\n    返回:\n        mst: 最小生成树包含的边列表 [(u, v, weight), ...]\n        total_weight: 最小生成树的总权重\n    \"\"\"\n    # 1. 初始化并查集\n    uf = UnionFind(n)\n\n    # 2. 将所有边按权重从小到大排序（贪心选择）\n    sorted_edges = sorted(edges, key=lambda x: x[0])\n\n    mst = []          # 存储最小生成树的边\n    total_weight = 0  # 最小生成树的总权重\n\n    # 3. 遍历排序后的边\n    for weight, u, v in sorted_edges:\n        # 尝试合并 u 和 v 所在的集合\n        # 如果 union 返回 True，说明 u 和 v 不在同一集合，加入这条边不会形成环\n        if uf.union(u, v):\n            mst.append((u, v, weight))\n            total_weight += weight\n\n            # 最小生成树有 n-1 条边时，可以提前结束\n            if len(mst) == n - 1:\n                break\n\n    return mst, total_weight\n\n\n# ========== 示例用法 ==========\nif __name__ == \"__main__\":\n    # 节点数量\n    n = 6\n\n    # 边的列表：(权重, 节点u, 节点v)\n    edges = [\n        (4, 0, 1),\n        (2, 0, 2),\n        (3, 1, 2),\n        (1, 1, 3),\n        (5, 2, 3),\n        (6, 2, 4),\n        (7, 3, 4),\n        (8, 3, 5),\n        (9, 4, 5)\n    ]\n\n    mst, total_weight = kruskal(n, edges)\n\n    print(\"最小生成树的边：\")\n    for u, v, w in mst:\n        print(f\"  {u} -- {v} (权重: {w})\")\n    print(f\"总权重: {total_weight}\")\n```\n\n**代码运行逻辑总结：**\n\n1. **排序**：对边按权重升序排序，这是贪心策略的体现。\n2. **并查集初始化**：每个节点自成一个集合。\n3. **遍历边**：从最小权重的边开始，检查其两个端点是否在同一集合中。\n   - 如果不在同一集合（不会形成环），则加入这条边，并合并两个集合。\n   - 如果在同一集合（会形成环），则跳过这条边。\n4. **提前终止**：当已选边数达到 `n-1` 时，最小生成树已构建完成，可以提前结束。\n\n这个实现的时间复杂度为 **O(E log E)**（主要来自排序），空间复杂度为 **O(V + E)**，非常适合处理边稀疏的图。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-a6s6165",
+      "node_id": "node-j37pyaj",
+      "role": "system",
+      "content": "已创建子对话。后端对接时，请使用 sourceNodeId、selectedText、路径摘要和启用的 Skill 构造局部上下文。",
+      "selected_text": "生成的编码是前缀码，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义"
+    },
+    {
+      "id": "msg-og8p37h",
+      "node_id": "node-j37pyaj",
+      "role": "user",
+      "content": "请解释我选中的这段内容。",
+      "selected_text": null
+    },
+    {
+      "id": "msg-2813217f4cac",
+      "node_id": "node-j37pyaj",
+      "role": "assistant",
+      "content": "你选中的内容是哈夫曼编码的一个重要性质：\n\n**“生成的编码是前缀码，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义。”**\n\n这句话的核心意思是：哈夫曼编码是一种**前缀码**。\n\n**什么是前缀码？**\n简单来说，就是任何一个字符的编码，都不会是另一个字符编码的“开头”部分。例如：\n- 如果字符 A 的编码是 `01`，那么字符 B 的编码就不能是 `010` 或 `011`，因为 `01` 是它们的开头（前缀）。\n\n**为什么哈夫曼编码是前缀码？**\n这源于哈夫曼树的构造过程。哈夫曼树是一棵**二叉树**，每个字符都对应树中的一个**叶子节点**。从根节点到某个叶子节点的路径（左分支为0，右分支为1）就是该字符的编码。\n- 因为字符只出现在叶子节点，所以任何字符的编码路径都不会是另一个字符编码路径的前缀（否则那个字符就会出现在路径中间的某个节点上，而不是叶子节点）。\n\n**为什么前缀码很重要？**\n前缀码保证了**解码的唯一性**。当你收到一串二进制流时，可以唯一地、无歧义地将其切分成一个个字符编码，而不会出现“这个编码到底是A还是B的开头”这样的困惑。这正是哈夫曼编码能够实现无损压缩且正确解码的关键原因。",
+      "selected_text": null
+    }
+  ],
+  "patches": [
+    {
+      "id": "patch-f07a5a7f735f",
+      "user_id": "user-c4cbd922d6e5",
+      "parent_node_id": "node-3w6w9os",
+      "source_child_node_id": "node-j37pyaj",
+      "source_snapshot_json": "{\"sourceChildNodeId\": \"node-j37pyaj\", \"sourceNodeExistsAtApply\": true, \"sourceMetadata\": {\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-3w6w9os\", \"targetMessageId\": \"msg-db8cf16f3bce\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:34:09.815038+00:00\", \"baseMessageContentHash\": \"sha256:f278b45ea92b1a8bb33c92b3473aeddf9c9f9a53a5fab35f4b3e8b9a67f7fe6a\", \"baseContentLength\": 952, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 176, \"anchorRangeEnd\": 225, \"anchorText\": \"生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义\", \"anchorPrefix\": \"储空间。\\n\\n### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"anchorSuffix\": \"。\\n\\n### 构造步骤\\n1. **统计频率**：统计每个字符出现的频率。\\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。\", \"beforeContext\": \"### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"afterContext\": \"。\"}}",
+      "target_message_id": "msg-db8cf16f3bce",
+      "target_message_role": "assistant",
+      "target_message_created_at": "2026-05-27T03:34:09.815038+00:00",
+      "base_message_content_hash": "sha256:f278b45ea92b1a8bb33c92b3473aeddf9c9f9a53a5fab35f4b3e8b9a67f7fe6a",
+      "base_content_length": 952,
+      "coordinate_space": "raw_markdown",
+      "selector_strategy": "dom_to_raw_exact",
+      "anchor_range_start": 176,
+      "anchor_range_end": 225,
+      "target_range_start": 176,
+      "target_range_end": 225,
+      "anchor_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+      "anchor_prefix": "储空间。\n\n### 核心思想\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\n- **最优前缀码**：",
+      "anchor_suffix": "。\n\n### 构造步骤\n1. **统计频率**：统计每个字符出现的频率。\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。",
+      "original_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+      "replacement_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义。这源于哈夫曼树的构造：每个字符都对应树中的一个**叶子节点**，从根到叶子的路径（左0右1）即为编码，因此任何字符的编码路径都不会是另一条路径的前缀，保证了解码的唯一性。",
+      "status": "archived",
+      "edit_type": "expand",
+      "mapping_status": "exact",
+      "conflict_patch_id": null,
+      "archive_reason": "user_reverted",
+      "created_at": "2026-05-27T10:36:49.896969+00:00",
+      "updated_at": "2026-05-27T11:06:08.065466+00:00",
+      "applied_at": "2026-05-27T10:36:49.896969+00:00",
+      "archived_at": "2026-05-27T11:06:08.065466+00:00"
+    },
+    {
+      "id": "patch-49ada09ea6dc",
+      "user_id": "user-c4cbd922d6e5",
+      "parent_node_id": "node-3w6w9os",
+      "source_child_node_id": "node-j37pyaj",
+      "source_snapshot_json": "{\"sourceChildNodeId\": \"node-j37pyaj\", \"sourceNodeExistsAtApply\": true, \"sourceMetadata\": {\"type\": \"backfill_anchor\", \"parentNodeId\": \"node-3w6w9os\", \"targetMessageId\": \"msg-db8cf16f3bce\", \"targetMessageRole\": \"assistant\", \"targetMessageCreatedAt\": \"2026-05-27T03:34:09.815038+00:00\", \"baseMessageContentHash\": \"sha256:f278b45ea92b1a8bb33c92b3473aeddf9c9f9a53a5fab35f4b3e8b9a67f7fe6a\", \"baseContentLength\": 952, \"coordinateSpace\": \"raw_markdown\", \"selectorStrategy\": \"dom_to_raw_exact\", \"anchorRangeStart\": 176, \"anchorRangeEnd\": 225, \"anchorText\": \"生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义\", \"anchorPrefix\": \"储空间。\\n\\n### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"anchorSuffix\": \"。\\n\\n### 构造步骤\\n1. **统计频率**：统计每个字符出现的频率。\\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。\", \"beforeContext\": \"### 核心思想\\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\\n- **最优前缀码**：\", \"afterContext\": \"。\"}}",
+      "target_message_id": "msg-db8cf16f3bce",
+      "target_message_role": "assistant",
+      "target_message_created_at": "2026-05-27T03:34:09.815038+00:00",
+      "base_message_content_hash": "sha256:f278b45ea92b1a8bb33c92b3473aeddf9c9f9a53a5fab35f4b3e8b9a67f7fe6a",
+      "base_content_length": 952,
+      "coordinate_space": "raw_markdown",
+      "selector_strategy": "dom_to_raw_exact",
+      "anchor_range_start": 176,
+      "anchor_range_end": 225,
+      "target_range_start": 176,
+      "target_range_end": 225,
+      "anchor_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+      "anchor_prefix": "储空间。\n\n### 核心思想\n- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\n- **最优前缀码**：",
+      "anchor_suffix": "。\n\n### 构造步骤\n1. **统计频率**：统计每个字符出现的频率。\n2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆（优先队列）。",
+      "original_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+      "replacement_text": "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义。这是因为哈夫曼树中每个字符都对应一个叶子节点，从根到叶子的路径编码自然满足前缀性质，从而保证解码的唯一性。",
+      "status": "archived",
+      "edit_type": "expand",
+      "mapping_status": "exact",
+      "conflict_patch_id": null,
+      "archive_reason": "user_reverted",
+      "created_at": "2026-05-27T11:50:46.478249+00:00",
+      "updated_at": "2026-05-27T11:51:11.331642+00:00",
+      "applied_at": "2026-05-27T11:50:46.478249+00:00",
+      "archived_at": "2026-05-27T11:51:11.331642+00:00"
+    }
+  ]
+}

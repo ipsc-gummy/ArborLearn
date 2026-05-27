@@ -79,7 +79,11 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
   };
 
   return (
-    <section className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent">
+    <section
+      className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent"
+      data-tour-node-id={node.id}
+      data-tour-node-panel={node.title}
+    >
       <div
         className="tl-node-info-strip tl-border-soft relative z-20 h-5 shrink-0 border-b"
         style={{ background: "color-mix(in srgb, var(--tl-panel) 10%, transparent)" }}
@@ -119,6 +123,9 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
           </div>
           <button
             type="button"
+            data-tour-node-info-toggle
+            data-tour-node-info-toggle-id={node.id}
+            data-tour-node-info-toggle-title={node.title}
             onClick={() => setNodeInfoOpen((open) => !open)}
             className="tl-node-info-toggle mx-auto flex h-5 w-14 items-center justify-center rounded-b-full border-x border-b border-border/55 bg-background/75 text-muted-foreground shadow-sm backdrop-blur-md transition-colors duration-200 hover:bg-background/90 hover:text-foreground"
             aria-expanded={nodeInfoOpen}

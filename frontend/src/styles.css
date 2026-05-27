@@ -623,6 +623,15 @@ input {
     backdrop-filter: blur(10px) saturate(1.04);
   }
 
+  .tl-tour-panel {
+    background: color-mix(in srgb, var(--tl-panel-solid) 94%, transparent);
+    border-color: color-mix(in srgb, var(--tl-border) 82%, hsl(var(--foreground)) 18%);
+  }
+
+  :root.dark .tl-tour-panel {
+    background: color-mix(in srgb, var(--tl-panel-solid) 90%, transparent);
+  }
+
   .tl-panel-soft {
     background: var(--tl-panel-soft);
     border-color: var(--tl-border-soft);
@@ -2842,6 +2851,52 @@ input {
   70% {
     opacity: 0.54;
     transform: translate3d(-8px, -34px, 0) scale(0.96);
+  }
+}
+
+.tl-tour-select-hint {
+  animation: tl-tour-select-sweep 1.35s ease-in-out infinite;
+}
+
+.tl-tour-hand-swipe {
+  animation: tl-tour-hand-swipe 1.35s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+
+@keyframes tl-tour-select-sweep {
+  0% {
+    opacity: 0.28;
+    transform: translateX(-18px) scaleX(0.65);
+  }
+  45% {
+    opacity: 0.82;
+    transform: translateX(8px) scaleX(1);
+  }
+  100% {
+    opacity: 0.28;
+    transform: translateX(32px) scaleX(0.7);
+  }
+}
+
+@keyframes tl-tour-hand-swipe {
+  0% {
+    opacity: 0;
+    transform: translate(-22px, 10px) rotate(-18deg) scale(0.94);
+  }
+  18% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 1;
+    transform: translate(36px, -8px) rotate(8deg) scale(1);
+  }
+  78% {
+    opacity: 0.9;
+    transform: translate(54px, -12px) rotate(10deg) scale(0.98);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(54px, -12px) rotate(10deg) scale(0.98);
   }
 }
 
