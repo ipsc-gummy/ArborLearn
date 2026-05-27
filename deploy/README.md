@@ -1,5 +1,7 @@
 # ArborLearn ECS Deployment
 
+> 完整部署、运维、smoke check、备份和排障说明见 `docs/DEPLOYMENT.md`。本文保留为 `deploy/` 配置文件的 ECS 快速命令参考。
+
 This guide assumes an Ubuntu ECS instance and deploys:
 
 - frontend static files with Nginx
