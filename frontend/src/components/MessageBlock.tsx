@@ -1,6 +1,6 @@
 import { Check, Copy, GitBranch, RotateCcw, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ChatMessage } from "../types/treelearn";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import { cn } from "../lib/utils";
@@ -297,8 +297,14 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
   const isNodeRunning = Boolean(useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]));
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
+  const nodeMessages = nodes[nodeId]?.messages ?? [];
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
+  const messageIndex = nodeMessages.findIndex((item) => item.id === message.id);
+  const canRetry =
+    message.role === "assistant" &&
+    messageIndex > 0 &&
+    nodeMessages.slice(0, messageIndex).some((item) => item.role === "user");
   const isThinking =
     !isUser &&
     (message.content === "正在思考..." ||
@@ -306,7 +312,9 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       message.content === "正在重新生成...");
   const thinkingLabel = message.content === "正在联网检索..." ? "正在联网检索" : "正在思考";
   const [copied, setCopied] = useState(false);
+  const [manualCopyHint, setManualCopyHint] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const userLabel = user?.displayName?.trim() || "用户";
   const [showOriginal, setShowOriginal] = useState(false);
   const patches = message.patches ?? [];
@@ -337,14 +345,86 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       })),
   ];
 
-  const writeToClipboard = async (content: string) => {
-    await navigator.clipboard?.writeText(content);
+  const copySelectedElement = (element: HTMLElement, restoreOnFailure = true) => {
+    const selection = window.getSelection();
+    if (!selection) return false;
+    const previousRanges = Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange());
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    let didCopy = false;
+    try {
+      didCopy = document.execCommand("copy");
+      return didCopy;
+    } finally {
+      if (didCopy || restoreOnFailure) {
+        selection.removeAllRanges();
+        previousRanges.forEach((previousRange) => selection.addRange(previousRange));
+      }
+    }
+  };
+
+  const writeToClipboard = async (content: string, sourceElement: HTMLElement | null) => {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(content);
+        return "copied";
+      } catch {
+        // Fall back to the selection-based copy path below.
+      }
+    }
+
+    let copiedFromEvent = false;
+    const handleCopyEvent = (event: ClipboardEvent) => {
+      event.clipboardData?.setData("text/plain", content);
+      event.preventDefault();
+      copiedFromEvent = true;
+    };
+    document.addEventListener("copy", handleCopyEvent);
+    try {
+      const didCopy = document.execCommand("copy");
+      if (copiedFromEvent || didCopy) return "copied";
+    } finally {
+      document.removeEventListener("copy", handleCopyEvent);
+    }
+
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "0";
+    textarea.style.top = "0";
+    textarea.style.width = "1px";
+    textarea.style.height = "1px";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    try {
+      if (document.execCommand("copy")) return "copied";
+    } finally {
+      document.body.removeChild(textarea);
+      activeElement?.focus();
+    }
+
+    if (sourceElement) {
+      return copySelectedElement(sourceElement, false) ? "copied" : "selected";
+    }
+
+    return "failed";
   };
 
   const handleCopy = async () => {
-    await writeToClipboard(message.content);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    const copyResult = await writeToClipboard(message.content, contentRef.current);
+    const didCopy = copyResult === "copied";
+    setCopied(didCopy);
+    setManualCopyHint(copyResult === "selected");
+    if (didCopy) window.setTimeout(() => setCopied(false), 1600);
+    if (copyResult === "selected") window.setTimeout(() => setManualCopyHint(false), 2200);
   };
 
   const handleSpeak = () => {
@@ -364,6 +444,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   };
 
   const handleRetry = () => {
+    if (!canRetry) return;
     if (hasAppliedPatches) {
       const confirmed = window.confirm(
         "重新生成会替换这条回复，并使这条回复上的所有回填失效。原回填记录会被归档，后续上下文不再使用它们。",
@@ -514,37 +595,40 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
             <p className="whitespace-pre-wrap">{message.originalContent}</p>
           </div>
         )}
-        {isThinking ? (
-          <ThinkingIndicator label={thinkingLabel} />
-        ) : isUser ? (
-          <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
-        ) : (
-          <>
+        <div ref={contentRef}>
+          {isThinking ? (
+            <ThinkingIndicator label={thinkingLabel} />
+          ) : isUser ? (
+            <p className="whitespace-pre-wrap break-words">{renderLinkedContent()}</p>
+          ) : (
             <MarkdownContent
               content={message.content}
               treeLinks={messageTreeLinks}
               onTreeLinkClick={setActiveNode}
             />
-          </>
-        )}
+          )}
+        </div>
         </div>
         {!isThinking && (
           <div className={cn("tl-reveal-actions mt-1 flex items-center gap-1 px-1 text-muted-foreground", isUser ? "justify-end" : "justify-start")}>
             <MessageActionButton title="复制" onClick={handleCopy}>
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </MessageActionButton>
+            {manualCopyHint && <span className="px-1 text-[11px]">已选中，按 ⌘C 复制</span>}
             {!isUser && (
               <>
                 <MessageActionButton title={isSpeaking ? "停止朗读" : "朗读"} onClick={handleSpeak}>
                   {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </MessageActionButton>
-                <MessageActionButton
-                  title="重试"
-                  onClick={handleRetry}
-                  disabled={isNodeRunning}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                </MessageActionButton>
+                {canRetry && (
+                  <MessageActionButton
+                    title="重试"
+                    onClick={handleRetry}
+                    disabled={isNodeRunning}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </MessageActionButton>
+                )}
                 {patches.map((patch) => (
                   <MessageActionButton
                     key={patch.id}
