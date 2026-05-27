@@ -544,13 +544,28 @@ input {
     min-height: 2.5rem;
   }
 
+  .tl-workspace-page .tree-link {
+    border-bottom-color: color-mix(in srgb, #1d4ed8 42%, transparent);
+    color: #1d4ed8;
+    cursor: pointer;
+    text-decoration: none;
+    text-underline-offset: 0.16em;
+  }
+
+  .tl-workspace-page .tree-link:hover,
+  .tl-workspace-page .tree-link:focus {
+    border-bottom-color: currentColor;
+    color: #0b57d0;
+  }
+
   :root.dark .tl-workspace-page .tree-link {
-    color: #d8d8d8;
+    border-bottom-color: color-mix(in srgb, #8ab4f8 50%, transparent);
+    color: #8ab4f8;
   }
 
   :root.dark .tl-workspace-page .tree-link:hover,
   :root.dark .tl-workspace-page .tree-link:focus {
-    color: #ffffff;
+    color: #aecbfa;
   }
 
   .tl-workspace-page .tl-chat-top-actions {
