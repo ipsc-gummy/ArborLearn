@@ -73,7 +73,17 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def run_smoke(base_url: str, email: str, password: str, timeout: int) -> None:
+def run_smoke(
+    base_url: str,
+    email: str,
+    password: str,
+    timeout: int,
+    *,
+    include_chat_live: bool,
+    include_web_search: bool,
+    model_name: str,
+    thinking_mode: str,
+) -> None:
     client = ApiClient(base_url, timeout)
 
     health = client.request("GET", "/api/health")
@@ -188,6 +198,36 @@ def run_smoke(base_url: str, email: str, password: str, timeout: int) -> None:
     require(cancelled.get("status") == "CANCELLED", "cancel long task did not return CANCELLED")
     log_pass("cancel long task")
 
+    if include_chat_live:
+        chat = client.request(
+            "POST",
+            "/api/chat",
+            {
+                "nodeId": child_id,
+                "message": "用一句话确认 ArborLearn smoke live chat 可以工作。",
+                "modelName": model_name,
+                "thinkingMode": thinking_mode,
+                "webSearch": False,
+                "ragEnabled": False,
+            },
+        )
+        require(chat.get("role") == "assistant", "live chat did not return assistant role")
+        require(isinstance(chat.get("content"), str) and chat["content"].strip(), "live chat returned empty content")
+        log_pass("live chat")
+
+    if include_web_search:
+        search = client.request(
+            "POST",
+            f"/api/nodes/{child_id}/web-search",
+            {
+                "query": "ArborLearn smoke search",
+                "maxResults": 3,
+                "fetchTopK": 1,
+            },
+        )
+        require(isinstance(search.get("sources"), list), "web search response did not contain sources")
+        log_pass("live web search")
+
     log_info(f"smoke account: {email}")
     log_info("ArborLearn smoke checks completed.")
 
@@ -198,6 +238,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--email", default=None, help="Smoke account email. Defaults to a unique example.com address.")
     parser.add_argument("--password", default=DEFAULT_PASSWORD, help="Smoke account password.")
     parser.add_argument("--timeout", type=int, default=REQUEST_TIMEOUT_SECONDS, help="Request timeout in seconds.")
+    parser.add_argument("--include-chat-live", action="store_true", help="Also call /api/chat. Requires a working MODEL_API_KEY.")
+    parser.add_argument("--include-web-search", action="store_true", help="Also call node web search. Requires a configured search provider.")
+    parser.add_argument("--model-name", default="deepseek-v4-flash", help="Model name for --include-chat-live.")
+    parser.add_argument(
+        "--thinking-mode",
+        default="fast",
+        choices=["fast", "deep", "challenge"],
+        help="Thinking mode for --include-chat-live.",
+    )
     return parser.parse_args(argv)
 
 
@@ -206,7 +255,16 @@ def main(argv: list[str]) -> int:
     timestamp = int(time.time())
     email = args.email or f"arborlearn-smoke-{timestamp}-{uuid.uuid4().hex[:6]}@example.com"
     try:
-        run_smoke(args.base_url, email, args.password, args.timeout)
+        run_smoke(
+            args.base_url,
+            email,
+            args.password,
+            args.timeout,
+            include_chat_live=args.include_chat_live,
+            include_web_search=args.include_web_search,
+            model_name=args.model_name,
+            thinking_mode=args.thinking_mode,
+        )
     except Exception as exc:
         print(f"FAIL {exc}", file=sys.stderr, flush=True)
         return 1
