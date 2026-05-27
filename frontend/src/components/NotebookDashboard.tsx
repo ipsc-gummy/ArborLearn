@@ -485,19 +485,19 @@ export function NotebookDashboard({
               return (
                 <div
                   key={id}
-                  className="tl-panel group relative flex min-h-[17rem] flex-col overflow-hidden rounded-[1.1rem] border p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-panel"
+                  className="tl-notebook-page-card group relative min-h-[18.5rem] overflow-hidden rounded-[1.1rem] border p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-panel"
                 >
                   {!isEditing && (
-                    <button className="absolute inset-0 z-10 rounded-[1.1rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
+                    <button className="absolute inset-0 z-10 rounded-[1.2rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
                   )}
-                  <NotebookCardThumbnail nodes={nodes} rootId={node.id} />
-                  <div className="relative z-20 mt-4 flex items-start justify-between gap-3">
+                  <div className="tl-notebook-page-rule" aria-hidden="true" />
+                  <div className="relative z-20 flex items-start justify-between gap-3">
                     <span
                       className={cn(
                         "rounded-full border px-2.5 py-1 text-xs font-semibold",
                         isPinned
                           ? "border-primary/24 bg-primary/10 text-primary"
-                          : "border-border/70 bg-muted/45 text-muted-foreground",
+                          : "border-border/70 bg-background/70 text-muted-foreground",
                       )}
                     >
                       {isPinned ? "已置顶" : `${node.children.length} 分支`}
@@ -535,7 +535,11 @@ export function NotebookDashboard({
                       </Popover.Portal>
                     </Popover.Root>
                   </div>
-                  <div className="relative z-20 mt-3 min-w-0">
+                  <p className="tl-notebook-page-summary pointer-events-none mt-4 line-clamp-3">
+                    {node.summary || "从这个笔记本继续展开树形学习。"}
+                  </p>
+                  <NotebookCardThumbnail nodes={nodes} rootId={node.id} />
+                  <div className="relative z-20 mt-4 min-w-0">
                     {isEditing ? (
                       <input
                         ref={editInputRef}
@@ -555,9 +559,6 @@ export function NotebookDashboard({
                     )}
                     <p className="mt-1 text-xs font-medium text-muted-foreground">
                       {formatNotebookUpdatedAt(node.updatedAt)}
-                    </p>
-                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                      {node.summary || "从这个笔记本继续展开树形学习。"}
                     </p>
                   </div>
                 </div>
@@ -759,7 +760,7 @@ function NotebookCardThumbnail({ nodes, rootId }: { nodes: Record<string, Knowle
   const offsetY = (previewHeight - diagram.height * scale) / 2;
 
   return (
-    <div className="pointer-events-none relative z-20 h-28 overflow-hidden rounded-xl border border-border/65 bg-[radial-gradient(circle_at_22%_18%,color-mix(in_srgb,var(--tl-brand)_12%,transparent),transparent_11rem),linear-gradient(color-mix(in_srgb,var(--tl-border)_42%,transparent)_1px,transparent_1px),linear-gradient(90deg,color-mix(in_srgb,var(--tl-border)_42%,transparent)_1px,transparent_1px)] bg-[size:auto,22px_22px,22px_22px]">
+    <div className="tl-notebook-thumbnail pointer-events-none relative z-20 h-28 overflow-hidden rounded-xl border">
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${previewWidth} ${previewHeight}`} aria-hidden="true">
         <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
           {diagram.links.map((link) => (
