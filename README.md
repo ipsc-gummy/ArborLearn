@@ -1,19 +1,155 @@
-# TreeLearn MVP
+# ArborLearn / TreeLearn
 
-TreeLearn is a tree-shaped learning workspace. This MVP connects the existing React UI to a real backend path:
+> 中文 | [English](#english)
+
+ArborLearn 是一个 AI 问答驱动的树状学习平台。它把普通聊天里的零散问答整理成 notebook、树状节点和可回填的学习记录，让用户可以沿着主线学习，也可以从任意片段展开局部追问。
+
+TreeLearn 是 ArborLearn 的核心学习界面：每个 notebook 是一棵学习树，每个节点是一段聚焦对话，子节点用于承接选中文本、局部概念或延伸问题。
+
+## 核心体验
 
 ```text
-Frontend chat
--> POST /api/chat
--> SQLite tree/messages
--> Context Builder
--> OpenAI-compatible model API
--> assistant message saved back to SQLite
+注册/登录
+-> 创建或进入 notebook
+-> 构建树状学习节点
+-> 在节点内向 AI 提问
+-> 基于树路径继承上下文
+-> 对复杂问题启动长任务
+-> 将子对话结论回填到父对话
+-> 通过历史、搜索和 RAG 继续复习
 ```
 
-Accounts are email/password based in the current MVP. Each user owns their own notebooks, nodes, and messages; unauthenticated requests cannot read or mutate tree data.
+## 主要功能
 
-## Backend
+- 树状 notebook 与节点式学习空间。
+- 用户注册登录与数据隔离。
+- 基于当前节点、父节点、根节点和近期对话构建 AI 上下文。
+- 支持流式回答、重新生成和中止保存。
+- 长任务执行链：自动规划步骤、保存证据、记录阶段输出并生成最终答案。
+- 子对话回填：把局部追问的结论安全写回父对话。
+- Web search 与 RAG 基础能力。
+- Docker、Nginx、systemd 部署材料。
+
+## 快速启动
+
+### 后端
+
+```bash
+cd backend
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env，至少填写 MODEL_API_KEY
+.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+默认模型配置兼容 DeepSeek：
+
+```text
+MODEL_BASE_URL=https://api.deepseek.com
+MODEL_NAME=deepseek-v4-flash
+```
+
+也可以通过修改 `MODEL_BASE_URL`、`MODEL_NAME`、`MODEL_API_KEY` 接入其他 OpenAI-compatible `/chat/completions` 服务。
+
+### 前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+如果后端不是 `http://127.0.0.1:8000`，设置：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+## 核心 API
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/tree`
+- `POST /api/nodes`
+- `PATCH /api/nodes/{id}`
+- `DELETE /api/nodes/{id}`
+- `GET /api/nodes/{id}/messages`
+- `POST /api/chat`
+- `POST /api/chat/stream`
+- `POST /api/chat/retry`
+- `POST /api/long-tasks`
+- `GET /api/long-tasks/{id}`
+- `POST /api/backfill/draft`
+- `POST /api/backfill/patches`
+
+完整接口说明见 [docs/API.md](docs/API.md)。
+
+## 项目文档
+
+- [项目成熟度路线图](docs/PROJECT_MATURITY_ROADMAP.md)
+- [系统架构](docs/ARCHITECTURE.md)
+- [API 契约](docs/API.md)
+- [测试与回归](docs/TESTING.md)
+- [技术报告提纲](docs/REPORT_OUTLINE.md)
+- [部署说明](deploy/README.md)
+
+## Smoke Check
+
+启动后端后运行：
+
+```bash
+python3 scripts/smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+默认 smoke check 覆盖 health、auth、tree、node、long-task metadata 和 cancel API，不调用真实模型、web search 或 RAG。
+
+## 部署
+
+项目已提供 Docker、Nginx 和 systemd 相关部署材料。ECS / Ubuntu 部署见：
+
+```text
+deploy/README.md
+```
+
+生产环境不要直接暴露后端 `8000` 端口，应通过 Nginx 代理 `/api`。
+
+---
+
+## English
+
+ArborLearn is an AI question-answering learning workspace built around a tree-shaped knowledge structure. It turns scattered chat-based learning into notebooks, structured nodes, and reusable learning records.
+
+TreeLearn is the core learning interface: each notebook is a learning tree, each node is a focused conversation, and child nodes let learners branch from selected context without losing the main learning path.
+
+## Core Experience
+
+```text
+Sign up / log in
+-> create or open a notebook
+-> build a tree of learning nodes
+-> chat with AI inside a node
+-> inherit context from the tree path
+-> run long tasks for complex questions
+-> backfill child-node conclusions into parent conversations
+-> continue review through history, search, and RAG
+```
+
+## Features
+
+- Tree-shaped notebooks and conversation nodes.
+- Email/password authentication with per-user data isolation.
+- Node-aware AI chat with context built from root, parent, current node, recent turns, web evidence, and optional RAG.
+- Streaming chat, retry, and stop support.
+- Long task execution chain with plan, steps, evidence, outputs, final answer, cancellation, and retry hooks.
+- Backfill workflow for safely applying child-conversation conclusions to parent messages.
+- Web search and RAG foundations.
+- Docker, Nginx, and systemd deployment materials.
+
+## Quick Start
+
+### Backend
 
 ```bash
 cd backend
@@ -24,8 +160,6 @@ cp .env.example .env
 .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-If a hidden `.env` file is inconvenient to edit, use `backend/local.env` instead. It is intentionally ignored by git and overrides `.env`.
-
 The default model endpoint is DeepSeek-compatible:
 
 ```text
@@ -35,7 +169,7 @@ MODEL_NAME=deepseek-v4-flash
 
 Any OpenAI-compatible `/chat/completions` service can be used by changing `MODEL_BASE_URL`, `MODEL_NAME`, and `MODEL_API_KEY`.
 
-## Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -43,36 +177,57 @@ npm install
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` if the backend is not running at `http://127.0.0.1:8000`.
+If the backend is not running at `http://127.0.0.1:8000`, set:
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
 
 ## Core API
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
-- `POST /api/chat`
 - `GET /api/tree`
-- `GET /api/notebooks/{id}/tree`
 - `POST /api/nodes`
 - `PATCH /api/nodes/{id}`
 - `DELETE /api/nodes/{id}`
 - `GET /api/nodes/{id}/messages`
+- `POST /api/chat`
+- `POST /api/chat/stream`
+- `POST /api/chat/retry`
+- `POST /api/long-tasks`
+- `GET /api/long-tasks/{id}`
+- `POST /api/backfill/draft`
+- `POST /api/backfill/patches`
 
-## ECS Deployment
+See [docs/API.md](docs/API.md) for the full API contract.
 
-Use GitHub as the source repository, then deploy on ECS with Nginx + systemd. See:
+## Documentation
+
+- [Project maturity roadmap](docs/PROJECT_MATURITY_ROADMAP.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API contract](docs/API.md)
+- [Testing and regression](docs/TESTING.md)
+- [Technical report outline](docs/REPORT_OUTLINE.md)
+- [Deployment guide](deploy/README.md)
+
+## Smoke Check
+
+Start the backend, then run:
+
+```bash
+python3 scripts/smoke_check.py --base-url http://127.0.0.1:8000
+```
+
+The default smoke check covers health, auth, tree, node, long-task metadata, and cancel APIs. It does not call the real model API, web search, or RAG.
+
+## Deployment
+
+Docker, Nginx, and systemd deployment materials are included. See:
 
 ```text
 deploy/README.md
 ```
 
-## Current Context Strategy
-
-When a user chats in a node, the backend builds model context from:
-
-- root node title and summary
-- current node title, summary, and context mode
-- parent node title, summary, selected text, and recent turns
-- current node recent turns
-
-This is intentionally simple, so the first product proof is visible: the same model receives different context depending on the active tree node.
+In production, do not expose backend port `8000` directly. Proxy `/api` through Nginx instead.
