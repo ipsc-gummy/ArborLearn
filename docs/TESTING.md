@@ -261,7 +261,7 @@ PASS live web search
 
 检查点：
 
-1. `POST /api/auth/register` 后，`GET /api/tree` 同时包含 `TreeLearn 入门笔记本` 和 `Transformer 是如何工作的`。
+1. `POST /api/auth/register` 后，`GET /api/tree` 同时包含 `ArborLearn 入门笔记本` 和 `Transformer 是如何工作的`。
 2. `POST /api/auth/demo` 返回 `isTemporary: true` 的用户。
 3. 两次 `POST /api/auth/demo` 得到不同用户 id。
 4. 一个演示会话中新建的 notebook，另一个演示会话不可见。

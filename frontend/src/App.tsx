@@ -8,7 +8,7 @@ import { PageTransition } from "./components/PageTransition";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { Workspace } from "./components/Workspace";
 import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
-import { useTreeLearnStore } from "./store/treelearnStore";
+import { useArborLearnStore } from "./store/arborlearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const THEME_MODE_KEY = "arborlearn.themeMode";
@@ -67,7 +67,7 @@ function routeToPath(route: AppRoute) {
   return "/";
 }
 
-function getNotebookCreatedAt(node: ReturnType<typeof useTreeLearnStore.getState>["nodes"][string]) {
+function getNotebookCreatedAt(node: ReturnType<typeof useArborLearnStore.getState>["nodes"][string]) {
   const messageTimes = node.messages
     .map((message) => new Date(message.createdAt).getTime())
     .filter((time) => Number.isFinite(time));
@@ -82,7 +82,7 @@ function formatNotebookSlugDate(date: Date) {
   return `${year}${month}${day}`;
 }
 
-function getNotebookSlug(node: ReturnType<typeof useTreeLearnStore.getState>["nodes"][string]) {
+function getNotebookSlug(node: ReturnType<typeof useArborLearnStore.getState>["nodes"][string]) {
   const titleSlug = node.title
     .trim()
     .replace(/[\\/#?&%:]+/g, "")
@@ -91,13 +91,13 @@ function getNotebookSlug(node: ReturnType<typeof useTreeLearnStore.getState>["no
   return `${titleSlug || "notebook"}${formatNotebookSlugDate(getNotebookCreatedAt(node))}`;
 }
 
-function resolveNotebookRouteRef(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], ref: string) {
+function resolveNotebookRouteRef(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], ref: string) {
   const directNode = nodes[ref];
   if (directNode?.parentId === null) return ref;
   return Object.values(nodes).find((node) => node.parentId === null && getNotebookSlug(node) === ref)?.id ?? null;
 }
 
-function getNotebookRootId(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], nodeId: string) {
+function getNotebookRootId(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string) {
   let current = nodes[nodeId];
   const seen = new Set<string>();
   while (current?.parentId && !seen.has(current.id)) {
@@ -119,7 +119,7 @@ function getStoredActiveNodeId() {
   }
 }
 
-function getNodeInNotebook(nodes: ReturnType<typeof useTreeLearnStore.getState>["nodes"], notebookId: string, nodeId?: string) {
+function getNodeInNotebook(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], notebookId: string, nodeId?: string) {
   if (!nodeId || !nodes[nodeId]) return null;
   return getNotebookRootId(nodes, nodeId) === notebookId ? nodeId : null;
 }
@@ -127,20 +127,20 @@ function getNodeInNotebook(nodes: ReturnType<typeof useTreeLearnStore.getState>[
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const sidebarOpen = useTreeLearnStore((state) => state.sidebarOpen);
-  const toggleSidebar = useTreeLearnStore((state) => state.toggleSidebar);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const initializeAuth = useTreeLearnStore((state) => state.initializeAuth);
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const apiStatus = useTreeLearnStore((state) => state.apiStatus);
-  const user = useTreeLearnStore((state) => state.user);
-  const authStatus = useTreeLearnStore((state) => state.authStatus);
-  const authError = useTreeLearnStore((state) => state.authError);
-  const login = useTreeLearnStore((state) => state.login);
-  const register = useTreeLearnStore((state) => state.register);
-  const createDemoSession = useTreeLearnStore((state) => state.createDemoSession);
-  const logout = useTreeLearnStore((state) => state.logout);
+  const sidebarOpen = useArborLearnStore((state) => state.sidebarOpen);
+  const toggleSidebar = useArborLearnStore((state) => state.toggleSidebar);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
+  const initializeAuth = useArborLearnStore((state) => state.initializeAuth);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const apiStatus = useArborLearnStore((state) => state.apiStatus);
+  const user = useArborLearnStore((state) => state.user);
+  const authStatus = useArborLearnStore((state) => state.authStatus);
+  const authError = useArborLearnStore((state) => state.authError);
+  const login = useArborLearnStore((state) => state.login);
+  const register = useArborLearnStore((state) => state.register);
+  const createDemoSession = useArborLearnStore((state) => state.createDemoSession);
+  const logout = useArborLearnStore((state) => state.logout);
   const route = parseRoute(location.pathname);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -231,7 +231,7 @@ export default function App() {
 
   const registerWithDefaultTheme = async (email: string, password: string, displayName?: string) => {
     await register(email, password, displayName);
-    const createdUser = useTreeLearnStore.getState().user;
+    const createdUser = useArborLearnStore.getState().user;
     setThemeModeState("light");
     saveThemeMode("light", createdUser?.id);
   };

@@ -79,7 +79,7 @@ from .web_search import (
 )
 
 
-app = FastAPI(title="TreeLearn API", version="0.1.0")
+app = FastAPI(title="ArborLearn API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
@@ -88,7 +88,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-LEGACY_DEMO_ACCOUNT_EMAIL = "demo@treelearn.local"
+LEGACY_DEMO_ACCOUNT_EMAIL = "demo@arborlearn.local"
 DEMO_SESSION_TTL_HOURS = 24
 
 
@@ -741,7 +741,7 @@ def create_isolated_demo_user() -> dict:
     cleanup_demo_sessions()
     user_id = uid("user")
     demo_suffix = user_id.removeprefix("user-")
-    email = f"demo-{demo_suffix}@treelearn.local"
+    email = f"demo-{demo_suffix}@arborlearn.local"
     display_name = "演示体验"
     ts = now_iso()
     with connect() as conn:

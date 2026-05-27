@@ -30,7 +30,7 @@ load_env_file("local.env", override=True)
 
 
 def get_database_path() -> Path:
-    configured = os.getenv("DATABASE_PATH", "data/treelearn.sqlite3")
+    configured = os.getenv("DATABASE_PATH", "data/arborlearn.sqlite3")
     path = Path(configured)
     if not path.is_absolute():
         path = BACKEND_DIR / path

@@ -29,11 +29,11 @@ Edit `/opt/arborlearn/backend/.env`:
 
 ```env
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 MODEL_API_KEY=your_deepseek_key
 AUTH_SECRET=replace_with_a_long_random_value
 CORS_ORIGINS=http://your_server_ip
-DATABASE_PATH=data/treelearn.sqlite3
+DATABASE_PATH=data/arborlearn.sqlite3
 ```
 
 ## 3. Frontend

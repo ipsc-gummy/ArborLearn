@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { MessageSquareText } from "lucide-react";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
-import type { KnowledgeNode } from "../types/treelearn";
+import type { KnowledgeNode } from "../types/arborlearn";
 
 interface NotebookDiagramProps {
   onOpenChat: () => void;
@@ -109,9 +109,9 @@ function linkPath(link: DiagramLink) {
 }
 
 export function NotebookDiagram({ onOpenChat }: NotebookDiagramProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
   const rootId = getNotebookRootId(nodes, activeNodeId);
   const diagram = useMemo(() => buildDiagram(nodes, rootId), [nodes, rootId]);
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });

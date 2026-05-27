@@ -12,7 +12,7 @@ Browser
    -> static frontend files
    -> /api proxy to FastAPI backend :8000
 -> arborlearn-backend.service
--> backend/data/treelearn.sqlite3
+-> backend/data/arborlearn.sqlite3
 -> optional LanceDB / web search / model API
 ```
 
@@ -69,13 +69,13 @@ cp .env.example .env
 
 ```env
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 MODEL_API_KEY=your_model_key
 
 AUTH_SECRET=replace_with_a_long_random_value
 CORS_ORIGINS=http://your_server_ip,https://your_domain
 
-DATABASE_PATH=data/treelearn.sqlite3
+DATABASE_PATH=data/arborlearn.sqlite3
 
 ENABLE_RAG=false
 VECTOR_DB_PATH=data/lancedb
@@ -252,7 +252,7 @@ POST /api/auth/demo
 
 该接口每次创建一个独立临时用户，并自动初始化默认 notebook：
 
-- `TreeLearn 入门笔记本`
+- `ArborLearn 入门笔记本`
 - `Transformer 是如何工作的`
 
 临时演示用户不会和其他访问者共享笔记本、节点或聊天记录。后端启动和创建新演示会话时会清理过期临时用户，前端只把演示 token 保存在浏览器 session 中。
@@ -262,7 +262,7 @@ POST /api/auth/demo
 默认数据：
 
 ```text
-backend/data/treelearn.sqlite3
+backend/data/arborlearn.sqlite3
 backend/data/lancedb/
 ```
 
@@ -270,7 +270,7 @@ backend/data/lancedb/
 
 ```bash
 cd /opt/arborlearn/backend
-sqlite3 data/treelearn.sqlite3 ".backup data/treelearn-$(date +%Y%m%d-%H%M%S).sqlite3"
+sqlite3 data/arborlearn.sqlite3 ".backup data/arborlearn-$(date +%Y%m%d-%H%M%S).sqlite3"
 ```
 
 如果未安装 sqlite3：

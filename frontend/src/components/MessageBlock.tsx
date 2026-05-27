@@ -1,8 +1,8 @@
 import { Check, Copy, GitBranch, RotateCcw, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { ChatMessage } from "../types/treelearn";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import type { ChatMessage } from "../types/arborlearn";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { archiveBackfillPatch } from "../lib/api";
@@ -289,13 +289,13 @@ function ThinkingIndicator({ label = "正在思考" }: { label?: string }) {
 
 // 单条聊天消息：根据角色切换左右布局，并把已创建子对话的选中文本渲染为可点击链接。
 export function MessageBlock({ nodeId, message }: MessageBlockProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const user = useTreeLearnStore((state) => state.user);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
-  const retryAssistantMessage = useTreeLearnStore((state) => state.retryAssistantMessage);
-  const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
-  const isNodeRunning = Boolean(useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]));
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const user = useArborLearnStore((state) => state.user);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
+  const setSelectionDraft = useArborLearnStore((state) => state.setSelectionDraft);
+  const retryAssistantMessage = useArborLearnStore((state) => state.retryAssistantMessage);
+  const hydrateFromBackend = useArborLearnStore((state) => state.hydrateFromBackend);
+  const isNodeRunning = Boolean(useArborLearnStore((state) => state.chatRunStatusByNode[nodeId]));
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
   const nodeMessages = nodes[nodeId]?.messages ?? [];
   const isUser = message.role === "user";
@@ -568,7 +568,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className={cn("text-xs font-semibold", isUser ? "opacity-70" : "text-muted-foreground")}>
-            {isUser ? userLabel : "TreeLearn AI"}
+            {isUser ? userLabel : "ArborLearn AI"}
           </span>
           <div className="flex items-center gap-2">
             {message.stale && (

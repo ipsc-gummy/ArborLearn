@@ -47,7 +47,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
             <GitBranch className="tl-brand h-5 w-5" />
           </div>
           <div>
-            <p className="font-semibold leading-tight">TreeLearn</p>
+            <p className="font-semibold leading-tight">ArborLearn</p>
             <p className="text-xs text-muted-foreground">树状学习工作台</p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
           把学习过程变成一棵可以探索、复盘的知识树
         </h1>
         <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-muted-foreground md:text-lg">
-          TreeLearn 把线性聊天变成可探索的知识画布。用笔记本承载主题，用主/子对话拆解问题，用 Diagram 回看整个学习路径。
+          ArborLearn 把线性聊天变成可探索的知识画布。用笔记本承载主题，用主/子对话拆解问题，用 Diagram 回看整个学习路径。
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button className="h-12 px-5 text-sm" onClick={() => onRequestAuth("register")}>
@@ -95,7 +95,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
 
       <ProductShowcase
         eyebrow="01 / Notebook dashboard"
-        title="从“我的 TreeLearn 笔记本”开始管理每个学习主题"
+        title="从“我的 ArborLearn 笔记本”开始管理每个学习主题"
         description="每个笔记本都是一个独立的学习空间。你可以按最近更新或标题整理主题，搜索已有内容，也可以从这里创建新的知识树。"
         softTop
       >
@@ -137,7 +137,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
             让每一次学习，都留下可继续生长的结构
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-            加入TreeLearn，让每一次学习都成为一次深入探索
+            加入ArborLearn，让每一次学习都成为一次深入探索
           </p>
           <div className="mt-8 flex justify-center">
             <Button className="h-12 px-5 text-sm" onClick={() => onRequestAuth("register")}>
@@ -215,12 +215,12 @@ function NotebookDashboardMock() {
       <img
         className="tl-showcase-image tl-showcase-image-light"
         src="/showcase/notebooks-light.png"
-        alt="浅色模式下的我的 TreeLearn 笔记本页面"
+        alt="浅色模式下的我的 ArborLearn 笔记本页面"
       />
       <img
         className="tl-showcase-image tl-showcase-image-dark"
         src="/showcase/notebooks-dark.png"
-        alt="深色模式下的我的 TreeLearn 笔记本页面"
+        alt="深色模式下的我的 ArborLearn 笔记本页面"
       />
     </div>
   );
@@ -232,12 +232,12 @@ function ConversationShot() {
       <img
         className="tl-showcase-image tl-showcase-image-light"
         src="/showcase/conversation-light.png"
-        alt="浅色模式下的 TreeLearn 主对话和子对话页面"
+        alt="浅色模式下的 ArborLearn 主对话和子对话页面"
       />
       <img
         className="tl-showcase-image tl-showcase-image-dark"
         src="/showcase/conversation-dark.png"
-        alt="深色模式下的 TreeLearn 主对话和子对话页面"
+        alt="深色模式下的 ArborLearn 主对话和子对话页面"
       />
     </div>
   );
@@ -249,12 +249,12 @@ function DiagramShot() {
       <img
         className="tl-showcase-image tl-showcase-image-light"
         src="/showcase/diagram-light.png"
-        alt="浅色模式下的 TreeLearn Diagram 页面"
+        alt="浅色模式下的 ArborLearn Diagram 页面"
       />
       <img
         className="tl-showcase-image tl-showcase-image-dark"
         src="/showcase/diagram-dark.png"
-        alt="深色模式下的 TreeLearn Diagram 页面"
+        alt="深色模式下的 ArborLearn Diagram 页面"
       />
     </div>
   );

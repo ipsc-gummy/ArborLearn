@@ -176,7 +176,7 @@ def run_smoke(
             "question": "请把这个 smoke check 问题拆成三步。",
             "title": "Smoke Long Task",
             "auto_run": False,
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-v4-pro",
             "thinkingMode": "fast",
         },
     )
@@ -240,7 +240,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=REQUEST_TIMEOUT_SECONDS, help="Request timeout in seconds.")
     parser.add_argument("--include-chat-live", action="store_true", help="Also call /api/chat. Requires a working MODEL_API_KEY.")
     parser.add_argument("--include-web-search", action="store_true", help="Also call node web search. Requires a configured search provider.")
-    parser.add_argument("--model-name", default="deepseek-v4-flash", help="Model name for --include-chat-live.")
+    parser.add_argument("--model-name", default="deepseek-v4-pro", help="Model name for --include-chat-live.")
     parser.add_argument(
         "--thinking-mode",
         default="fast",
