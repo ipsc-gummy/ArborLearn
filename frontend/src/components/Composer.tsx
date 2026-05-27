@@ -1,6 +1,17 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useState } from "react";
-import { Check, ChevronDown, Globe, Paperclip, Send, SlidersHorizontal, Square } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Globe,
+  Lightbulb,
+  MessageSquareText,
+  Paperclip,
+  Send,
+  SlidersHorizontal,
+  Square,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import { useTreeLearnStore } from "../store/treelearnStore";
 import {
@@ -18,8 +29,27 @@ interface ComposerProps {
   threadId?: string;
 }
 
+const branchQuickPrompts = [
+  {
+    label: "解释这段",
+    message: "请解释我选中的这段内容。",
+    icon: MessageSquareText,
+  },
+  {
+    label: "举个例子",
+    message: "请用一个简单例子说明我选中的这段内容。",
+    icon: Lightbulb,
+  },
+  {
+    label: "为什么重要",
+    message: "请说明我选中的这段内容为什么重要。",
+    icon: CircleHelp,
+  },
+];
+
 export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
   const [value, setValue] = useState("");
+  const node = useTreeLearnStore((state) => state.nodes[nodeId]);
   const appendMessage = useTreeLearnStore((state) => state.appendMessage);
   const stopMessage = useTreeLearnStore((state) => state.stopMessage);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
@@ -32,6 +62,14 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const chatRunStatus = useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]);
   const isThinking = chatRunStatus === "thinking";
   const isStreaming = chatRunStatus === "streaming";
+  const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;
+  const showBranchQuickPrompts = Boolean(node?.selectedText && !hasUserQuestion && !value.trim() && !isThinking && !isStreaming);
+
+  const send = (content: string) => {
+    if (!content.trim()) return;
+    appendMessage(nodeId, content.trim(), scope);
+    setValue("");
+  };
 
   const submit = () => {
     if (isThinking || isStreaming) {
@@ -39,13 +77,30 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       return;
     }
     if (!value.trim()) return;
-    appendMessage(nodeId, value.trim(), scope);
-    setValue("");
+    send(value);
   };
 
   return (
     <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
       <div className="tl-composer-shell tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
+        {showBranchQuickPrompts && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
+            {branchQuickPrompts.map((prompt) => {
+              const Icon = prompt.icon;
+              return (
+                <button
+                  key={prompt.label}
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2.5 text-xs font-medium text-muted-foreground transition hover:border-primary/30 hover:bg-primary/8 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  onClick={() => send(prompt.message)}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {prompt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -314,4 +369,3 @@ function ModelModeSelector({
     </Popover.Root>
   );
 }
-
