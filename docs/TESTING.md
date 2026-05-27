@@ -85,6 +85,8 @@ MODEL_API_KEY=test-key \
 - auth owner isolation。
 - node CRUD。
 - long task create / list / detail / cancel 状态链。
+- 默认 Transformer 演示树。
+- 独立临时演示会话。
 
 ### 1.4 Live Checks
 
@@ -252,6 +254,18 @@ PASS live web search
 2. 回答中出现来源。
 3. 搜索失败时能降级并显示 warning。
 4. 开启 RAG 时上下文构建不报错。
+
+### 5.6 Demo Notebook
+
+注册账号和“体验示例”临时会话都应默认包含完整 Transformer 演示树，不需要额外脚本。
+
+检查点：
+
+1. `POST /api/auth/register` 后，`GET /api/tree` 同时包含 `TreeLearn 入门笔记本` 和 `Transformer 是如何工作的`。
+2. `POST /api/auth/demo` 返回 `isTemporary: true` 的用户。
+3. 两次 `POST /api/auth/demo` 得到不同用户 id。
+4. 一个演示会话中新建的 notebook，另一个演示会话不可见。
+5. Transformer 根节点包含自注意力、Q/K/V、多头注意力、Encoder/Decoder 等分支。
 
 ## 6. 回归边界
 

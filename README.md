@@ -176,6 +176,15 @@ python3 scripts/smoke_check.py \
   --include-web-search
 ```
 
+## 演示 Notebook
+
+新注册账号会自动获得两个默认 notebook：
+
+- `TreeLearn 入门笔记本`：说明基础操作和树形上下文。
+- `Transformer 是如何工作的`：完整演示树，包含自注意力、Q/K/V、多头注意力、Encoder/Decoder 等分支。
+
+前端的“体验示例”不会登录共享账号。每次点击都会创建独立的临时演示会话，默认包含 Transformer 示例树；不同访问者不会共享笔记本、节点或聊天记录，浏览器会话结束后也不会自动恢复该体验账号。
+
 ## 部署
 
 项目已提供 Docker、Nginx 和 systemd 相关部署材料。ECS / Ubuntu 部署见：
@@ -352,6 +361,15 @@ python3 scripts/smoke_check.py \
   --include-chat-live \
   --include-web-search
 ```
+
+## Demo Notebook
+
+New registered accounts automatically receive two default notebooks:
+
+- `TreeLearn 入门笔记本`: a lightweight guide to the core workflow and tree context.
+- `Transformer 是如何工作的`: a complete demo tree covering self-attention, Q/K/V, multi-head attention, Encoder/Decoder, and examples.
+
+The frontend demo entry does not log into a shared account. Each click creates an isolated temporary demo session with the Transformer notebook, so visitors do not share notebooks, nodes, or chat history. The temporary demo token is stored only for the browser session.
 
 ## Deployment
 

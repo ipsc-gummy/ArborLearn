@@ -33,6 +33,7 @@ def init_db() -> None:
               email TEXT NOT NULL UNIQUE,
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
+              is_temporary INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
@@ -284,6 +285,7 @@ def init_db() -> None:
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:

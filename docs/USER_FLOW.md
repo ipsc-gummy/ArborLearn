@@ -20,19 +20,23 @@ ArborLearn 的用户体验不是“一次提问一次回答”，而是把学习
 
 ## 2. 注册与工作区初始化
 
-用户通过 email/password 注册或登录。后端创建用户后会初始化入门 notebook，前端保存 bearer token，并在后续 API 请求中附带 `Authorization` header。
+用户通过 email/password 注册或登录。后端创建用户后会初始化入门 notebook 和 Transformer 演示 notebook，前端保存 bearer token，并在后续 API 请求中附带 `Authorization` header。
+
+未注册访客可以通过“体验示例”进入独立临时会话。该入口调用 `/api/auth/demo`，每次创建新的临时用户，不复用共享账号，因此不同访问者不会共享笔记本、节点或聊天记录。
 
 关键 API：
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/demo`
 - `GET /api/auth/me`
 - `GET /api/tree`
 
 验证重点：
 
 - 未登录用户不能读取树状学习数据。
-- 新用户能拿到初始 notebook。
+- 新用户能拿到初始 notebook 和 Transformer 演示树。
+- 两个演示会话的数据互不可见。
 - 同一用户刷新页面后仍能恢复自己的 tree state。
 
 ## 3. Notebook 与节点树

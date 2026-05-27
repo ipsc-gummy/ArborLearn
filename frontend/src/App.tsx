@@ -139,6 +139,7 @@ export default function App() {
   const authError = useTreeLearnStore((state) => state.authError);
   const login = useTreeLearnStore((state) => state.login);
   const register = useTreeLearnStore((state) => state.register);
+  const createDemoSession = useTreeLearnStore((state) => state.createDemoSession);
   const logout = useTreeLearnStore((state) => state.logout);
   const route = parseRoute(location.pathname);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
@@ -263,6 +264,7 @@ export default function App() {
     authError,
     onLogin: login,
     onRegister: registerWithDefaultTheme,
+    onCreateDemoSession: createDemoSession,
     onLogout: () => {
       logout();
       goHome();
@@ -344,6 +346,7 @@ export default function App() {
         onClose={() => setAuthDialogOpen(false)}
         onLogin={login}
         onRegister={registerWithDefaultTheme}
+        onCreateDemoSession={createDemoSession}
       />
     </>
   );

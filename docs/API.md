@@ -77,7 +77,7 @@ Response:
 
 ### `POST /api/auth/register`
 
-注册用户并创建入门 notebook。
+注册用户并创建入门 notebook 与 Transformer 演示 notebook。
 
 Request:
 
@@ -97,7 +97,8 @@ Response `201`:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "Optional Name"
+    "displayName": "Optional Name",
+    "isTemporary": false
   }
 }
 ```
@@ -126,7 +127,8 @@ Response:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "User"
+    "displayName": "User",
+    "isTemporary": false
   }
 }
 ```
@@ -134,6 +136,31 @@ Response:
 Errors:
 
 - `401` invalid email or password
+- `410` legacy shared demo account is disabled
+
+### `POST /api/auth/demo`
+
+创建独立临时演示会话。该接口不接收邮箱密码，每次调用都会创建新的临时用户，并初始化默认 notebook。
+
+Request:
+
+```json
+{}
+```
+
+Response `201`:
+
+```json
+{
+  "token": "base64urlPayload.signature",
+  "user": {
+    "id": "user-...",
+    "email": "demo-...@treelearn.local",
+    "displayName": "演示体验",
+    "isTemporary": true
+  }
+}
+```
 
 ### `GET /api/auth/me`
 
@@ -144,7 +171,8 @@ Response:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "User"
+    "displayName": "User",
+    "isTemporary": false
   }
 }
 ```

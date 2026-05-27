@@ -39,9 +39,13 @@ def get_database_path() -> Path:
 
 
 def get_cors_origins() -> list[str]:
+    default_dev_origins = ",".join(
+        [f"http://localhost:{port}" for port in range(5173, 5180)]
+        + [f"http://127.0.0.1:{port}" for port in range(5173, 5180)]
+    )
     raw = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175",
+        default_dev_origins,
     )
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 

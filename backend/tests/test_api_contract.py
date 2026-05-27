@@ -109,6 +109,49 @@ def test_auth_owner_isolation(client: TestClient) -> None:
     assert task.status_code == 404
 
 
+def test_registration_creates_starter_and_transformer_demo(client: TestClient) -> None:
+    user = register(client, "starter")
+    tree = client.get("/api/tree", headers=user)
+    assert tree.status_code == 200
+
+    payload = tree.json()
+    root_ids = payload["rootIds"]
+    titles = [payload["nodes"][root_id]["title"] for root_id in root_ids]
+    assert "TreeLearn 入门笔记本" in titles
+    assert "Transformer 是如何工作的" in titles
+
+
+def test_demo_sessions_are_temporary_and_isolated(client: TestClient) -> None:
+    first = client.post("/api/auth/demo", json={})
+    second = client.post("/api/auth/demo", json={})
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    first_payload = first.json()
+    second_payload = second.json()
+    assert first_payload["user"]["isTemporary"] is True
+    assert second_payload["user"]["isTemporary"] is True
+    assert first_payload["user"]["id"] != second_payload["user"]["id"]
+
+    first_headers = {"Authorization": f"Bearer {first_payload['token']}"}
+    second_headers = {"Authorization": f"Bearer {second_payload['token']}"}
+    root = create_root(client, first_headers, root_id=f"demo-root-{uuid.uuid4().hex[:8]}")
+
+    hidden = client.get(f"/api/nodes/{root['id']}/messages", headers=second_headers)
+    assert hidden.status_code == 404
+
+    first_tree = client.get("/api/tree", headers=first_headers)
+    second_tree = client.get("/api/tree", headers=second_headers)
+    assert first_tree.status_code == 200
+    assert second_tree.status_code == 200
+    first_titles = [first_tree.json()["nodes"][root_id]["title"] for root_id in first_tree.json()["rootIds"]]
+    second_titles = [second_tree.json()["nodes"][root_id]["title"] for root_id in second_tree.json()["rootIds"]]
+    assert "Transformer 是如何工作的" in first_titles
+    assert "Transformer 是如何工作的" in second_titles
+    assert "Pytest Notebook" in first_titles
+    assert "Pytest Notebook" not in second_titles
+
+
 def test_node_crud_contract(client: TestClient) -> None:
     user = register(client, "node-crud")
     root = create_root(client, user)
