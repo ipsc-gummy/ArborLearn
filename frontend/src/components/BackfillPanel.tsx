@@ -246,9 +246,10 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
               </Button>
             </div>
           </div>
-          <textarea
-            value={replacementText}
-            onChange={(event) => setReplacementText(event.target.value)}
+            <textarea
+              data-tour-backfill-draft
+              value={replacementText}
+              onChange={(event) => setReplacementText(event.target.value)}
             rows={6}
             className="min-h-32 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
           />
