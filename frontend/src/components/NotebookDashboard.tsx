@@ -496,14 +496,7 @@ export function NotebookDashboard({
                 <div
                   key={id}
                   data-tour-notebook-title={node.title}
-                  className="tl-notebook-book group relative min-h-[18.5rem] text-left"
-                  style={{
-                    "--tl-notebook-cover-light": coverPalette.lightCover,
-                    "--tl-notebook-spine-light": coverPalette.lightSpine,
-                    "--tl-notebook-cover-dark": coverPalette.darkCover,
-                    "--tl-notebook-spine-dark": coverPalette.darkSpine,
-                    "--tl-notebook-accent": coverPalette.accent,
-                  } as React.CSSProperties}
+                  className="tl-notebook-page-card group relative min-h-[18.5rem] overflow-hidden rounded-[1.1rem] border p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-panel"
                 >
                   {!isEditing && (
                     <button className="absolute inset-0 z-10 rounded-[1.2rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
@@ -575,7 +568,7 @@ export function NotebookDashboard({
                         {node.title}
                       </h4>
                     )}
-                    <p className="mt-1 text-xs font-medium text-muted-foreground">
+                    <p className="tl-notebook-updated mt-1 text-xs font-medium">
                       {formatNotebookUpdatedAt(node.updatedAt)}
                     </p>
                   </div>
@@ -792,7 +785,7 @@ function NotebookCardThumbnail({ nodes, rootId }: { nodes: Record<string, Knowle
                 toY: link.toY + DIAGRAM_PADDING,
               })}
               fill="none"
-              stroke="color-mix(in srgb, var(--tl-brand) 30%, var(--tl-border))"
+              stroke="var(--tl-notebook-thumb-link)"
               strokeLinecap="round"
               strokeWidth="7"
             />
@@ -809,14 +802,14 @@ function NotebookCardThumbnail({ nodes, rootId }: { nodes: Record<string, Knowle
                   width={DIAGRAM_NODE_WIDTH}
                   height={DIAGRAM_NODE_HEIGHT}
                   rx="16"
-                  fill={diagramNode.id === rootId ? "color-mix(in srgb, var(--tl-brand) 16%, var(--tl-panel-solid))" : "var(--tl-panel-solid)"}
-                  stroke={diagramNode.id === rootId ? "color-mix(in srgb, var(--tl-brand) 58%, var(--tl-border))" : "var(--tl-border)"}
+                  fill={diagramNode.id === rootId ? "var(--tl-notebook-thumb-node-active)" : "var(--tl-notebook-thumb-node)"}
+                  stroke={diagramNode.id === rootId ? "var(--tl-notebook-thumb-node-active-stroke)" : "var(--tl-notebook-thumb-node-stroke)"}
                   strokeWidth={diagramNode.id === rootId ? "4" : "3"}
                 />
                 <text
                   x={x + DIAGRAM_NODE_WIDTH / 2}
                   y={y + (titleLines.length === 1 ? 36 : 28)}
-                  fill="currentColor"
+                  fill="var(--tl-notebook-thumb-ink)"
                   fontSize="22"
                   fontWeight="650"
                   dominantBaseline="middle"
@@ -833,7 +826,7 @@ function NotebookCardThumbnail({ nodes, rootId }: { nodes: Record<string, Knowle
           })}
         </g>
       </svg>
-      <div className="absolute bottom-2 left-2 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
+      <div className="tl-notebook-thumbnail-count absolute bottom-2 left-2 rounded-full border px-2 py-0.5 text-[11px] font-medium backdrop-blur">
         {diagram.nodes.length} 节点
       </div>
     </div>

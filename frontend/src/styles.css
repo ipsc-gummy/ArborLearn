@@ -1084,7 +1084,21 @@ input {
     color: rgba(40, 35, 28, 0.84);
   }
 
+  .tl-notebook-updated {
+    color: rgba(77, 66, 48, 0.7);
+  }
+
+  :root.dark .tl-notebook-updated {
+    color: rgba(62, 53, 39, 0.82);
+  }
+
   .tl-notebook-thumbnail {
+    --tl-notebook-thumb-link: color-mix(in srgb, var(--tl-brand) 30%, rgba(114, 93, 61, 0.42));
+    --tl-notebook-thumb-node: rgba(255, 252, 242, 0.88);
+    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 14%, rgba(255, 252, 242, 0.9));
+    --tl-notebook-thumb-node-stroke: rgba(129, 111, 78, 0.32);
+    --tl-notebook-thumb-node-active-stroke: color-mix(in srgb, var(--tl-brand) 50%, rgba(129, 111, 78, 0.38));
+    --tl-notebook-thumb-ink: rgba(47, 42, 33, 0.82);
     margin-top: 1rem;
     border-color: rgba(112, 92, 56, 0.2);
     color: rgba(47, 42, 33, 0.78);
@@ -1097,6 +1111,37 @@ input {
     box-shadow:
       0 0.75rem 1.3rem rgba(84, 63, 34, 0.08) inset,
       0 1px 0 rgba(255, 255, 255, 0.34);
+  }
+
+  .tl-notebook-thumbnail-count {
+    color: rgba(77, 66, 48, 0.72);
+    border-color: rgba(112, 92, 56, 0.24);
+    background: rgba(255, 252, 242, 0.74);
+  }
+
+  :root.dark .tl-notebook-thumbnail {
+    --tl-notebook-thumb-link: rgba(88, 113, 105, 0.42);
+    --tl-notebook-thumb-node: rgba(248, 239, 213, 0.94);
+    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 16%, rgba(248, 239, 213, 0.94));
+    --tl-notebook-thumb-node-stroke: rgba(116, 94, 61, 0.34);
+    --tl-notebook-thumb-node-active-stroke: color-mix(in srgb, var(--tl-brand) 48%, rgba(116, 94, 61, 0.42));
+    --tl-notebook-thumb-ink: rgba(36, 31, 24, 0.88);
+    border-color: rgba(178, 149, 96, 0.22);
+    color: rgba(36, 31, 24, 0.84);
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 10%, transparent), transparent 8rem),
+      linear-gradient(rgba(113, 94, 62, 0.13) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(113, 94, 62, 0.13) 1px, transparent 1px),
+      rgba(246, 237, 212, 0.58);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(84, 63, 34, 0.1) inset,
+      0 1px 0 rgba(255, 255, 255, 0.24);
+  }
+
+  :root.dark .tl-notebook-thumbnail-count {
+    color: rgba(54, 45, 32, 0.82);
+    border-color: rgba(116, 94, 61, 0.28);
+    background: rgba(248, 239, 213, 0.72);
   }
 
   .tl-child-conversation-layout {
