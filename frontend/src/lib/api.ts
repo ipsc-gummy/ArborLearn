@@ -233,10 +233,12 @@ export function createBackfillDraft(payload: {
   sourceChildNodeId: string;
   targetMessageId: string;
   editType: EditType;
+  targetRangeStart?: number;
+  targetRangeEnd?: number;
   userInstruction?: string;
   modelName?: DeepSeekModelId;
   thinkingMode?: DeepSeekThinkingModeId;
-}) {
+}, options?: { signal?: AbortSignal }) {
   return request<{
     draft: {
       sourceChildNodeId: string;
@@ -255,6 +257,63 @@ export function createBackfillDraft(payload: {
   }>("/api/backfill/draft", {
     method: "POST",
     body: JSON.stringify(payload),
+    signal: options?.signal,
+  });
+}
+
+export function decideBackfillRange(payload: {
+  sourceChildNodeId: string;
+  targetMessageId: string;
+  editType: EditType;
+  userInstruction?: string;
+}, options?: { signal?: AbortSignal }) {
+  return request<{
+    decision: {
+      sourceChildNodeId: string;
+      targetMessageId: string;
+      editType: EditType;
+      anchorRangeStart: number;
+      anchorRangeEnd: number;
+      anchorText: string;
+      targetRangeStart: number;
+      targetRangeEnd: number;
+      originalText: string;
+      reason?: string | null;
+      expanded: boolean;
+    };
+  }>("/api/backfill/range-decision", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    signal: options?.signal,
+  });
+}
+
+export function reviewBackfillReplacement(payload: {
+  sourceChildNodeId: string;
+  targetMessageId: string;
+  editType: EditType;
+  targetRangeStart: number;
+  targetRangeEnd: number;
+  replacementText: string;
+  userInstruction?: string;
+  modelName?: DeepSeekModelId;
+  thinkingMode?: DeepSeekThinkingModeId;
+}, options?: { signal?: AbortSignal }) {
+  return request<{
+    review: {
+      sourceChildNodeId: string;
+      targetMessageId: string;
+      editType: EditType;
+      targetRangeStart: number;
+      targetRangeEnd: number;
+      originalText: string;
+      replacementText: string;
+      changed: boolean;
+    };
+  }>("/api/backfill/review", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    signal: options?.signal,
   });
 }
 

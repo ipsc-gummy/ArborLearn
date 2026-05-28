@@ -47,7 +47,18 @@ def get_cors_origins() -> list[str]:
         "CORS_ORIGINS",
         default_dev_origins,
     )
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    dev_origins = [
+        f"http://localhost:{port}"
+        for port in range(5173, 5180)
+    ] + [
+        f"http://127.0.0.1:{port}"
+        for port in range(5173, 5180)
+    ]
+    for origin in dev_origins:
+        if origin not in origins:
+            origins.append(origin)
+    return origins
 
 
 def get_vector_db_path() -> Path:
