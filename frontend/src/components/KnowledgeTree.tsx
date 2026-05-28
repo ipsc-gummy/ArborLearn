@@ -237,11 +237,17 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
   const logout = useArborLearnStore((state) => state.logout);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [exportHintVisible, setExportHintVisible] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const notebookRootId = getNotebookRootId(nodes, activeNodeId);
   const nodeCount = countSubtreeNodes(nodes, notebookRootId);
   const notebookTitle = nodes[notebookRootId]?.title ?? "ArborLearn";
   const userInitial = (user?.displayName || user?.email || "U").slice(0, 1).toUpperCase();
+
+  const showExportHint = () => {
+    setExportHintVisible(true);
+    window.setTimeout(() => setExportHintVisible(false), 2400);
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
     // dnd-kit 的 over 是拖拽释放时命中的节点，把 active 节点移动到 over 节点下面。
@@ -301,10 +307,15 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
               思维导图
             </button>
           </div>
-          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" title="导出 .tree">
+          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" title="导出 .tree" onClick={showExportHint}>
             <Download className="h-4 w-4" />
             导出
           </Button>
+          {exportHintVisible && (
+            <p className="rounded-lg border border-primary/20 bg-primary/8 px-3 py-2 text-xs leading-5 text-primary">
+              此功能正在开发中，敬请期待！
+            </p>
+          )}
           <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" onClick={createChildNodeUnderActive}>
             <Plus className="h-4 w-4" />
             添加对话节点
