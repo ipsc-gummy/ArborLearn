@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Copy, Search, SplitSquareHorizontal } from "lucide-react";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 
 // 用户划选聊天文本后显示的轻量操作浮层。
 export function SelectionBubble() {
-  const draft = useTreeLearnStore((state) => state.selectionDraft);
-  const setDraft = useTreeLearnStore((state) => state.setSelectionDraft);
-  const createChildConversation = useTreeLearnStore((state) => state.createChildConversation);
+  const draft = useArborLearnStore((state) => state.selectionDraft);
+  const setDraft = useArborLearnStore((state) => state.setSelectionDraft);
+  const createChildConversation = useArborLearnStore((state) => state.createChildConversation);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

@@ -56,7 +56,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 
 def _auth_secret() -> bytes:
-    secret = os.getenv("AUTH_SECRET") or os.getenv("MODEL_API_KEY") or "treelearn-development-secret"
+    secret = os.getenv("AUTH_SECRET") or os.getenv("MODEL_API_KEY") or "arborlearn-development-secret"
     return secret.encode("utf-8")
 
 
@@ -96,7 +96,7 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(secu
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, email, display_name, created_at
+            SELECT id, email, display_name, is_temporary, created_at
             FROM users
             WHERE id = ?
             """,

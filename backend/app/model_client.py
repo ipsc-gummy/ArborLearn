@@ -7,7 +7,7 @@ import urllib.request
 
 DEEPSEEK_MODEL_NAMES = {"deepseek-v4-flash", "deepseek-v4-pro"}
 DEEPSEEK_THINKING_MODES = {"fast", "deep", "challenge"}
-DEFAULT_MODEL_NAME = "deepseek-v4-flash"
+DEFAULT_MODEL_NAME = "deepseek-v4-pro"
 DEFAULT_THINKING_MODE = "deep"
 THINKING_MODE_CONFIG = {
     "fast": {"type": "disabled"},
