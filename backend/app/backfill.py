@@ -1,7 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from typing import Any, Literal
 
@@ -16,229 +15,6 @@ ACTIVE_PATCH_STATUSES = {"draft", "applied"}
 MAX_REPLACEMENT_CHARS = 20000
 UNLIMITED_REPLACEMENT_EDIT_TYPES = {"expand", "reframe"}
 CONTEXT_SLICE_CHARS = 80
-EXPAND_CONTEXT_KEYWORDS = (
-    "跨段",
-    "多段",
-    "前后文",
-    "上下文",
-    "相邻段",
-    "整段",
-    "整个段落",
-    "连贯",
-    "通顺",
-    "重构",
-)
-NEXT_PARAGRAPH_CONNECTORS = (
-    "因此",
-    "所以",
-    "但",
-    "但是",
-    "不过",
-    "同时",
-    "此外",
-    "这",
-    "上述",
-    "前者",
-    "后者",
-)
-CURRENT_PARAGRAPH_CONNECTORS = (
-    "因此",
-    "所以",
-    "但",
-    "但是",
-    "不过",
-    "同时",
-    "此外",
-    "这",
-    "上述",
-)
-INLINE_MARKDOWN_WRAPPERS = (
-    ("**", "**"),
-    ("__", "__"),
-    ("~~", "~~"),
-    ("`", "`"),
-    ("*", "*"),
-    ("_", "_"),
-)
-
-
-def line_spans(content: str) -> list[tuple[int, int]]:
-    if not content:
-        return [(0, 0)]
-    spans: list[tuple[int, int]] = []
-    start = 0
-    for match in re.finditer(r"\n", content):
-        end = match.end()
-        spans.append((start, end))
-        start = end
-    if start < len(content):
-        spans.append((start, len(content)))
-    return spans
-
-
-def line_index_at(spans: list[tuple[int, int]], position: int) -> int:
-    for index, (start, end) in enumerate(spans):
-        if start <= position < end:
-            return index
-    return max(0, len(spans) - 1)
-
-
-def line_text(content: str, span: tuple[int, int]) -> str:
-    return content[span[0] : span[1]].rstrip("\n")
-
-
-def is_blank_line(content: str, span: tuple[int, int]) -> bool:
-    return not line_text(content, span).strip()
-
-
-def paragraph_ranges(content: str) -> list[tuple[int, int]]:
-    spans = line_spans(content)
-    ranges: list[tuple[int, int]] = []
-    start: int | None = None
-    end: int | None = None
-    for span in spans:
-        if is_blank_line(content, span):
-            if start is not None and end is not None:
-                ranges.append((start, end))
-                start = None
-                end = None
-            continue
-        if start is None:
-            start = span[0]
-        end = span[1]
-    if start is not None and end is not None:
-        ranges.append((start, end))
-    return ranges
-
-
-def range_contains(outer: tuple[int, int], start: int, end: int) -> bool:
-    return outer[0] <= start and end <= outer[1]
-
-
-def current_paragraph_index(paragraphs: list[tuple[int, int]], start: int, end: int) -> int | None:
-    for index, paragraph in enumerate(paragraphs):
-        if range_contains(paragraph, start, end):
-            return index
-    return None
-
-
-def expand_to_fenced_code_block(content: str, start: int, end: int) -> tuple[int, int] | None:
-    spans = line_spans(content)
-    start_line = line_index_at(spans, start)
-    end_line = line_index_at(spans, max(start, end - 1))
-    fence_lines = [
-        index
-        for index, span in enumerate(spans)
-        if re.match(r"^\s*```", line_text(content, span))
-    ]
-    for fence_index in range(0, len(fence_lines), 2):
-        opening = fence_lines[fence_index]
-        closing = fence_lines[fence_index + 1] if fence_index + 1 < len(fence_lines) else opening
-        if opening <= start_line and end_line <= closing:
-            return spans[opening][0], spans[closing][1]
-    return None
-
-
-def expand_to_line_block(content: str, start: int, end: int) -> tuple[int, int] | None:
-    spans = line_spans(content)
-    start_line = line_index_at(spans, start)
-    end_line = line_index_at(spans, max(start, end - 1))
-
-    def block_kind(index: int) -> str | None:
-        text = line_text(content, spans[index])
-        if re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", text):
-            return "list"
-        if re.match(r"^\s*>", text):
-            return "quote"
-        if "|" in text:
-            return "table"
-        return None
-
-    kinds = {block_kind(index) for index in range(start_line, end_line + 1)}
-    kinds.discard(None)
-    if not kinds:
-        return None
-    kind = sorted(kinds)[0]
-    block_start = start_line
-    block_end = end_line
-    while block_start > 0 and not is_blank_line(content, spans[block_start - 1]):
-        if block_kind(block_start - 1) != kind:
-            break
-        block_start -= 1
-    while block_end + 1 < len(spans) and not is_blank_line(content, spans[block_end + 1]):
-        if block_kind(block_end + 1) != kind:
-            break
-        block_end += 1
-    return spans[block_start][0], spans[block_end][1]
-
-
-def expand_to_inline_markdown_wrapper(content: str, start: int, end: int) -> tuple[int, int, str | None]:
-    expanded_start = start
-    expanded_end = end
-    matched: list[str] = []
-    changed = True
-    while changed:
-        changed = False
-        for opener, closer in INLINE_MARKDOWN_WRAPPERS:
-            if expanded_start >= len(opener) and content[expanded_start - len(opener) : expanded_start] == opener:
-                if expanded_end + len(closer) <= len(content) and content[expanded_end : expanded_end + len(closer)] == closer:
-                    expanded_start -= len(opener)
-                    expanded_end += len(closer)
-                    matched.append(opener)
-                    changed = True
-                    break
-    if expanded_start == start and expanded_end == end:
-        return start, end, None
-    markers = "、".join(dict.fromkeys(matched))
-    return expanded_start, expanded_end, f"锚点紧贴 Markdown 行内格式标记（{markers}），已自动纳入完整标记以避免回填后格式错乱。"
-
-
-def should_expand_across_paragraphs(edit_type: str, user_instruction: str | None) -> bool:
-    instruction = user_instruction or ""
-    return edit_type == "reframe" or any(keyword in instruction for keyword in EXPAND_CONTEXT_KEYWORDS)
-
-
-def decide_target_range(
-    content: str,
-    anchor_start: int,
-    anchor_end: int,
-    edit_type: str,
-    user_instruction: str | None = None,
-) -> tuple[int, int, str | None]:
-    inline_start, inline_end, inline_reason = expand_to_inline_markdown_wrapper(content, anchor_start, anchor_end)
-    if inline_reason:
-        return inline_start, inline_end, inline_reason
-
-    fenced = expand_to_fenced_code_block(content, anchor_start, anchor_end)
-    if fenced:
-        return fenced[0], fenced[1], "锚点位于 Markdown 代码块内，已扩大到完整代码块以避免破坏围栏格式。"
-
-    line_block = expand_to_line_block(content, anchor_start, anchor_end)
-    if line_block:
-        return line_block[0], line_block[1], "锚点位于 Markdown 列表、引用或表格中，已扩大到完整结构块以保持格式闭合。"
-
-    paragraphs = paragraph_ranges(content)
-    paragraph_index = current_paragraph_index(paragraphs, anchor_start, anchor_end)
-    if paragraph_index is None:
-        return anchor_start, anchor_end, None
-
-    expand_start = paragraphs[paragraph_index][0]
-    expand_end = paragraphs[paragraph_index][1]
-    reasons: list[str] = []
-    current_text = content[expand_start:expand_end].strip()
-    if should_expand_across_paragraphs(edit_type, user_instruction):
-        reasons.append("用户意图或回填类型需要在完整段落层面保持论证连贯。")
-        if paragraph_index > 0 and any(current_text.startswith(prefix) for prefix in CURRENT_PARAGRAPH_CONNECTORS):
-            expand_start = paragraphs[paragraph_index - 1][0]
-            reasons.append("当前段落依赖上一段的承接关系，已纳入上一段。")
-        if paragraph_index + 1 < len(paragraphs):
-            next_text = content[paragraphs[paragraph_index + 1][0] : paragraphs[paragraph_index + 1][1]].strip()
-            if any(next_text.startswith(prefix) for prefix in NEXT_PARAGRAPH_CONNECTORS) or "前后文" in (user_instruction or "") or "上下文" in (user_instruction or "") or "跨段" in (user_instruction or "") or "多段" in (user_instruction or ""):
-                expand_end = paragraphs[paragraph_index + 1][1]
-                reasons.append("下一段与锚点段存在承接关系，已纳入下一段。")
-        return expand_start, expand_end, " ".join(reasons) or "已扩大到完整段落范围。"
-
-    return anchor_start, anchor_end, None
 
 
 def parse_source_metadata(raw: str | None) -> dict | None:
@@ -275,23 +51,6 @@ def validate_raw_range(content: str, start: int, end: int, field_name: str) -> s
     if start < 0 or end < start or end > len(content):
         raise HTTPException(status_code=400, detail=f"{field_name} is outside the target message")
     return content[start:end]
-
-
-def validate_target_range_contains_anchor(
-    content: str,
-    target_start: int,
-    target_end: int,
-    anchor_start: int,
-    anchor_end: int,
-) -> str:
-    if not isinstance(target_start, int) or isinstance(target_start, bool):
-        raise HTTPException(status_code=400, detail="targetRangeStart must be an integer")
-    if not isinstance(target_end, int) or isinstance(target_end, bool):
-        raise HTTPException(status_code=400, detail="targetRangeEnd must be an integer")
-    original_text = validate_raw_range(content, target_start, target_end, "targetRange")
-    if not (target_start <= anchor_start and anchor_end <= target_end):
-        raise HTTPException(status_code=400, detail="targetRange must contain anchorRange")
-    return original_text
 
 
 def _unique_index(content: str, needle: str) -> int | None:
@@ -478,8 +237,8 @@ def create_and_apply_patch(
 ) -> dict:
     if edit_type not in EDIT_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported editType")
-    replacement_text = replacement_text.strip("\r\n")
-    if not replacement_text.strip():
+    replacement_text = replacement_text.strip()
+    if not replacement_text:
         raise HTTPException(status_code=400, detail="replacementText cannot be empty")
     if edit_type not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(replacement_text) > MAX_REPLACEMENT_CHARS:
         raise HTTPException(status_code=400, detail="replacementText is too long")
@@ -506,17 +265,10 @@ def create_and_apply_patch(
 
     anchor_start, anchor_end = resolve_anchor_range(target_message["content"], source_metadata)
     anchor_text = target_message["content"][anchor_start:anchor_end]
-    fallback_start, fallback_end, _ = expand_to_inline_markdown_wrapper(target_message["content"], anchor_start, anchor_end)
-    if target_range_start == anchor_start and target_range_end == anchor_end:
-        target_range_start, target_range_end = fallback_start, fallback_end
+    target_range_start = anchor_start
+    target_range_end = anchor_end
 
-    original_text = validate_target_range_contains_anchor(
-        target_message["content"],
-        target_range_start,
-        target_range_end,
-        anchor_start,
-        anchor_end,
-    )
+    original_text = validate_raw_range(target_message["content"], target_range_start, target_range_end, "targetRange")
     if not original_text.strip():
         raise HTTPException(status_code=400, detail="targetRange cannot be empty")
     conflict = active_patch_overlap(
