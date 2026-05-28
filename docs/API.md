@@ -66,7 +66,7 @@ Response:
 ```json
 {
   "ok": true,
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-v4-pro",
   "modelBaseUrl": "https://api.deepseek.com",
   "availableModels": ["deepseek-v4-flash", "deepseek-v4-pro"],
   "webSearch": {}
@@ -77,7 +77,7 @@ Response:
 
 ### `POST /api/auth/register`
 
-注册用户并创建入门 notebook。
+注册用户并创建入门 notebook 与 Transformer 演示 notebook。
 
 Request:
 
@@ -97,7 +97,8 @@ Response `201`:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "Optional Name"
+    "displayName": "Optional Name",
+    "isTemporary": false
   }
 }
 ```
@@ -126,7 +127,8 @@ Response:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "User"
+    "displayName": "User",
+    "isTemporary": false
   }
 }
 ```
@@ -134,6 +136,31 @@ Response:
 Errors:
 
 - `401` invalid email or password
+- `410` legacy shared demo account is disabled
+
+### `POST /api/auth/demo`
+
+创建独立临时演示会话。该接口不接收邮箱密码，每次调用都会创建新的临时用户，并初始化默认 notebook。
+
+Request:
+
+```json
+{}
+```
+
+Response `201`:
+
+```json
+{
+  "token": "base64urlPayload.signature",
+  "user": {
+    "id": "user-...",
+    "email": "demo-...@arborlearn.local",
+    "displayName": "演示体验",
+    "isTemporary": true
+  }
+}
+```
 
 ### `GET /api/auth/me`
 
@@ -144,7 +171,8 @@ Response:
   "user": {
     "id": "user-...",
     "email": "user@example.com",
-    "displayName": "User"
+    "displayName": "User",
+    "isTemporary": false
   }
 }
 ```
@@ -295,7 +323,7 @@ Request:
   "message": "解释这个概念",
   "userMessageId": "msg-optional",
   "assistantMessageId": "msg-optional",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast",
   "webSearch": false,
   "webQuery": null,
@@ -385,7 +413,7 @@ Request:
 {
   "nodeId": "node-...",
   "assistantMessageId": "msg-...",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -425,7 +453,7 @@ Request:
   "question": "复杂学习问题",
   "title": "可选标题",
   "auto_run": false,
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -439,7 +467,7 @@ Response `201`:
   "title": "可选标题",
   "original_question": "复杂学习问题",
   "node_id": "node-...",
-  "model_name": "deepseek-v4-flash",
+  "model_name": "deepseek-v4-pro",
   "thinking_mode": "fast"
 }
 ```
@@ -497,7 +525,7 @@ Response:
   "plan_summary": "...",
   "node_id": "node-...",
   "notebook_id": "nb-...",
-  "model_name": "deepseek-v4-flash",
+  "model_name": "deepseek-v4-pro",
   "thinking_mode": "fast",
   "final_answer": null,
   "error_message": null,
@@ -592,7 +620,7 @@ Request:
   "targetMessageId": "msg-...",
   "editType": "expand",
   "userInstruction": "更口语一点",
-  "modelName": "deepseek-v4-flash",
+  "modelName": "deepseek-v4-pro",
   "thinkingMode": "fast"
 }
 ```
@@ -735,7 +763,7 @@ Query:
 node_id=node-...
 query=optional user query
 webSearch=true
-modelName=deepseek-v4-flash
+modelName=deepseek-v4-pro
 thinkingMode=fast
 ```
 
@@ -745,7 +773,7 @@ Response:
 {
   "node_id": "node-...",
   "model_config": {
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-v4-pro",
     "thinkingMode": "fast"
   },
   "sections": [],

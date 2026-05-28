@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Sparkles, Undo2 } from "lucide-react";
-import { createBackfillDraft, createBackfillPatch, decideBackfillRange, reviewBackfillReplacement } from "../lib/api";
-import { useTreeLearnStore } from "../store/treelearnStore";
-import type { EditType, KnowledgeNode } from "../types/treelearn";
+import { Check, RotateCcw, Sparkles, Undo2 } from "lucide-react";
+import {
+  archiveBackfillPatch,
+  createBackfillDraft,
+  createBackfillPatch,
+  decideBackfillRange,
+  reviewBackfillReplacement,
+} from "../lib/api";
+import { useArborLearnStore } from "../store/arborlearnStore";
+import type { EditType, KnowledgeNode } from "../types/arborlearn";
 import { Button } from "./ui/button";
 
 interface BackfillPanelProps {
@@ -47,10 +53,10 @@ function formatApplyError(error: unknown) {
 }
 
 export function BackfillPanel({ node }: BackfillPanelProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
-  const selectedModel = useTreeLearnStore((state) => state.selectedModel);
-  const selectedThinkingMode = useTreeLearnStore((state) => state.selectedThinkingMode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const hydrateFromBackend = useArborLearnStore((state) => state.hydrateFromBackend);
+  const selectedModel = useArborLearnStore((state) => state.selectedModel);
+  const selectedThinkingMode = useArborLearnStore((state) => state.selectedThinkingMode);
   const [open, setOpen] = useState(false);
   const [editType, setEditType] = useState<EditType>("expand");
   const [draftPromptTag, setDraftPromptTag] = useState<EditType | null>(null);
@@ -68,6 +74,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
     reason?: string | null;
   }>(null);
   const [isApplying, setIsApplying] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +184,21 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
     }
   };
 
+  const archiveExistingPatch = async () => {
+    if (!existingPatch || isArchiving) return;
+    setIsArchiving(true);
+    setError(null);
+    try {
+      await archiveBackfillPatch(existingPatch.id);
+      await hydrateFromBackend();
+      setOpen(false);
+    } catch (archiveError) {
+      setError(formatApplyError(archiveError));
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
   const generateDraft = async () => {
     if (!source || isGenerating || conflictingPatch) return;
     setIsGenerating(true);
@@ -264,7 +286,14 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
 
   return (
     <div className="relative">
-      <Button variant="outline" size="sm" onClick={() => setOpen((current) => !current)}>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen((current) => !current)}
+        data-tour-backfill-open
+        data-tour-backfill-open-id={node.id}
+        data-tour-backfill-open-title={node.title}
+      >
         <Undo2 className="h-4 w-4" />
         {existingPatch ? "编辑回填" : "手动回填"}
       </Button>
@@ -311,6 +340,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
             {editTypeOptions.map((option) => (
               <button
                 key={option.id}
+                data-tour-backfill-option={option.id}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
                   draftPromptTag === option.id
                     ? "border-violet-500 bg-violet-600 text-white"
@@ -341,6 +371,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
               <Button
                 variant="outline"
                 size="sm"
+                data-tour-backfill-generate
                 onClick={generateDraft}
                 disabled={isGenerating || Boolean(conflictingPatch)}
               >
@@ -349,15 +380,22 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
               </Button>
             </div>
           </div>
-          <textarea
-            value={replacementText}
-            onChange={(event) => setReplacementText(event.target.value)}
+            <textarea
+              data-tour-backfill-draft
+              value={replacementText}
+              onChange={(event) => setReplacementText(event.target.value)}
             rows={6}
             className="min-h-32 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
           />
           {error && <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
           </div>
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card p-4">
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-card p-4">
+            {existingPatch && (
+              <Button variant="outline" size="sm" onClick={archiveExistingPatch} disabled={isArchiving || isApplying}>
+                <RotateCcw className="h-4 w-4" />
+                {isArchiving ? "撤回中" : "撤回回填"}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
               取消
             </Button>
@@ -373,6 +411,7 @@ export function BackfillPanel({ node }: BackfillPanelProps) {
             <Button
               variant="primary"
               size="sm"
+              data-tour-backfill-apply
               onClick={applyPatch}
               disabled={isApplying || !replacementText.trim() || Boolean(conflictingPatch)}
             >

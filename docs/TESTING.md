@@ -56,7 +56,39 @@ python3 scripts/smoke_check.py \
   --password ArborLearnSmoke2026!
 ```
 
-### 1.3 Live Checks
+可选 live checks 会调用外部服务，默认不启用：
+
+```bash
+python3 scripts/smoke_check.py \
+  --base-url http://127.0.0.1:8000 \
+  --include-chat-live \
+  --include-web-search
+```
+
+`--include-chat-live` 需要 `MODEL_API_KEY` 可用。`--include-web-search` 需要配置 web search provider。
+
+### 1.3 Backend Unit / Contract Tests
+
+后端最小 pytest 用于固化不依赖真实模型的 API 边界：
+
+```bash
+cd backend
+.venv/bin/python -m pip install -r requirements-dev.txt
+DATABASE_PATH=/private/tmp/arborlearn-pytest.sqlite3 \
+AUTH_SECRET=test-secret \
+MODEL_API_KEY=test-key \
+.venv/bin/python -m pytest
+```
+
+当前重点：
+
+- auth owner isolation。
+- node CRUD。
+- long task create / list / detail / cancel 状态链。
+- 默认 Transformer 演示树。
+- 独立临时演示会话。
+
+### 1.4 Live Checks
 
 需要真实模型 API key 或外部服务，适合发布前人工验证。
 
@@ -75,11 +107,11 @@ python3 scripts/smoke_check.py \
 | frontend component | `npm run build` + 浏览器人工检查 |
 | `frontend/src/lib/api.ts` | frontend build + smoke check |
 | `backend/app/auth.py` | smoke check |
-| `backend/app/db.py` | smoke check + 手动确认迁移兼容 |
-| `backend/app/main.py` | smoke check |
+| `backend/app/db.py` | pytest + smoke check + 手动确认迁移兼容 |
+| `backend/app/main.py` | pytest + smoke check |
 | `context_builder.py` | smoke check + live chat check |
-| `long_task_runner.py` | smoke check + live long task check |
-| `backfill.py` | smoke check + live backfill check |
+| `long_task_runner.py` | pytest + smoke check + live long task check |
+| `backfill.py` | pytest + smoke check + live backfill check |
 | deployment files | local health check + deployment checklist |
 
 ## 3. 本地启动
@@ -139,6 +171,13 @@ GET  /api/long-tasks/{task_id}
 POST /api/long-tasks/{task_id}/cancel
 ```
 
+可选 live check 流程：
+
+```text
+POST /api/chat
+POST /api/nodes/{node_id}/web-search
+```
+
 成功输出应清楚标记每一步：
 
 ```text
@@ -154,6 +193,13 @@ PASS create long task
 PASS list node long tasks
 PASS fetch long task
 PASS cancel long task
+```
+
+如果启用 live flags，还应看到：
+
+```text
+PASS live chat
+PASS live web search
 ```
 
 失败时脚本应输出：
@@ -209,6 +255,18 @@ PASS cancel long task
 3. 搜索失败时能降级并显示 warning。
 4. 开启 RAG 时上下文构建不报错。
 
+### 5.6 Demo Notebook
+
+注册账号和“体验示例”临时会话都应默认包含完整 Transformer 演示树，不需要额外脚本。
+
+检查点：
+
+1. `POST /api/auth/register` 后，`GET /api/tree` 同时包含 `ArborLearn 入门笔记本` 和 `Transformer 是如何工作的`。
+2. `POST /api/auth/demo` 返回 `isTemporary: true` 的用户。
+3. 两次 `POST /api/auth/demo` 得到不同用户 id。
+4. 一个演示会话中新建的 notebook，另一个演示会话不可见。
+5. Transformer 根节点包含自注意力、Q/K/V、多头注意力、Encoder/Decoder 等分支。
+
 ## 6. 回归边界
 
 ### 6.1 不依赖外部服务的检查
@@ -250,14 +308,14 @@ PASS cancel long task
 
 第二阶段：
 
-- 增加 `--live-chat`。
-- 增加 `--live-search`。
-- 增加 `--base-url` 和 `--email-prefix`。
+- 增加 `--include-chat-live`。
+- 增加 `--include-web-search`。
+- 增加最小 pytest。
 
 第三阶段：
 
-- 后端引入 pytest。
-- 针对 auth owner 隔离补测试。
+- 针对 backfill anchor / hash / conflict 补测试。
+- 针对 chat stream / retry / stop 补 live checks。
 - 针对 backfill anchor/hash/conflict 补测试。
 - 针对 long task 状态机补测试。
 
