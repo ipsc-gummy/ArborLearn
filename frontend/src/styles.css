@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 全局设计变量：上方是 Tailwind/shadcn 风格的 HSL token，下方是 TreeLearn 自定义表面色。 */
+/* 全局设计变量：上方是 Tailwind/shadcn 风格的 HSL token，下方是 ArborLearn 自定义表面色。 */
 :root {
   --background: 204 45% 97%;
   --foreground: 222 28% 12%;
@@ -996,6 +996,107 @@ input {
     color: var(--tl-brand);
     background: color-mix(in srgb, var(--tl-brand) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--tl-brand) 24%, transparent);
+  }
+
+  .tl-notebook-page-card {
+    color: rgba(45, 41, 33, 0.92);
+    background:
+      linear-gradient(90deg, rgba(151, 82, 62, 0.24) 0 1px, transparent 1px) 1.4rem 0 / 1px 100% no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(129, 111, 78, 0.17) 1.43rem 1.48rem),
+      linear-gradient(rgba(129, 111, 78, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(129, 111, 78, 0.1) 1px, transparent 1px),
+      radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.42), transparent 8rem),
+      radial-gradient(circle at 16% 82%, rgba(98, 75, 42, 0.1), transparent 8rem),
+      #f4ead1;
+    background-size: auto, auto, 24px 24px, 24px 24px, auto, auto, auto;
+    border-color: rgba(112, 92, 56, 0.26);
+    box-shadow:
+      0 22px 48px rgba(4, 22, 22, 0.14),
+      0 1px 0 rgba(255, 255, 255, 0.76) inset,
+      -0.45rem 0 1.1rem rgba(95, 72, 42, 0.1) inset;
+  }
+
+  .tl-notebook-page-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 24%, rgba(116, 88, 53, 0.14) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 72% 64%, rgba(116, 88, 53, 0.09) 0 1px, transparent 1.4px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.3), transparent 12%, transparent 88%, rgba(92, 69, 41, 0.08));
+    background-size: 18px 18px, 23px 23px, auto;
+    mix-blend-mode: multiply;
+    opacity: 0.36;
+  }
+
+  .tl-notebook-page-card::after {
+    content: "";
+    position: absolute;
+    inset: 0.55rem 0.55rem 0.55rem auto;
+    width: 0.34rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(88, 67, 39, 0.12));
+    opacity: 0.62;
+    pointer-events: none;
+  }
+
+  :root.dark .tl-notebook-page-card {
+    color: rgba(40, 35, 28, 0.92);
+    background:
+      linear-gradient(90deg, rgba(151, 82, 62, 0.22) 0 1px, transparent 1px) 1.4rem 0 / 1px 100% no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(113, 94, 62, 0.18) 1.43rem 1.48rem),
+      linear-gradient(rgba(113, 94, 62, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(113, 94, 62, 0.1) 1px, transparent 1px),
+      radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.25), transparent 8rem),
+      radial-gradient(circle at 16% 82%, rgba(98, 75, 42, 0.14), transparent 8rem),
+      color-mix(in srgb, #eee4ca 82%, #172326);
+    border-color: rgba(178, 149, 96, 0.22);
+    box-shadow:
+      0 24px 62px rgba(0, 0, 0, 0.32),
+      0 1px 0 rgba(255, 255, 255, 0.28) inset,
+      -0.45rem 0 1.1rem rgba(95, 72, 42, 0.14) inset;
+  }
+
+  .tl-notebook-page-rule {
+    position: absolute;
+    left: 1.4rem;
+    top: 1rem;
+    bottom: 1rem;
+    width: 1px;
+    background: rgba(151, 82, 62, 0.24);
+  }
+
+  .tl-notebook-page-summary {
+    position: relative;
+    z-index: 1;
+    color: rgba(54, 48, 37, 0.82);
+    font-family:
+      "LXGW WenKai", "STKaiti", "KaiTi", "Noto Serif SC", "Microsoft YaHei", serif;
+    font-size: 0.94rem;
+    font-weight: 600;
+    line-height: 1.72;
+    text-indent: 2em;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.34);
+  }
+
+  :root.dark .tl-notebook-page-summary {
+    color: rgba(40, 35, 28, 0.84);
+  }
+
+  .tl-notebook-thumbnail {
+    margin-top: 1rem;
+    border-color: rgba(112, 92, 56, 0.2);
+    color: rgba(47, 42, 33, 0.78);
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 12%, transparent), transparent 8rem),
+      linear-gradient(rgba(129, 111, 78, 0.13) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(129, 111, 78, 0.13) 1px, transparent 1px),
+      rgba(255, 252, 242, 0.45);
+    background-size: auto, 22px 22px, 22px 22px, auto;
+    box-shadow:
+      0 0.75rem 1.3rem rgba(84, 63, 34, 0.08) inset,
+      0 1px 0 rgba(255, 255, 255, 0.34);
   }
 
   .tl-child-conversation-layout {

@@ -39,6 +39,7 @@ def init_db() -> None:
               email TEXT NOT NULL UNIQUE,
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
+              is_temporary INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
@@ -290,6 +291,7 @@ def init_db() -> None:
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
@@ -313,14 +315,14 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     ts = now_iso()
     conn.execute(
         "INSERT INTO notebooks(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        ("root", "TreeLearn 项目学习", ts, ts),
+        ("root", "ArborLearn 项目学习", ts, ts),
     )
     nodes = [
         (
             "root",
             "root",
             None,
-            "TreeLearn 项目学习",
+            "ArborLearn 项目学习",
             "围绕树形上下文工程理解项目背景、核心功能、技术栈和后端协作边界。",
             None,
             "mainline",
@@ -373,7 +375,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
             "m-root-1",
             "root",
             "assistant",
-            "TreeLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
+            "ArborLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
         ),
         (
             "m-root-2",
@@ -690,7 +692,7 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
         INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (notebook_id, user_id, "TreeLearn入门笔记", ts, ts),
+        (notebook_id, user_id, "ArborLearn 入门笔记本", ts, ts),
     )
 
     nodes = [
@@ -698,8 +700,8 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
             notebook_id,
             notebook_id,
             None,
-            "TreeLearn入门笔记",
-            "贪心算法是一种每一步都选当前最优、希望达到全局最优的策略，适用于最小生成树、哈夫曼编码等问题。",
+            "ArborLearn 入门笔记本",
+            "从这里开始创建学习主题、选中文本开支线，并观察树形上下文如何影响 AI 回答。",
             None,
             "mainline",
             0,

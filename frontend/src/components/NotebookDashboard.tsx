@@ -11,7 +11,6 @@ import {
   List,
   MessageSquareText,
   MoreHorizontal,
-  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -21,10 +20,17 @@ import {
 } from "lucide-react";
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
+import {
+  DIAGRAM_NODE_HEIGHT,
+  DIAGRAM_NODE_WIDTH,
+  DIAGRAM_PADDING,
+  buildDiagram,
+  linkPath,
+} from "../lib/diagramLayout";
 import type { AuthUser } from "../lib/api";
-import type { KnowledgeNode } from "../types/treelearn";
+import type { KnowledgeNode } from "../types/arborlearn";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
@@ -48,44 +54,6 @@ interface DeleteTarget {
 type SortMode = "recent" | "title";
 type ViewMode = "grid" | "list";
 const NOTEBOOK_VIEW_MODE_KEY = "arborlearn.notebookViewMode";
-
-const notebookCoverPalettes = [
-  {
-    lightCover: "#b8d4ce",
-    lightSpine: "#7eb1aa",
-    darkCover: "#102324",
-    darkSpine: "#16484d",
-    accent: "#25c6bd",
-  },
-  {
-    lightCover: "#c9bea2",
-    lightSpine: "#9f8f68",
-    darkCover: "#191f20",
-    darkSpine: "#3e5352",
-    accent: "#7fb8a8",
-  },
-  {
-    lightCover: "#b5cad2",
-    lightSpine: "#7fa1ae",
-    darkCover: "#142123",
-    darkSpine: "#23585e",
-    accent: "#42bac7",
-  },
-  {
-    lightCover: "#c0caa8",
-    lightSpine: "#90a36e",
-    darkCover: "#1e211f",
-    darkSpine: "#4b574b",
-    accent: "#93b977",
-  },
-  {
-    lightCover: "#c4bfd0",
-    lightSpine: "#968dad",
-    darkCover: "#171b20",
-    darkSpine: "#3c5265",
-    accent: "#76b9d6",
-  },
-];
 
 function normalizeSearchText(value: string) {
   return value.trim().toLocaleLowerCase("zh-Hans-CN");
@@ -165,7 +133,7 @@ function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId:
   return normalizeSearchText(textParts.join(" "));
 }
 
-// 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 TreeLearn 笔记本。
+// 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 ArborLearn 笔记本。
 export function NotebookDashboard({
   onOpenNotebook,
   onOpenOnboarding,
@@ -179,12 +147,12 @@ export function NotebookDashboard({
   onLogout,
   onRequestAuth,
 }: NotebookDashboardProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const rootIds = useTreeLearnStore((state) => state.rootIds);
-  const pinnedRootIds = useTreeLearnStore((state) => state.pinnedRootIds);
-  const createRootConversation = useTreeLearnStore((state) => state.createRootConversation);
-  const renameNode = useTreeLearnStore((state) => state.renameNode);
-  const deleteNode = useTreeLearnStore((state) => state.deleteNode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const rootIds = useArborLearnStore((state) => state.rootIds);
+  const pinnedRootIds = useArborLearnStore((state) => state.pinnedRootIds);
+  const createRootConversation = useArborLearnStore((state) => state.createRootConversation);
+  const renameNode = useArborLearnStore((state) => state.renameNode);
+  const deleteNode = useArborLearnStore((state) => state.deleteNode);
   const isLoggedIn = Boolean(user);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -307,7 +275,7 @@ export function NotebookDashboard({
               <GitBranch className="tl-brand h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-base font-medium">TreeLearn</h1>
+              <h1 className="text-base font-medium">ArborLearn</h1>
               <p className="text-xs text-muted-foreground">面向知识学习的树形上下文工作台</p>
             </div>
           </div>
@@ -335,7 +303,7 @@ export function NotebookDashboard({
                 把资料变成可展开、可追问、可复盘的学习笔记本
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-                先为论文、课件或技术文档创建一个独立 TreeLearn 笔记本，再进入树形对话空间管理主线、支线和上下文调度。
+                先为论文、课件或技术文档创建一个独立 ArborLearn 笔记本，再进入树形对话空间管理主线、支线和上下文调度。
               </p>
             </div>
 
@@ -370,7 +338,7 @@ export function NotebookDashboard({
           <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
               <h3 className="tl-notebooks-title">
-                我的 <span>TreeLearn</span> 笔记本
+                我的 <span>ArborLearn</span> 笔记本
               </h3>
               <p className="mt-2 text-sm text-muted-foreground">每个笔记本都是一个放大思考的空间</p>
               <div className="tl-notebooks-title-mark" aria-hidden="true" />
@@ -491,7 +459,7 @@ export function NotebookDashboard({
                 className="tl-notebook-primary-action"
               >
                 <Plus className="h-4 w-4" />
-                新建 TreeLearn 笔记本
+                新建 ArborLearn 笔记本
               </Button>
             </div>
           </div>
@@ -519,12 +487,11 @@ export function NotebookDashboard({
               </span>
             </button>
 
-            {filteredRootIds.map((id, index) => {
+            {filteredRootIds.map((id) => {
               const node = nodes[id];
               if (!node) return null;
               const isPinned = pinnedRootIds.includes(id);
               const isEditing = editingId === id;
-              const coverPalette = notebookCoverPalettes[index % notebookCoverPalettes.length];
               return (
                 <div
                   key={id}
@@ -541,80 +508,77 @@ export function NotebookDashboard({
                   {!isEditing && (
                     <button className="absolute inset-0 z-10 rounded-[1.2rem]" aria-label={`打开 ${node.title}`} onClick={() => onOpenNotebook(id)} />
                   )}
-                  <div className="tl-notebook-cover">
-                    <div className="tl-notebook-spine" />
-                    <div className="tl-notebook-elastic" />
-                    <div className="tl-notebook-cover-content">
-                      <div className="tl-notebook-cover-top pointer-events-none">
-                        <div className="tl-notebook-badge flex items-center justify-center rounded-full">
-                          <BookOpen className="h-4 w-4" />
-                        </div>
-                        <span className={cn("tl-notebook-status", isPinned && "is-pinned")}>
-                          {isPinned ? "已置顶" : `${node.children.length} 分支`}
-                        </span>
-                      </div>
-                      {isEditing ? (
-                        <div className="tl-notebook-title-block">
-                          <input
-                            ref={editInputRef}
-                            value={editingTitle}
-                            onChange={(event) => setEditingTitle(event.target.value)}
-                            onBlur={commitRename}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") commitRename();
-                              if (event.key === "Escape") cancelRename();
-                            }}
-                            className="tl-input relative z-20 w-full rounded-md border px-2 py-1 text-[1.05rem] font-semibold leading-tight text-foreground outline-none ring-2 ring-primary/15"
-                          />
-                          <p className="text-[color:var(--tl-notebook-muted)]">
-                            {formatNotebookUpdatedAt(node.updatedAt)}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="tl-notebook-title-block pointer-events-none">
-                          <h4 className="line-clamp-2 text-[color:var(--tl-notebook-ink)]">
-                            {node.title}
-                          </h4>
-                          <p className="text-[color:var(--tl-notebook-muted)]">
-                            {formatNotebookUpdatedAt(node.updatedAt)}
-                          </p>
-                        </div>
+                  <div className="tl-notebook-page-rule" aria-hidden="true" />
+                  <div className="relative z-20 flex items-start justify-between gap-3">
+                    <span
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                        isPinned
+                          ? "border-primary/24 bg-primary/10 text-primary"
+                          : "border-border/70 bg-background/70 text-muted-foreground",
                       )}
-                    </div>
-                    <GitBranch className="tl-notebook-emboss" aria-hidden="true" />
+                    >
+                      {isPinned ? "已置顶" : `${node.children.length} 分支`}
+                    </span>
+                    <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
+                      <Popover.Trigger asChild>
+                        <button
+                          className="tl-hover relative z-30 flex h-8 w-8 items-center justify-center rounded-full"
+                          aria-label="打开笔记本菜单"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </Popover.Trigger>
+                      <Popover.Portal>
+                        <Popover.Content
+                          side="bottom"
+                          align="end"
+                          className="tl-panel z-50 w-36 rounded-xl border p-1 text-sm shadow-panel"
+                        >
+                          <button
+                            className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
+                            onClick={() => beginRename(id, node.title)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            修改标题
+                          </button>
+                          <button
+                            className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+                            onClick={() => beginDelete(id, node.title)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            删除
+                          </button>
+                        </Popover.Content>
+                      </Popover.Portal>
+                    </Popover.Root>
                   </div>
-                  <Popover.Root open={openMenuId === id} onOpenChange={(open) => setOpenMenuId(open ? id : null)}>
-                    <Popover.Trigger asChild>
-                      <button
-                        className="tl-notebook-menu-button absolute bottom-3 right-3 z-20 flex h-8 w-8 items-center justify-center rounded-full"
-                        aria-label="打开笔记本菜单"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </Popover.Trigger>
-                    <Popover.Portal>
-                      <Popover.Content
-                        side="bottom"
-                        align="end"
-                        className="tl-panel z-50 w-36 rounded-xl border p-1 text-sm shadow-panel"
-                      >
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
-                          onClick={() => beginRename(id, node.title)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          修改标题
-                        </button>
-                        <button
-                          className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
-                          onClick={() => beginDelete(id, node.title)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          删除
-                        </button>
-                      </Popover.Content>
-                    </Popover.Portal>
-                  </Popover.Root>
+                  <p className="tl-notebook-page-summary pointer-events-none mt-4 line-clamp-3">
+                    {node.summary || "从这个笔记本继续展开树形学习。"}
+                  </p>
+                  <NotebookCardThumbnail nodes={nodes} rootId={node.id} />
+                  <div className="relative z-20 mt-4 min-w-0">
+                    {isEditing ? (
+                      <input
+                        ref={editInputRef}
+                        value={editingTitle}
+                        onChange={(event) => setEditingTitle(event.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") commitRename();
+                          if (event.key === "Escape") cancelRename();
+                        }}
+                        className="tl-input relative z-30 w-full rounded-md border px-2 py-1 text-base font-semibold leading-tight outline-none ring-2 ring-primary/15"
+                      />
+                    ) : (
+                      <h4 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
+                        {node.title}
+                      </h4>
+                    )}
+                    <p className="mt-1 text-xs font-medium text-muted-foreground">
+                      {formatNotebookUpdatedAt(node.updatedAt)}
+                    </p>
+                  </div>
                 </div>
               );
             })}
@@ -793,6 +757,85 @@ function PreviewNode({ className, title, meta, active }: { className: string; ti
     >
       <p className="truncate text-xs font-semibold">{title}</p>
       <p className="mt-1 truncate text-[11px] text-muted-foreground">{meta}</p>
+    </div>
+  );
+}
+
+function splitThumbnailTitle(title: string) {
+  const normalized = title.trim() || "Untitled";
+  const maxLineLength = 8;
+  const firstLine = normalized.slice(0, maxLineLength);
+  const secondLine = normalized.slice(maxLineLength, maxLineLength * 2);
+  return secondLine ? [firstLine, secondLine] : [firstLine];
+}
+
+function NotebookCardThumbnail({ nodes, rootId }: { nodes: Record<string, KnowledgeNode>; rootId: string }) {
+  const diagram = buildDiagram(nodes, rootId);
+  const previewWidth = 300;
+  const previewHeight = 132;
+  const scale = Math.min(previewWidth / diagram.width, previewHeight / diagram.height);
+  const offsetX = (previewWidth - diagram.width * scale) / 2;
+  const offsetY = (previewHeight - diagram.height * scale) / 2;
+
+  return (
+    <div className="tl-notebook-thumbnail pointer-events-none relative z-20 h-28 overflow-hidden rounded-xl border">
+      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${previewWidth} ${previewHeight}`} aria-hidden="true">
+        <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
+          {diagram.links.map((link) => (
+            <path
+              key={link.id}
+              d={linkPath({
+                ...link,
+                fromX: link.fromX + DIAGRAM_PADDING,
+                fromY: link.fromY + DIAGRAM_PADDING,
+                toX: link.toX + DIAGRAM_PADDING,
+                toY: link.toY + DIAGRAM_PADDING,
+              })}
+              fill="none"
+              stroke="color-mix(in srgb, var(--tl-brand) 30%, var(--tl-border))"
+              strokeLinecap="round"
+              strokeWidth="7"
+            />
+          ))}
+          {diagram.nodes.map((diagramNode) => {
+            const x = DIAGRAM_PADDING + diagramNode.x;
+            const y = DIAGRAM_PADDING + diagramNode.y;
+            const titleLines = splitThumbnailTitle(diagramNode.title);
+            return (
+              <g key={diagramNode.id}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={DIAGRAM_NODE_WIDTH}
+                  height={DIAGRAM_NODE_HEIGHT}
+                  rx="16"
+                  fill={diagramNode.id === rootId ? "color-mix(in srgb, var(--tl-brand) 16%, var(--tl-panel-solid))" : "var(--tl-panel-solid)"}
+                  stroke={diagramNode.id === rootId ? "color-mix(in srgb, var(--tl-brand) 58%, var(--tl-border))" : "var(--tl-border)"}
+                  strokeWidth={diagramNode.id === rootId ? "4" : "3"}
+                />
+                <text
+                  x={x + DIAGRAM_NODE_WIDTH / 2}
+                  y={y + (titleLines.length === 1 ? 36 : 28)}
+                  fill="currentColor"
+                  fontSize="22"
+                  fontWeight="650"
+                  dominantBaseline="middle"
+                  textAnchor="middle"
+                >
+                  {titleLines.map((line, index) => (
+                    <tspan key={`${diagramNode.id}-${index}`} x={x + DIAGRAM_NODE_WIDTH / 2} dy={index === 0 ? 0 : 23}>
+                      {line}
+                    </tspan>
+                  ))}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      <div className="absolute bottom-2 left-2 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
+        {diagram.nodes.length} 节点
+      </div>
     </div>
   );
 }

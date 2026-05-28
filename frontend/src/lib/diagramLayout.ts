@@ -1,4 +1,4 @@
-import type { KnowledgeNode } from "../types/treelearn";
+import type { KnowledgeNode } from "../types/arborlearn";
 
 export interface DiagramNode {
   id: string;

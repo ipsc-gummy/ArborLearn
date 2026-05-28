@@ -15,7 +15,7 @@ import {
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { MarkdownContent } from "./MarkdownContent";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { type ModelScope } from "../lib/modelScope";
 
 interface LongTaskPanelProps {
@@ -68,7 +68,7 @@ export function LongTaskPanel({ nodeId, notebookId, nodeTitle, panelId }: LongTa
   const [isStarting, setIsStarting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const getModelConfig = useTreeLearnStore((state) => state.getModelConfig);
+  const getModelConfig = useArborLearnStore((state) => state.getModelConfig);
   const modelScope: ModelScope = { panelId, threadId: nodeId, nodeId, notebookId };
 
   const activeStep = useMemo(() => {
