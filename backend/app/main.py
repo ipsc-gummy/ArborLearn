@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -154,7 +154,7 @@ class NodeCreate(BaseModel):
     id: str | None = None
     notebookId: str | None = None
     parentId: str | None = None
-    title: str = "新的对话节点"
+    title: str = "鏂扮殑瀵硅瘽鑺傜偣"
     summary: str = ""
     selectedText: str | None = None
     contextWeight: Literal["isolated", "mainline"] = "isolated"
@@ -247,7 +247,7 @@ def stopped_assistant_content(content: str) -> str | None:
     if not content:
         return None
     return f"{content}\n\n[stopped]"
-    return f"{content}\n\n[已停止]"
+    return f"{content}\n\n[宸插仠姝"
 
 
 def source_public_view(source: dict, include_content: bool = False) -> dict:
@@ -352,11 +352,11 @@ def append_source_references(content: str, sources: list[dict]) -> str:
     if all(source.get("url") and str(source["url"]) in content for source in sources):
         return content
     references = "\n".join(
-        f"[S{index}] {source.get('title') or '来源'} - {source.get('url')}"
+        f"[S{index}] {source.get('title') or '鏉ユ簮'} - {source.get('url')}"
         for index, source in enumerate(sources, start=1)
         if source.get("url")
     )
-    return f"{content.rstrip()}\n\n参考来源:\n{references}"
+    return f"{content.rstrip()}\n\n鍙傝€冩潵婧?\n{references}"
 
 
 def append_web_search_warning(content: str, warning: str | None) -> str:
@@ -366,7 +366,7 @@ def append_web_search_warning(content: str, warning: str | None) -> str:
 
 
 UNVERIFIED_REFERENCES_RE = re.compile(
-    r"\n{0,2}(?:#{1,6}\s*)?(?:参考来源|来源|References)\s*[:：]\s*[\s\S]*$",
+    r"\n{0,2}(?:#{1,6}\s*)?(?:鍙傝€冩潵婧恷鏉ユ簮|References)\s*[:锛歖\s*[\s\S]*$",
     re.IGNORECASE,
 )
 
@@ -582,8 +582,8 @@ def update_assistant_message(conn: sqlite3.Connection, message_id: str, node_id:
 
 def clean_generated_title(raw_title: str) -> str:
     title = raw_title.strip().splitlines()[0].strip()
-    title = title.strip("`'\"“”‘’ ")
-    prefixes = ("Title:", "title:", "标题:", "標題:")
+    title = title.strip("`'\"鈥溾€濃€樷€?")
+    prefixes = ("Title:", "title:", "鏍囬:", "妯欓:")
     for prefix in prefixes:
         if title.startswith(prefix):
             title = title[len(prefix) :].strip()
@@ -606,7 +606,7 @@ def maybe_generate_root_title(
         """,
         (node_id,),
     ).fetchone()
-    if not node or node["parent_id"] is not None or node["title"] != "新的学习主题":
+    if not node or node["parent_id"] is not None or node["title"] != "鏂扮殑瀛︿範涓婚":
         return None
 
     user_message_count = conn.execute(
@@ -645,8 +645,8 @@ def maybe_generate_root_title(
 
 def clean_generated_summary(raw_summary: str) -> str:
     summary = " ".join(raw_summary.strip().split())
-    summary = summary.strip("`'\"“”‘’ ")
-    prefixes = ("Summary:", "summary:", "摘要:", "总结:", "概述:")
+    summary = summary.strip("`'\"鈥溾€濃€樷€?")
+    prefixes = ("Summary:", "summary:", "鎽樿:", "鎬荤粨:", "姒傝堪:")
     for prefix in prefixes:
         if summary.startswith(prefix):
             summary = summary[len(prefix) :].strip()
@@ -674,9 +674,9 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
         {
             "role": "system",
             "content": (
-                "你正在为一个树形学习产品生成子对话预览摘要。"
-                "请概括整个子对话目前讨论了什么、得出了什么要点。"
-                "只输出摘要正文，不要标题，不要列表，不要使用“围绕”“创建的局部追问”等模板化字样。"
+                "你正在为树状学习产品生成子对话预览摘要。"
+                "请概括子对话目前讨论了什么、得出了什么要点。"
+                "只输出摘要正文，不要标题，不要列表。"
                 "控制在 45 个中文字以内。"
             ),
         },
@@ -765,7 +765,7 @@ def create_isolated_demo_user() -> dict:
     user_id = uid("user")
     demo_suffix = user_id.removeprefix("user-")
     email = f"demo-{demo_suffix}@arborlearn.local"
-    display_name = "演示体验"
+    display_name = "婕旂ず浣撻獙"
     ts = now_iso()
     with connect() as conn:
         conn.execute(
@@ -1165,12 +1165,24 @@ def message_patches(message_id: str, user: dict = Depends(require_user)) -> dict
 
 
 EDIT_TYPE_GENERATION_GUIDE = {
-    "correct": "纠错：修正原选区中的事实、术语、表达错误。保持范围尽量短，不扩写。",
-    "expand": "补充：把子对话中已经明确沉淀的结论补进原选区，可以适度扩展信息密度。",
-    "compress": "压缩：保留核心意思，减少冗余，让原选区更紧凑。",
-    "reframe": "重构：在不改变选区外内容的前提下，重新组织原选区表达，使逻辑更清晰。",
+    "correct": (
+        "修改：优先修正目标范围中的事实错误、术语不准、逻辑跳步或表达别扭之处。"
+        "尽量保留原文结构和语气，只改必要部分；不要借机扩写新内容。"
+    ),
+    "expand": (
+        "补充：在不打断原文节奏的前提下，把子对话中已经确认的关键信息自然补进目标范围。"
+        "优先补足定义、原因、例子、边界条件或结论，但不要堆砌无关背景。"
+    ),
+    "compress": (
+        "压缩：保留原文核心信息和必要术语，删去重复、绕口、弱信息密度的表达。"
+        "压缩后应更短、更清楚，而不是简单删句导致信息断裂。"
+    ),
+    "reframe": (
+        "重构：在保持原意和事实不变的前提下，重新组织目标范围的表达顺序、层次和衔接。"
+        "优先让逻辑更顺、段落更稳、Markdown 结构更清晰。"
+    ),
 }
-EDIT_TYPE_TAG_RE = re.compile(r"#(?:纠错|补充|压缩|重构|correct|expand|compress|reframe)", re.IGNORECASE)
+EDIT_TYPE_TAG_RE = re.compile(r"#(?:修改|纠错|补充|压缩|重构|correct|expand|compress|reframe)", re.IGNORECASE)
 
 
 def normalize_backfill_instruction(user_instruction: str | None) -> str:
@@ -1184,7 +1196,7 @@ def backfill_instruction_is_thin(user_instruction: str | None) -> bool:
     if EDIT_TYPE_TAG_RE.search(instruction):
         return False
     content = EDIT_TYPE_TAG_RE.sub("", instruction)
-    content = re.sub(r"[\s#，。,.!！?？：:；;、-]+", "", content)
+    content = re.sub(r"[\s#锛屻€?.!锛?锛燂細:锛?銆?]+", "", content)
     return len(content) < 2
 
 
@@ -1197,6 +1209,98 @@ def clean_backfill_draft(raw: str) -> str:
     if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
         text = text[1:-1].strip()
     return text
+
+
+def trim_reviewed_text_to_range(reviewed_text: str, before_target: str, after_target: str) -> str:
+    text = reviewed_text.strip("\r\n")
+    if before_target and text.startswith(before_target):
+        text = text[len(before_target) :]
+    if after_target and text.endswith(after_target):
+        text = text[: -len(after_target)]
+    text = trim_boundary_overlap(text, before_target, after_target)
+    return text.strip("\r\n")
+
+
+def trim_boundary_overlap(text: str, before_target: str, after_target: str) -> str:
+    trimmed = text
+    max_prefix_overlap = min(len(before_target), len(trimmed), 120)
+    for size in range(max_prefix_overlap, 1, -1):
+        if trimmed.startswith(before_target[-size:]):
+            trimmed = trimmed[size:]
+            break
+
+    max_suffix_overlap = min(len(after_target), len(trimmed), 120)
+    for size in range(max_suffix_overlap, 1, -1):
+        if trimmed.endswith(after_target[:size]):
+            trimmed = trimmed[:-size]
+            break
+
+    duplicated_boundary_marks = "锛屻€傦紒锛燂紱锛氥€?.!?;:"
+    if trimmed and after_target and trimmed[-1] == after_target[0] and trimmed[-1] in duplicated_boundary_marks:
+        trimmed = trimmed[:-1]
+    return trimmed
+
+
+INLINE_BOUNDARY_MARKERS = ("**", "__", "~~", "`", "*", "_")
+
+
+def read_boundary_markers(text: str) -> tuple[str, str]:
+    stripped = text.strip("\r\n")
+    leading = ""
+    trailing = ""
+    changed = True
+    while changed:
+        changed = False
+        for marker in INLINE_BOUNDARY_MARKERS:
+            if (
+                stripped.startswith(leading + marker)
+                and stripped.endswith(marker + trailing)
+                and len(stripped) >= len(leading) + len(trailing) + len(marker) * 2
+            ):
+                leading += marker
+                trailing = marker + trailing
+                changed = True
+                break
+    return leading, trailing
+
+
+def strip_boundary_markers(text: str) -> str:
+    stripped = text.strip("\r\n")
+    changed = True
+    while changed:
+        changed = False
+        for marker in INLINE_BOUNDARY_MARKERS:
+            if stripped.startswith(marker) and stripped.endswith(marker) and len(stripped) >= len(marker) * 2:
+                stripped = stripped[len(marker) : -len(marker)].strip("\r\n")
+                changed = True
+                break
+    return stripped
+
+
+def align_reviewed_markdown_boundaries(reviewed_text: str, original_text: str) -> str:
+    original_leading, original_trailing = read_boundary_markers(original_text)
+    reviewed_inner = strip_boundary_markers(reviewed_text)
+    if not reviewed_inner.strip():
+        return reviewed_text
+    if not original_leading and not original_trailing:
+        return reviewed_inner
+    return f"{original_leading}{reviewed_inner}{original_trailing}"
+
+
+def build_backfill_review_window(content: str, start: int, end: int, replacement_text: str, radius: int = 1600) -> dict:
+    window_start = max(0, start - radius)
+    window_end = min(len(content), end + radius)
+    before_target = content[window_start:start]
+    original_target = content[start:end]
+    after_target = content[end:window_end]
+    return {
+        "beforeTarget": before_target,
+        "originalTarget": original_target,
+        "afterTarget": after_target,
+        "originalWindow": f"{before_target}{original_target}{after_target}",
+        "patchedWindow": f"{before_target}{replacement_text}{after_target}",
+        "patchedFullMessage": f"{content[:start]}{replacement_text}{content[end:]}",
+    }
 
 
 def backfill_conflict_detail(conflict: sqlite3.Row) -> dict:
@@ -1287,44 +1391,85 @@ def build_backfill_draft_messages(
     child_messages: list[dict],
     existing_patches: list[dict],
 ) -> list[dict[str, str]]:
+    instruction_text = normalize_backfill_instruction(user_instruction) or "None"
     child_text = "\n".join(
         f"{message['role']}: {message['content']}" for message in child_messages if message.get("content")
-    )
+    ) or "None"
+    return [
+        {"role": "system", "content": "Generate only the replacement text for the selected backfill range."},
+        {
+            "role": "user",
+            "content": (
+                f"Edit type: {EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"User instruction:\n{instruction_text}\n\n"
+                f"Parent message:\n{parent_content}\n\n"
+                f"Original selected range:\n{original_text}\n\n"
+                f"Child conversation:\n{child_text}\n\n"
+                "Return only replacementText."
+            ),
+        },
+    ]
+
+def build_backfill_cloze_draft_messages(
+    *,
+    edit_type: str,
+    user_instruction: str | None,
+    parent_content: str,
+    original_text: str,
+    source_metadata: dict,
+    child_messages: list[dict],
+    existing_patches: list[dict],
+    target_range_start: int,
+    target_range_end: int,
+) -> list[dict[str, str]]:
+    child_text = "\n".join(
+        f"{message['role']}: {message['content']}" for message in child_messages if message.get("content")
+    ) or "None"
     patch_text = "\n".join(
         f"- {patch['editType']} [{patch['targetRangeStart']}, {patch['targetRangeEnd']}]: {patch['originalText']} => {patch['replacementText']}"
         for patch in existing_patches
         if patch.get("status") == "applied"
-    ) or "无"
-    instruction_text = normalize_backfill_instruction(user_instruction) or "无"
+    ) or "None"
+    instruction_text = normalize_backfill_instruction(user_instruction) or "None"
+    before_target = parent_content[max(0, target_range_start - 1800) : target_range_start]
+    after_target = parent_content[target_range_end : min(len(parent_content), target_range_end + 1800)]
+    fill_template = f"{before_target}[[FILL_BACKFILL_SLOT]]{after_target}"
     return [
         {
             "role": "system",
             "content": (
-                "你是 ArborLearn 的回填草稿生成器。只生成目标范围的替换内容，不要重写整条父消息。"
-                "目标范围可能是一句话、一个 Markdown 结构块，或跨多个段落；你必须为整个目标范围生成可直接替换的完整片段。"
-                "必须保持父消息原有风格；不能引入子对话没有支持的新事实；不能改变目标范围外内容。"
-                "如果目标范围包含列表、引用、表格、代码块或多段落，输出必须补全对应 Markdown 格式，保持列表标记、表格列、代码围栏和段落空行闭合。"
-                "如果目标范围包含紧贴锚点的行内 Markdown 标记（如 **、__、`、~~），除非用户明确要求移除格式，否则 replacement 必须保留并正确闭合这些标记。"
-                "子对话内容可能为空；这种情况下根据父消息、目标范围、选区锚点、回填类型和用户额外生成提示生成一个保守草稿。"
-                "如果用户意图很少或难以理解，默认按“重构”处理：优化目标范围表达、补全 Markdown 格式、保持原意。"
-                "输出必须是纯文本或 Markdown 片段，不要标题、解释、引号、项目说明。"
-                "不要输出 __INSUFFICIENT_CONTEXT__；必须给出 replacementText。"
+                "You generate ArborLearn backfill drafts by solving a constrained fill-in-the-blank task.\n\n"
+                "The target range is a blank slot inside the parent message. The original target text is only a reference "
+                "for what the slot used to contain, not something you must copy or freely rewrite. Infer the best slot content "
+                "from the surrounding parent context, the child conversation, the user's instruction, and the edit type.\n\n"
+                "Rules:\n"
+                "1. Return only the text that fills [[FILL_BACKFILL_SLOT]]. Do not return the surrounding context.\n"
+                "2. The filled result must read naturally when inserted between beforeTarget and afterTarget.\n"
+                "3. Prefer preserving the original slot's role, tone, granularity, and Markdown structure.\n"
+                "4. Use child conversation facts only when they are relevant and supported. Do not invent unsupported facts.\n"
+                "5. The user's instruction is a constraint on how to fill the slot, not permission to rewrite outside it.\n"
+                "6. If intent is thin or unclear, default internally to reframe: make the slot clearer and structurally sound while preserving meaning.\n"
+                "7. If the slot owns Markdown markers, list/table/code/quote structure, or paragraph breaks, return a complete Markdown-valid slot.\n\n"
+                "Output only the final slot content. No title, no explanation, no quote marks, no report."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"回填类型：{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
-                f"父消息原文：\n{parent_content}\n\n"
-                f"目标范围原文：\n{original_text}\n\n"
-                f"选区锚点：\n"
+                f"Edit type guide:\n{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"User instruction:\n{instruction_text}\n\n"
+                f"Target range coordinates: [{target_range_start}, {target_range_end})\n\n"
+                f"Original slot text:\n{original_text}\n\n"
+                f"Anchor metadata:\n"
                 f"- prefix: {source_metadata.get('anchorPrefix') or ''}\n"
                 f"- anchor: {source_metadata.get('anchorText') or ''}\n"
                 f"- suffix: {source_metadata.get('anchorSuffix') or ''}\n\n"
-                f"已有已生效回填：\n{patch_text}\n\n"
-                f"用户额外生成提示：\n{instruction_text}\n\n"
-                f"子对话内容：\n{child_text}\n\n"
-                "请生成 replacementText。"
+                f"Existing applied backfills:\n{patch_text}\n\n"
+                f"Child conversation:\n{child_text}\n\n"
+                f"beforeTarget:\n{before_target}\n\n"
+                f"afterTarget:\n{after_target}\n\n"
+                f"Fill template:\n{fill_template}\n\n"
+                "Fill [[FILL_BACKFILL_SLOT]] and return only the slot content."
             ),
         },
     ]
@@ -1339,41 +1484,74 @@ def build_backfill_review_messages(
     replacement_text: str,
     source_metadata: dict,
 ) -> list[dict[str, str]]:
-    instruction_text = normalize_backfill_instruction(user_instruction) or "无"
+    instruction_text = normalize_backfill_instruction(user_instruction) or "None"
+    return [
+        {"role": "system", "content": "Review and correct only the replacement text for the selected range."},
+        {
+            "role": "user",
+            "content": (
+                f"Edit type: {EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"User instruction:\n{instruction_text}\n\n"
+                f"Parent message:\n{parent_content}\n\n"
+                f"Original selected range:\n{original_text}\n\n"
+                f"Current replacementText:\n{replacement_text}\n\n"
+                "Return only corrected replacementText."
+            ),
+        },
+    ]
+
+def build_backfill_context_review_messages(
+    *,
+    edit_type: str,
+    user_instruction: str | None,
+    parent_content: str,
+    original_text: str,
+    replacement_text: str,
+    source_metadata: dict,
+    target_range_start: int,
+    target_range_end: int,
+) -> list[dict[str, str]]:
+    instruction_text = normalize_backfill_instruction(user_instruction) or "None"
+    review_window = build_backfill_review_window(parent_content, target_range_start, target_range_end, replacement_text)
     return [
         {
             "role": "system",
             "content": (
-                "你是 ArborLearn 的回填审核器。你的任务不是重新创作，而是审核并修正当前 replacementText，"
-                "使它可以无缝替换目标范围原文。请在内部按以下步骤审核，但最终只输出修正后的 replacementText："
-                "1. 替换性检查：replacementText 必须能直接替换目标范围原文；不要包含目标范围外的前后文；不要重写整条父消息。"
-                "2. 上下文检查：替换后必须与父消息中的前后语义衔接自然；修复指代断裂、重复转折、重复主语、因果不通顺等问题。"
-                "3. Markdown 检查：如果目标范围原文包含 Markdown 标记，replacementText 必须保持结构完整。"
-                "   - 行内格式：**、__、`、~~、*、_ 必须成对闭合；除非用户明确要求去掉格式，否则保留原格式作用。"
-                "   - 列表/引用：保留项目符号、编号、引用符号和必要缩进。"
-                "   - 表格：保留列数、分隔行和单元格边界。"
-                "   - 代码块：保留完整围栏、语言标记和代码缩进。"
-                "   - 多段落：保留必要空行，不把多个段落硬挤成一段。"
-                "4. 信息边界检查：不能引入父消息、子对话或用户指令都没有支持的新事实；不能改变目标范围外的论证方向。"
-                "5. 最小改动检查：如果 replacementText 已经合格，原样输出；只在确实有格式、语义或上下文问题时修正。"
-                "输出要求：只输出最终 replacementText，不要解释、不要标题、不要引号、不要审核报告。"
+                "You are ArborLearn's substitution reviewer. Treat the user's editor text as a candidate fill for the selected target range.\n\n"
+                "Core task: substitute editorText into the selected target range, inspect the resulting patchedWindow, then return ONLY the corrected text that should occupy that same range.\n\n"
+                "Hard rules:\n"
+                "1. Do not summarize, explain, or freely rewrite the whole parent message.\n"
+                "2. The output must be a replacement for the selected target range only. Never include beforeTarget or afterTarget unless those characters are already inside the selected range.\n"
+                "3. If the selected range is only part of a sentence, do NOT complete the rest of the sentence when that rest already exists in afterTarget. The returned text must stop exactly at the selected range boundary.\n"
+                "4. Before returning, mentally concatenate: beforeTarget + output + afterTarget. If output ending repeats the beginning of afterTarget, remove the repeated part from output.\n"
+                "5. Judge quality by the substituted result, not by editorText in isolation. patchedWindow is the text that must become coherent.\n"
+                "6. If patchedWindow is already smooth and Markdown-valid, return editorText unchanged.\n"
+                "7. If patchedWindow is awkward, fix only the returned range text so that substituting it back makes patchedWindow smooth.\n"
+                "8. If Markdown is broken after substitution, repair the returned text so the substituted result has correct Markdown. Check bold/italic/code/strike markers, lists, quotes, tables, code fences, indentation, and paragraph blank lines.\n"
+                "9. Markdown boundary rule: after normal paired Markdown inside the text is accounted for, the remaining leading and trailing inline markers of the returned text must match the original selected range. If the original selected range has no boundary marker, do not add one. Do not mix markers such as ** with __, * with _, or ` with ** at the boundaries.\n"
+                "10. Preserve meaning and supported facts. Do not introduce facts not supported by parent context, child conversation, or user instruction.\n\n"
+                "Output only the final corrected range text. No title, no quote marks, no explanation, no review report."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"回填类型：{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
-                f"父消息原文：\n{parent_content}\n\n"
-                f"目标范围原文：\n{original_text}\n\n"
-                f"当前 replacementText：\n{replacement_text}\n\n"
-                f"选区锚点：\n"
+                f"Edit type guide:\n{EDIT_TYPE_GENERATION_GUIDE[edit_type]}\n\n"
+                f"User instruction:\n{instruction_text}\n\n"
+                f"Selected target range coordinates: [{target_range_start}, {target_range_end})\n\n"
+                f"Original selected range text:\n{original_text}\n\n"
+                f"Editor text to substitute into the selected range:\n{replacement_text}\n\n"
+                f"Anchor metadata:\n"
                 f"- prefix: {source_metadata.get('anchorPrefix') or ''}\n"
                 f"- anchor: {source_metadata.get('anchorText') or ''}\n"
                 f"- suffix: {source_metadata.get('anchorSuffix') or ''}\n\n"
-                f"用户选区所在段落前文：\n{source_metadata.get('beforeContext') or ''}\n\n"
-                f"用户选区所在段落后文：\n{source_metadata.get('afterContext') or ''}\n\n"
-                f"用户额外生成提示：\n{instruction_text}\n\n"
-                "请输出审核后的 replacementText。"
+                f"beforeTarget in review window:\n{review_window['beforeTarget']}\n\n"
+                f"originalTarget in review window:\n{review_window['originalTarget']}\n\n"
+                f"afterTarget in review window:\n{review_window['afterTarget']}\n\n"
+                f"originalWindow before substitution:\n{review_window['originalWindow']}\n\n"
+                f"patchedWindow after substituting editor text:\n{review_window['patchedWindow']}\n\n"
+                f"patchedFullMessage:\n{review_window['patchedFullMessage']}\n\n"
+                "Return only the corrected text that should replace the selected range."
             ),
         },
     ]
@@ -1460,7 +1638,7 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
 
         existing_patches = list_message_patches(conn, user["id"], payload.targetMessageId)
         parent_content = target_message["content"]
-        model_messages = build_backfill_draft_messages(
+        model_messages = build_backfill_cloze_draft_messages(
             edit_type=effective_edit_type,
             user_instruction=payload.userInstruction,
             parent_content=parent_content,
@@ -1468,6 +1646,8 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
             source_metadata=source_metadata,
             child_messages=context["meaningful_child_messages"],
             existing_patches=existing_patches,
+            target_range_start=target_start,
+            target_range_end=target_end,
         )
 
     try:
@@ -1484,7 +1664,7 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
             status_code=400,
             detail={
                 "code": "BACKFILL_DRAFT_TOO_LONG",
-                "message": "生成的回填内容过长，可能会破坏原文节奏。请缩短回填内容，或改用“补充/重构”方式重新生成。",
+                "message": "生成的回填内容过长，可能会破坏原文节奏。请缩短回填内容，或改用补充/重构方式重新生成。",
             },
         )
 
@@ -1527,6 +1707,8 @@ def review_backfill_replacement(payload: BackfillReviewCreate, user: dict = Depe
             context["anchor_start"],
             context["anchor_end"],
         )
+        target_start = payload.targetRangeStart
+        target_end = payload.targetRangeEnd
         validate_backfill_conflict(
             conn,
             payload.targetMessageId,
@@ -1537,13 +1719,21 @@ def review_backfill_replacement(payload: BackfillReviewCreate, user: dict = Depe
         replacement_text = payload.replacementText.strip("\r\n")
         if not replacement_text.strip():
             raise HTTPException(status_code=400, detail="replacementText cannot be empty")
-        model_messages = build_backfill_review_messages(
+        review_window = build_backfill_review_window(
+            target_message["content"],
+            target_start,
+            target_end,
+            replacement_text,
+        )
+        model_messages = build_backfill_context_review_messages(
             edit_type=context["effective_edit_type"],
             user_instruction=payload.userInstruction,
             parent_content=target_message["content"],
             original_text=original_text,
             replacement_text=replacement_text,
             source_metadata=context["source_metadata"],
+            target_range_start=target_start,
+            target_range_end=target_end,
         )
 
     try:
@@ -1554,13 +1744,21 @@ def review_backfill_replacement(payload: BackfillReviewCreate, user: dict = Depe
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not reviewed_text:
         reviewed_text = replacement_text
+    reviewed_text = trim_reviewed_text_to_range(
+        reviewed_text,
+        review_window["beforeTarget"],
+        review_window["afterTarget"],
+    )
+    reviewed_text = align_reviewed_markdown_boundaries(reviewed_text, original_text)
+    if not reviewed_text.strip():
+        reviewed_text = replacement_text
     return {
         "review": {
             "sourceChildNodeId": payload.sourceChildNodeId,
             "targetMessageId": payload.targetMessageId,
             "editType": context["effective_edit_type"],
-            "targetRangeStart": payload.targetRangeStart,
-            "targetRangeEnd": payload.targetRangeEnd,
+            "targetRangeStart": target_start,
+            "targetRangeEnd": target_end,
             "originalText": original_text,
             "replacementText": reviewed_text,
             "changed": reviewed_text != replacement_text,
@@ -1799,7 +1997,7 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
         node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
         node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
         
-        # 索引对话内容到向量存储（RAG）
+        # 绱㈠紩瀵硅瘽鍐呭鍒板悜閲忓瓨鍌紙RAG锛?
         if payload.ragEnabled:
             index_node_to_vector_store(conn, payload.nodeId)
         
@@ -2027,7 +2225,7 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
                 node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
                 node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
-                # 索引对话内容到向量存储（RAG）
+                # 绱㈠紩瀵硅瘽鍐呭鍒板悜閲忓瓨鍌紙RAG锛?
                 if payload.ragEnabled:
                     index_node_to_vector_store(conn, payload.nodeId)
             yield sse_event(

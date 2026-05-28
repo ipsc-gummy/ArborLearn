@@ -1,10 +1,10 @@
 import * as Popover from "@radix-ui/react-popover";
+import { createPortal } from "react-dom";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Check,
   CircleUserRound,
   HelpCircle,
-  Languages,
   LogIn,
   LogOut,
   MessageSquareWarning,
@@ -44,6 +44,14 @@ interface AuthDialogProps {
   onCreateDemoSession: () => Promise<void>;
 }
 
+const GITHUB_REPO_URL = "https://github.com/ipsc-gummy/ArborLearn";
+const GITHUB_README_URL = `${GITHUB_REPO_URL}#readme`;
+const GITHUB_ISSUES_NEW_URL = `${GITHUB_REPO_URL}/issues/new`;
+
+function openExternalUrl(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
     <Popover.Root>
@@ -54,9 +62,8 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" />
-          <MenuButton icon={MessageSquareWarning} label="发送反馈" />
-          <MenuButton icon={Languages} label="语言" trailing="简体中文" />
+          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={() => openExternalUrl(GITHUB_README_URL)} />
+          <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
           <div className="tl-border-soft my-2 border-t" />
           <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">外观</p>
           <ThemeOption mode="light" current={themeMode} icon={Sun} label="浅色" onSelect={onThemeChange} />
@@ -69,6 +76,8 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
 }
 
 export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps) {
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountInfoOpen, setAccountInfoOpen] = useState(false);
   const avatar = (
     <button
       className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
@@ -82,32 +91,69 @@ export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps)
   if (!user) return avatar;
 
   return (
-    <Popover.Root>
-      <Popover.Trigger asChild>{avatar}</Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <div className="tl-panel-soft rounded-lg border p-3">
-            <div className="flex items-center gap-2">
-              <p className="font-semibold">{user.displayName}</p>
-              {user.isTemporary && (
-                <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
-                  临时体验
-                </span>
-              )}
+    <>
+      <Popover.Root open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
+        <Popover.Trigger asChild>{avatar}</Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
+            <div className="tl-panel-soft rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <p className="font-semibold">{user.displayName}</p>
+                {user.isTemporary && (
+                  <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    临时体验
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
+            <MenuButton
+              icon={CircleUserRound}
+              label="账号信息"
+              onClick={() => {
+                setAccountMenuOpen(false);
+                setAccountInfoOpen(true);
+              }}
+            />
+            <button
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+              onClick={onLogout}
+            >
+              <LogOut className="h-4 w-4" />
+              退出账号
+            </button>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+
+      {accountInfoOpen && typeof document !== "undefined" &&
+        createPortal(
+        <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+          <div className="tl-modal-panel tl-panel w-full max-w-sm rounded-2xl border p-5 shadow-panel">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-semibold">账号信息</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">当前登录账号的基础信息。</p>
+              </div>
+              <button className="tl-hover rounded-full p-2" onClick={() => setAccountInfoOpen(false)} aria-label="关闭账号信息">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mb-4 flex flex-col items-center gap-2">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-foreground text-xl font-semibold text-background">
+                {user.displayName.slice(0, 2).toUpperCase()}
+              </div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <AccountInfoRow label="昵称" value={user.displayName} />
+              <AccountInfoRow label="邮箱" value={user.email} />
+              <AccountInfoRow label="状态" value="已登录" />
+            </div>
           </div>
-          <MenuButton icon={CircleUserRound} label="账号信息" />
-          <button
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
-            onClick={onLogout}
-          >
-            <LogOut className="h-4 w-4" />
-            退出账号
-          </button>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -282,17 +328,28 @@ export function AuthDialog({
   );
 }
 
+function AccountInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/35 px-3 py-2">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words font-medium">{value}</p>
+    </div>
+  );
+}
+
 function MenuButton({
   icon: Icon,
   label,
   trailing,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   trailing?: string;
+  onClick?: () => void;
 }) {
   return (
-    <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left">
+    <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onClick}>
       <Icon className="h-4 w-4" />
       <span>{label}</span>
       {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
