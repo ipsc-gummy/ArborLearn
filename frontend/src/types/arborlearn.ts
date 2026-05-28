@@ -95,9 +95,6 @@ export interface BackfillSourceMetadata {
   anchorRangeStart: number;
   anchorRangeEnd: number;
   anchorText: string;
-  selectedRangeStart?: number;
-  selectedRangeEnd?: number;
-  selectedRawText?: string;
   anchorPrefix: string;
   anchorSuffix: string;
   beforeContext: string;
