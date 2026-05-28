@@ -2754,8 +2754,15 @@ input {
 }
 
 .tl-modal-panel {
+  background: color-mix(in srgb, var(--tl-panel-solid) 82%, transparent);
+  border-color: color-mix(in srgb, var(--tl-border) 82%, hsl(var(--foreground)) 18%);
   transform-origin: 50% 46%;
   animation: tl-modal-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+:root.dark .tl-modal-panel {
+  background: color-mix(in srgb, var(--tl-panel-solid) 78%, transparent);
 }
 
 .tl-panel[data-state="open"] {

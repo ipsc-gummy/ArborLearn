@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "title": "TreeLearn入门笔记",
+  "title": "ArborLearn入门笔记",
   "pinned": 0,
   "sourceNotebookId": "node-ix815po",
   "nodes": [
     {
       "id": "node-ix815po",
       "parent_id": null,
-      "title": "TreeLearn入门笔记",
+      "title": "ArborLearn入门笔记",
       "summary": "贪心算法是一种每一步都选当前最优、希望达到全局最优的策略，适用于活动选择、找零、哈夫曼编码等问题，但需满足贪心选择与最优子结构性质。",
       "selected_text": null,
       "source_metadata_json": null,
