@@ -16,6 +16,7 @@ interface NodePanelProps {
 
 export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
   const closeChildConversation = useArborLearnStore((state) => state.closeChildConversation);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(node.messages.length);
@@ -35,6 +36,9 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   const latestMessageContent = node.messages[node.messages.length - 1]?.content ?? "";
   const visibleMessages = node.messages.filter((message) => message.role !== "system");
+  const backfillChildren = node.children
+    .map((childId) => nodes[childId])
+    .filter((child): child is KnowledgeNode => Boolean(child?.sourceMetadata));
   const notebookId = path[0]?.id ?? node.id;
   const panelId = `${compact ? "compact" : "main"}:${showCloseChild ? "child" : "primary"}:${node.id}`;
   const nodeInfoPanelId = `${panelId}:node-info`;
@@ -160,6 +164,27 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
                 局部追问片段
               </div>
               <p className="text-muted-foreground">{node.selectedText}</p>
+            </div>
+          )}
+          {backfillChildren.length > 0 && (
+            <div className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-background/70 p-3 text-sm shadow-sm backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
+                <GitPullRequest className="h-4 w-4" />
+                回填候选
+              </div>
+              <div className="space-y-2">
+                {backfillChildren.map((child) => (
+                  <div key={child.id} className="flex items-center justify-between gap-3 rounded-lg bg-muted/45 px-3 py-2">
+                    <button
+                      className="min-w-0 flex-1 truncate text-left text-muted-foreground transition hover:text-foreground"
+                      onClick={() => setActiveNode(child.id)}
+                    >
+                      {child.selectedText || child.title}
+                    </button>
+                    <BackfillPanel node={child} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {visibleMessages.map((message) => (

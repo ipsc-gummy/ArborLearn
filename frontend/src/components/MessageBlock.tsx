@@ -261,56 +261,18 @@ function locateRawMarkdownSelection(rawContent: string, selectedText: string) {
   return buildLocatedSelection(rawContent, start, end, rawContent.slice(start, end));
 }
 
-const inlineMarkdownWrappers: Array<[string, string]> = [
-  ["**", "**"],
-  ["__", "__"],
-  ["~~", "~~"],
-  ["`", "`"],
-  ["*", "*"],
-  ["_", "_"],
-];
-
-function expandInlineMarkdownSelection(rawContent: string, start: number, end: number) {
-  let nextStart = start;
-  let nextEnd = end;
-  let changed = true;
-
-  while (changed) {
-    changed = false;
-    for (const [opener, closer] of inlineMarkdownWrappers) {
-      const hasOpener = nextStart >= opener.length && rawContent.slice(nextStart - opener.length, nextStart) === opener;
-      const hasCloser = nextEnd + closer.length <= rawContent.length && rawContent.slice(nextEnd, nextEnd + closer.length) === closer;
-      if (hasOpener && hasCloser) {
-        nextStart -= opener.length;
-        nextEnd += closer.length;
-        changed = true;
-        break;
-      }
-    }
-  }
-
-  return { start: nextStart, end: nextEnd, text: rawContent.slice(nextStart, nextEnd) };
-}
-
 function buildLocatedSelection(rawContent: string, start: number, end: number, anchorText: string) {
-  const expanded = expandInlineMarkdownSelection(rawContent, start, end);
-  const resolvedStart = expanded.start;
-  const resolvedEnd = expanded.end;
-  const resolvedAnchorText = expanded.text || anchorText;
-  const paragraphStart = Math.max(rawContent.lastIndexOf("\n\n", resolvedStart) + 2, 0);
-  const nextBreak = rawContent.indexOf("\n\n", resolvedEnd);
+  const paragraphStart = Math.max(rawContent.lastIndexOf("\n\n", start) + 2, 0);
+  const nextBreak = rawContent.indexOf("\n\n", end);
   const paragraphEnd = nextBreak >= 0 ? nextBreak : rawContent.length;
   return {
-    start: resolvedStart,
-    end: resolvedEnd,
-    anchorText: resolvedAnchorText,
-    selectedStart: start,
-    selectedEnd: end,
-    selectedRawText: rawContent.slice(start, end),
-    beforeContext: rawContent.slice(paragraphStart, resolvedStart),
-    afterContext: rawContent.slice(resolvedEnd, paragraphEnd),
-    prefix: rawContent.slice(Math.max(0, resolvedStart - 80), resolvedStart),
-    suffix: rawContent.slice(resolvedEnd, resolvedEnd + 80),
+    start,
+    end,
+    anchorText,
+    beforeContext: rawContent.slice(paragraphStart, start),
+    afterContext: rawContent.slice(end, paragraphEnd),
+    prefix: rawContent.slice(Math.max(0, start - 80), start),
+    suffix: rawContent.slice(end, end + 80),
   };
 }
 
@@ -530,9 +492,6 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
             anchorRangeStart: located.start,
             anchorRangeEnd: located.end,
             anchorText: located.anchorText,
-            selectedRangeStart: located.selectedStart,
-            selectedRangeEnd: located.selectedEnd,
-            selectedRawText: located.selectedRawText,
             anchorPrefix: located.prefix,
             anchorSuffix: located.suffix,
             beforeContext: located.beforeContext,
