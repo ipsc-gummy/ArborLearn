@@ -61,7 +61,7 @@ cat > $APP_DIR/.env << 'EOF'
 # 模型配置（必填 - 请修改为你的 API Key）
 MODEL_API_KEY=sk-your-deepseek-api-key-here
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 
 # 认证密钥（必填 - 请修改为随机字符串）
 AUTH_SECRET=your-super-secret-key-change-this-must-be-at-least-32-characters
@@ -75,7 +75,7 @@ VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
 HF_ENDPOINT=https://hf-mirror.com
 
 # 数据路径
-DATABASE_PATH=/app/data/treelearn.sqlite3
+DATABASE_PATH=/app/data/arborlearn.sqlite3
 VECTOR_DB_PATH=/app/data/lancedb
 EOF
 
@@ -85,9 +85,9 @@ PORT=8000
 HOST=0.0.0.0
 MODEL_API_KEY=sk-your-deepseek-api-key-here
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-flash
+MODEL_NAME=deepseek-v4-pro
 AUTH_SECRET=your-super-secret-key-change-this-must-be-at-least-32-characters
-DATABASE_URL=sqlite:///./data/treelearn.sqlite3
+DATABASE_URL=sqlite:///./data/arborlearn.sqlite3
 ENABLE_RAG=true
 VECTOR_STORE_PATH=./data/lancedb
 EMBEDDING_MODEL=all-MiniLM-L6-v2
@@ -115,9 +115,9 @@ services:
     environment:
       - MODEL_API_KEY=${MODEL_API_KEY}
       - MODEL_BASE_URL=${MODEL_BASE_URL:-https://api.deepseek.com}
-      - MODEL_NAME=${MODEL_NAME:-deepseek-v4-flash}
+      - MODEL_NAME=${MODEL_NAME:-deepseek-v4-pro}
       - AUTH_SECRET=${AUTH_SECRET}
-      - DATABASE_PATH=/app/data/treelearn.sqlite3
+      - DATABASE_PATH=/app/data/arborlearn.sqlite3
       - VECTOR_DB_PATH=/app/data/lancedb
       - ENABLE_RAG=true
       - VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2

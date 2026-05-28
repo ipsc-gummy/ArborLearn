@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
@@ -78,7 +79,7 @@ from .web_search import (
 )
 
 
-app = FastAPI(title="TreeLearn API", version="0.1.0")
+app = FastAPI(title="ArborLearn API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
@@ -87,9 +88,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DEMO_ACCOUNT_EMAIL = "demo@treelearn.local"
-DEMO_ACCOUNT_PASSWORD = "TreeLearnDemo2026!"
-DEMO_ACCOUNT_DISPLAY_NAME = "演示账号"
+LEGACY_DEMO_ACCOUNT_EMAIL = "demo@arborlearn.local"
+DEMO_SESSION_TTL_HOURS = 24
 
 
 class ChatRequest(BaseModel):
@@ -210,6 +210,7 @@ def serialize_user(user: dict) -> dict:
         "id": user["id"],
         "email": user["email"],
         "displayName": user["display_name"],
+        "isTemporary": bool(user.get("is_temporary", 0)),
     }
 
 
@@ -725,42 +726,39 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-    ensure_demo_account()
+    cleanup_demo_sessions()
 
 
-def ensure_demo_account() -> None:
-    ts = now_iso()
-    email = normalize_email(os.getenv("DEMO_ACCOUNT_EMAIL", DEMO_ACCOUNT_EMAIL))
-    password = os.getenv("DEMO_ACCOUNT_PASSWORD", DEMO_ACCOUNT_PASSWORD)
-    display_name = os.getenv("DEMO_ACCOUNT_DISPLAY_NAME", DEMO_ACCOUNT_DISPLAY_NAME)
+def cleanup_demo_sessions() -> None:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=DEMO_SESSION_TTL_HOURS)).isoformat()
+    legacy_email = normalize_email(LEGACY_DEMO_ACCOUNT_EMAIL)
     with connect() as conn:
-        row = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-        if row:
-            user_id = row["id"]
-            conn.execute(
-                """
-                UPDATE users
-                SET display_name = ?, password_hash = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (display_name, password_hash(password), ts, user_id),
-            )
-        else:
-            user_id = uid("user")
-            conn.execute(
-                """
-                INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, email, display_name, password_hash(password), ts, ts),
-            )
+        conn.execute("DELETE FROM users WHERE is_temporary = 1 AND created_at < ?", (cutoff,))
+        conn.execute("DELETE FROM users WHERE email = ?", (legacy_email,))
 
-        notebook_count = conn.execute(
-            "SELECT COUNT(*) AS count FROM notebooks WHERE owner_user_id = ?",
-            (user_id,),
-        ).fetchone()["count"]
-        if notebook_count == 0:
-            create_starter_notebook(conn, user_id)
+
+def create_isolated_demo_user() -> dict:
+    cleanup_demo_sessions()
+    user_id = uid("user")
+    demo_suffix = user_id.removeprefix("user-")
+    email = f"demo-{demo_suffix}@arborlearn.local"
+    display_name = "演示体验"
+    ts = now_iso()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO users(id, email, display_name, password_hash, is_temporary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (user_id, email, display_name, password_hash(uid("demo-password")), ts, ts),
+        )
+        create_starter_notebook(conn, user_id)
+    return {
+        "id": user_id,
+        "email": email,
+        "display_name": display_name,
+        "is_temporary": 1,
+    }
 
 
 @app.get("/api/health")
@@ -1077,17 +1075,27 @@ def register(payload: AuthRequest) -> dict:
             raise HTTPException(status_code=409, detail="Email is already registered") from exc
         create_starter_notebook(conn, user_id)
 
-    user = {"id": user_id, "email": email, "display_name": display_name}
+    user = {"id": user_id, "email": email, "display_name": display_name, "is_temporary": 0}
     return {"token": create_token(user_id), "user": serialize_user(user)}
+
+
+@app.post("/api/auth/demo", status_code=201)
+def demo_session() -> dict:
+    user = create_isolated_demo_user()
+    return {"token": create_token(user["id"]), "user": serialize_user(user)}
 
 
 @app.post("/api/auth/login")
 def login(payload: AuthRequest) -> dict:
     email = normalize_email(payload.email)
+    legacy_email = normalize_email(LEGACY_DEMO_ACCOUNT_EMAIL)
+    if email == legacy_email:
+        raise HTTPException(status_code=410, detail="演示入口已改为独立体验会话，请点击“体验示例”进入")
+
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT id, email, display_name, password_hash
+            SELECT id, email, display_name, password_hash, is_temporary
             FROM users
             WHERE email = ?
             """,

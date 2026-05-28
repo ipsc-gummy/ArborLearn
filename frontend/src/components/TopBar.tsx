@@ -25,7 +25,7 @@ export function TopBar({ onHome, themeMode, onThemeChange, user, onLogout, onReq
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="rounded-xl px-1 transition duration-150">
-          <h1 className="text-base font-semibold leading-tight">TreeLearn Notebook</h1>
+          <h1 className="text-base font-semibold leading-tight">ArborLearn Notebook</h1>
           <p className="hidden text-xs text-muted-foreground sm:block">Nodes · Chat · Diagram</p>
         </div>
       </div>
