@@ -18,6 +18,8 @@ interface MessageTreeLink {
   matchTexts?: string[];
   title: string;
   summary: string;
+  anchorRangeStart?: number;
+  anchorRangeEnd?: number;
 }
 
 async function sha256(text: string) {
@@ -340,6 +342,16 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       .map((child) => ({
         id: child.id,
         text: child.selectedText ?? "",
+        anchorRangeStart:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeStart
+            : undefined,
+        anchorRangeEnd:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeEnd
+            : undefined,
         title: child.title,
         summary: child.summary,
       })),
@@ -549,6 +561,8 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     <article className={cn("tl-message-row flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
       <div className={cn("tl-message-wrap group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
         <div
+        data-tour-message-role={message.role}
+        data-tour-message-id={message.id}
         className={cn(
           "tl-message-bubble rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
           isUser

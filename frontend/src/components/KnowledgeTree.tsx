@@ -126,6 +126,7 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
     <div ref={setDropRef}>
       <div
         ref={setDragRef}
+        data-tour-tree-node={node.title}
         style={{ transform: CSS.Translate.toString(transform), paddingLeft: 8 + depth * 14 }}
         className={cn(
           "tl-tree-item group relative z-10 flex min-h-9 items-center gap-1 rounded-lg pr-1 text-sm before:absolute before:left-1 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary before:opacity-0",
@@ -283,6 +284,7 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
           <div className="tl-sidebar-view-switch">
             <button
               type="button"
+              data-tour-view-switch="chat"
               className={cn("tl-sidebar-action", view === "chat" && "is-active")}
               onClick={() => onViewChange("chat")}
             >
@@ -291,6 +293,7 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
             </button>
             <button
               type="button"
+              data-tour-view-switch="diagram"
               className={cn("tl-sidebar-action", view === "diagram" && "is-active")}
               onClick={() => onViewChange("diagram")}
             >

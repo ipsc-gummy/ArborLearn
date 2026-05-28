@@ -92,6 +92,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
                 <button
                   key={prompt.label}
                   type="button"
+                  data-tour-quick-prompt={prompt.label}
                   className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2.5 text-xs font-medium text-muted-foreground transition hover:border-primary/30 hover:bg-primary/8 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
                   onClick={() => send(prompt.message)}
                 >
@@ -115,11 +116,13 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
           className="tl-composer-input max-h-32 min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
           placeholder="围绕当前节点继续追问..."
         />
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex items-center justify-between gap-2 pt-1" data-tour-composer-node-id={nodeId}>
+          <div className="flex flex-wrap items-center gap-1" data-tour-composer-tools={nodeId}>
             <Button
               variant="ghost"
               size="sm"
+              data-tour-composer-tool="search"
+              data-tour-composer-tool-node-id={nodeId}
               title={webSearchEnabled ? "已开启联网搜索" : "开启联网搜索"}
               aria-pressed={webSearchEnabled}
               onClick={() => setWebSearchEnabled(nodeId, !webSearchEnabled)}
@@ -134,6 +137,8 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             <Button
               variant="ghost"
               size="icon"
+              data-tour-composer-tool="upload"
+              data-tour-composer-tool-node-id={nodeId}
               title="上传文件"
               className="h-9 w-9 border-transparent text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0 hover:border-transparent hover:bg-foreground/5 hover:text-foreground"
             >
@@ -142,6 +147,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
           </div>
           <div className="flex items-center justify-end gap-1.5">
             <ModelModeSelector
+              nodeId={nodeId}
               selectedModel={selectedModel}
               selectedMode={selectedThinkingMode}
               onChange={(config) => setModelConfig(scopeId, config)}
@@ -185,10 +191,12 @@ const thinkingStrengthCopy = {
 } satisfies Record<Exclude<DeepSeekThinkingModeId, "fast">, string>;
 
 function ModelModeSelector({
+  nodeId,
   selectedModel,
   selectedMode,
   onChange,
 }: {
+  nodeId: string;
   selectedModel: DeepSeekModelId;
   selectedMode: DeepSeekThinkingModeId;
   onChange: (config: ModelConfig) => void;
@@ -224,6 +232,8 @@ function ModelModeSelector({
       <Popover.Trigger asChild>
         <button
           type="button"
+          data-tour-composer-tool="model"
+          data-tour-composer-tool-node-id={nodeId}
           className="flex h-8 items-center gap-1 rounded-full bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground hover:shadow-[0_8px_20px_rgba(25,45,64,0.13)] focus:outline-none focus:ring-2 focus:ring-primary/25 dark:hover:bg-white/10"
           aria-label="选择模型"
           title="选择模型"
