@@ -19,7 +19,7 @@ def uid(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
-STARTER_NOTEBOOK_TITLE = "TreeLearn入门笔记"
+STARTER_NOTEBOOK_TITLE = "ArborLearn入门笔记"
 STARTER_TEMPLATE_PATH = Path(__file__).with_name("starter_notebook_template.json")
 
 
