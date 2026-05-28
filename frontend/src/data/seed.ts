@@ -1,4 +1,4 @@
-import type { KnowledgeNode, SkillTemplate } from "../types/treelearn";
+import type { KnowledgeNode, SkillTemplate } from "../types/arborlearn";
 
 // seed 数据只用于前端演示和本地开发；接入后端后可由 /api/notebooks 或 /api/nodes 替换。
 const now = new Date().toISOString();
@@ -8,7 +8,7 @@ export const seedNodes: Record<string, KnowledgeNode> = {
   root: {
     id: "root",
     parentId: null,
-    title: "TreeLearn 项目学习",
+    title: "ArborLearn 项目学习",
     kind: "main",
     summary: "围绕树形上下文工程理解项目背景、核心功能、技术栈和后端协作边界。",
     contextWeight: "mainline",
@@ -21,7 +21,7 @@ export const seedNodes: Record<string, KnowledgeNode> = {
         role: "assistant",
         createdAt: now,
         content:
-          "TreeLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
+          "ArborLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
       },
       {
         id: "m-root-2",
