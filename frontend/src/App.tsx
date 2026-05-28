@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { KnowledgeTree } from "./components/KnowledgeTree";
 import { LandingPage } from "./components/LandingPage";
 import { NotebookDashboard } from "./components/NotebookDashboard";
+import { OnboardingTour } from "./components/OnboardingTour";
 import { PageTransition } from "./components/PageTransition";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { Workspace } from "./components/Workspace";
@@ -146,6 +147,8 @@ export default function App() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
+  const [onboardingChoiceOpen, setOnboardingChoiceOpen] = useState(false);
+  const [newlyRegisteredUserId, setNewlyRegisteredUserId] = useState<string | null>(null);
 
   useEffect(() => {
     void initializeAuth();
@@ -210,6 +213,21 @@ export default function App() {
   }, [authStatus, user]);
 
   useEffect(() => {
+    if (
+      !newlyRegisteredUserId ||
+      authStatus !== "authenticated" ||
+      apiStatus !== "ready" ||
+      route.kind !== "dashboard" ||
+      authDialogOpen ||
+      user?.id !== newlyRegisteredUserId
+    ) {
+      return;
+    }
+    setOnboardingChoiceOpen(true);
+    setNewlyRegisteredUserId(null);
+  }, [apiStatus, authDialogOpen, authStatus, newlyRegisteredUserId, route.kind, user]);
+
+  useEffect(() => {
     if (route.kind !== "workspace" || !activeNodeId) return;
     localStorage.setItem(
       LAST_LOCATION_KEY,
@@ -234,6 +252,9 @@ export default function App() {
     const createdUser = useArborLearnStore.getState().user;
     setThemeModeState("light");
     saveThemeMode("light", createdUser?.id);
+    if (createdUser?.id) {
+      setNewlyRegisteredUserId(createdUser.id);
+    }
   };
 
   const requestAuth = (mode: AuthDialogMode = "login") => {
@@ -293,7 +314,10 @@ export default function App() {
       onRequestAuth={requestAuth}
     />
   ) : route.kind === "dashboard" ? (
-    <NotebookDashboard onOpenNotebook={openNotebook} {...menuProps} />
+    <NotebookDashboard
+      onOpenNotebook={openNotebook}
+      {...menuProps}
+    />
   ) : (
     <div className="tl-app-bg tl-workspace-page relative flex h-screen min-h-0 flex-col overflow-hidden">
       <main className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">
@@ -338,6 +362,15 @@ export default function App() {
       <PageTransition transitionKey={pageTransitionKey} variant={pageVariant}>
         {content}
       </PageTransition>
+      {authStatus === "authenticated" && (
+        <OnboardingTour
+          choiceOpen={onboardingChoiceOpen}
+          onChoiceOpenChange={setOnboardingChoiceOpen}
+          onComplete={goHome}
+          routeKind={route.kind}
+          workspaceView={workspaceView}
+        />
+      )}
       <AuthDialog
         open={authDialogOpen}
         initialMode={authDialogMode}
