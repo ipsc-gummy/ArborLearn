@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, Check, Hand, MousePointerClick, X } from "lucide-react";
 import { Button } from "./ui/button";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import { useArborLearnStore } from "../store/arborlearnStore";
 
 type RouteKind = "landing" | "dashboard" | "workspace";
 type WorkspaceView = "chat" | "diagram";
@@ -128,10 +128,10 @@ export function OnboardingTour({
   routeKind,
   workspaceView,
 }: OnboardingTourProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const activeNodeId = useTreeLearnStore((state) => state.activeNodeId);
-  const selectionDraft = useTreeLearnStore((state) => state.selectionDraft);
-  const chatRunStatusByNode = useTreeLearnStore((state) => state.chatRunStatusByNode);
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const selectionDraft = useArborLearnStore((state) => state.selectionDraft);
+  const chatRunStatusByNode = useArborLearnStore((state) => state.chatRunStatusByNode);
   const [running, setRunning] = useState(false);
   const [step, setStep] = useState(0);
   const [targetBox, setTargetBox] = useState<TargetBox | null>(null);
