@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable
 from uuid import uuid4
 
@@ -15,6 +17,10 @@ def now_iso() -> str:
 
 def uid(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
+
+
+STARTER_NOTEBOOK_TITLE = "ArborLearn入门笔记"
+STARTER_TEMPLATE_PATH = Path(__file__).with_name("starter_notebook_template.json")
 
 
 def connect() -> sqlite3.Connection:
@@ -33,6 +39,7 @@ def init_db() -> None:
               email TEXT NOT NULL UNIQUE,
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
+              is_temporary INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
@@ -284,6 +291,7 @@ def init_db() -> None:
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
@@ -307,14 +315,14 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     ts = now_iso()
     conn.execute(
         "INSERT INTO notebooks(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        ("root", "TreeLearn 项目学习", ts, ts),
+        ("root", "ArborLearn 项目学习", ts, ts),
     )
     nodes = [
         (
             "root",
             "root",
             None,
-            "TreeLearn 项目学习",
+            "ArborLearn 项目学习",
             "围绕树形上下文工程理解项目背景、核心功能、技术栈和后端协作边界。",
             None,
             "mainline",
@@ -367,7 +375,7 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
             "m-root-1",
             "root",
             "assistant",
-            "TreeLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
+            "ArborLearn 将论文、PPT、技术文档等学习过程组织成树形知识网络。主线负责宏观学习路径，支线负责局部追问，普通支线默认不污染后续主线上下文。",
         ),
         (
             "m-root-2",
@@ -400,15 +408,291 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     )
 
 
-def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
-    notebook_id = uid("nb")
+def _replace_json_ids(raw_json: str | None, id_map: dict[str, str]) -> str | None:
+    if not raw_json:
+        return raw_json
+
+    def replace(value: object) -> object:
+        if isinstance(value, str):
+            return id_map.get(value, value)
+        if isinstance(value, list):
+            return [replace(item) for item in value]
+        if isinstance(value, dict):
+            return {key: replace(item) for key, item in value.items()}
+        return value
+
+    try:
+        parsed = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return raw_json
+    return json.dumps(replace(parsed), ensure_ascii=False)
+
+
+def _order_template_nodes(source_nodes: list) -> list:
+    ordered_nodes = []
+    inserted_source_node_ids: set[str] = set()
+    remaining_nodes = list(source_nodes)
+    while remaining_nodes:
+        ready = [
+            row for row in remaining_nodes
+            if row["parent_id"] is None or row["parent_id"] in inserted_source_node_ids
+        ]
+        if not ready:
+            return []
+        for row in ready:
+            ordered_nodes.append(row)
+            inserted_source_node_ids.add(row["id"])
+            remaining_nodes.remove(row)
+    return ordered_nodes
+
+
+def _insert_starter_notebook_snapshot(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    source_notebook_id: str,
+    title: str,
+    pinned: int,
+    source_nodes: list,
+    message_rows: list,
+    patch_rows: list,
+) -> str | None:
+    if not source_nodes:
+        return None
+
     ts = now_iso()
+    notebook_id = uid("nb")
+    id_map: dict[str, str] = {source_notebook_id: notebook_id}
+    for row in source_nodes:
+        id_map[row["id"]] = notebook_id if row["id"] == source_notebook_id else uid("node")
+    for row in message_rows:
+        id_map[row["id"]] = uid("msg")
+
+    ordered_nodes = _order_template_nodes(source_nodes)
+    if not ordered_nodes:
+        return None
+
+    conn.execute(
+        """
+        INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at, pinned)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (notebook_id, user_id, title, ts, ts, pinned),
+    )
+    conn.executemany(
+        """
+        INSERT INTO nodes(
+          id, notebook_id, parent_id, title, summary, selected_text, source_metadata_json,
+          summary_stale, context_mode, position, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                id_map[row["id"]],
+                notebook_id,
+                id_map.get(row["parent_id"]) if row["parent_id"] else None,
+                row["title"],
+                row["summary"],
+                row["selected_text"],
+                _replace_json_ids(row["source_metadata_json"], id_map),
+                row["summary_stale"],
+                row["context_mode"],
+                row["position"],
+                ts,
+                ts,
+            )
+            for row in ordered_nodes
+        ],
+    )
+    conn.executemany(
+        """
+        INSERT INTO messages(id, node_id, role, content, selected_text, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (id_map[row["id"]], id_map[row["node_id"]], row["role"], row["content"], row["selected_text"], ts)
+            for row in message_rows
+        ],
+    )
+
+    for row in patch_rows:
+        new_patch_id = uid("patch")
+        id_map[row["id"]] = new_patch_id
+        conn.execute(
+            """
+            INSERT INTO conversation_patches(
+              id, user_id, parent_node_id, source_child_node_id, source_snapshot_json,
+              target_message_id, target_message_role, target_message_created_at,
+              base_message_content_hash, base_content_length, coordinate_space,
+              selector_strategy, anchor_range_start, anchor_range_end,
+              target_range_start, target_range_end, anchor_text, anchor_prefix,
+              anchor_suffix, original_text, replacement_text, status, edit_type,
+              mapping_status, conflict_patch_id, archive_reason, created_at,
+              updated_at, applied_at, archived_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_patch_id,
+                user_id,
+                id_map.get(row["parent_node_id"], row["parent_node_id"]),
+                id_map.get(row["source_child_node_id"]) if row["source_child_node_id"] else None,
+                _replace_json_ids(row["source_snapshot_json"], id_map) or "{}",
+                id_map.get(row["target_message_id"], row["target_message_id"]),
+                row["target_message_role"],
+                ts,
+                row["base_message_content_hash"],
+                row["base_content_length"],
+                row["coordinate_space"],
+                row["selector_strategy"],
+                row["anchor_range_start"],
+                row["anchor_range_end"],
+                row["target_range_start"],
+                row["target_range_end"],
+                row["anchor_text"],
+                row["anchor_prefix"],
+                row["anchor_suffix"],
+                row["original_text"],
+                row["replacement_text"],
+                row["status"],
+                row["edit_type"],
+                row["mapping_status"],
+                id_map.get(row["conflict_patch_id"]) if row["conflict_patch_id"] else None,
+                row["archive_reason"],
+                ts,
+                ts,
+                ts if row["applied_at"] else None,
+                ts if row["archived_at"] else None,
+            ),
+        )
+
+    return notebook_id
+
+
+def _create_starter_notebook_from_template_file(conn: sqlite3.Connection, user_id: str) -> str | None:
+    if not STARTER_TEMPLATE_PATH.exists():
+        return None
+    try:
+        template = json.loads(STARTER_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(template, dict):
+        return None
+    source_nodes = template.get("nodes")
+    message_rows = template.get("messages")
+    patch_rows = template.get("patches", [])
+    if not isinstance(source_nodes, list) or not isinstance(message_rows, list) or not isinstance(patch_rows, list):
+        return None
+    return _insert_starter_notebook_snapshot(
+        conn,
+        user_id,
+        source_notebook_id=str(template.get("sourceNotebookId") or "template-root"),
+        title=str(template.get("title") or STARTER_NOTEBOOK_TITLE),
+        pinned=int(template.get("pinned") or 0),
+        source_nodes=source_nodes,
+        message_rows=message_rows,
+        patch_rows=patch_rows,
+    )
+
+
+def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
+    template_notebook_id = _create_starter_notebook_from_template_file(conn, user_id)
+    if template_notebook_id:
+        create_transformer_demo_notebook(conn, user_id)
+        return template_notebook_id
+
+    notebook_id = uid("nb")
+    huffman_id = uid("node")
+    mst_id = uid("node")
+    prefix_id = uid("node")
+    ts = now_iso()
+    root_msg_id = uid("msg")
+    huffman_msg_id = uid("msg")
+    mst_msg_id = uid("msg")
+    prefix_msg_id = uid("msg")
+
+    root_assistant = (
+        "好的，我们开始学习。根据你当前所处的根节点，这是一个全新的学习主题。我将基于你的问题，"
+        "为你构建关于“贪心算法”的知识分支。\n\n"
+        "**贪心算法** 是一种在每一步选择中都采取当前状态下最优选择，从而希望导致结果是全局最优的算法策略。\n\n"
+        "### 典型应用场景\n\n"
+        "1. **活动选择问题**：每次选择结束时间最早的活动。\n"
+        "2. **找零问题**：每次选择面额最大且不超过剩余金额的硬币。\n"
+        "3. **哈夫曼编码**：用于数据压缩，通过构建最优二叉树，为不同字符分配不同长度的二进制编码，使得总编码长度最短。\n"
+        "   - **贪心策略**：每次从频率最低的两个节点合并成一个新节点，直到所有节点合并成一棵树。\n"
+        "4. **最小生成树**：在带权无向图中，找到一棵连接所有顶点且总权重最小的树。\n"
+        "   - **Prim 算法**：从一个顶点开始，每次选择连接已选顶点集合和未选顶点集合的最小权值边。\n"
+        "   - **Kruskal 算法**：每次选择当前权值最小且不形成环的边。\n\n"
+        "### 如何判断一个问题是否适合用贪心算法？\n\n"
+        "- 验证贪心选择性质：局部最优选择能导向全局最优。\n"
+        "- 验证最优子结构：子问题的最优解能组合成原问题的最优解。"
+    )
+    huffman_assistant = (
+        "哈夫曼编码是一种基于**贪心算法**的无损数据压缩方法。它通过为不同字符分配**可变长度**的二进制编码，"
+        "使得出现频率高的字符使用较短的编码，出现频率低的字符使用较长的编码，从而在整体上减少存储空间。\n\n"
+        "### 核心思想\n"
+        "- **贪心选择**：每次从所有字符中，选择**频率最低**的两个节点合并，构造一棵二叉树（哈夫曼树）。\n"
+        "- **最优前缀码**：生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义。\n\n"
+        "### 构造步骤\n"
+        "1. **统计频率**：统计每个字符出现的频率。\n"
+        "2. **构建优先队列**：将每个字符视为一个叶子节点，按频率放入最小堆。\n"
+        "3. **重复合并**：从队列中取出频率最小的两个节点，合并后放回队列。\n"
+        "4. **生成编码**：从根节点出发，向左走标记为 0，向右走标记为 1，到达叶子节点的路径即为该字符编码。"
+    )
+    mst_assistant = (
+        "根据当前节点，我们聚焦于“最小生成树”这一概念。\n\n"
+        "**最小生成树（Minimum Spanning Tree, MST）** 是图论中的一个核心概念，常用于网络设计等场景。\n\n"
+        "**定义：**在一个连通、带权无向图中，最小生成树是包含所有顶点、没有环、且边权总和最小的生成树。\n\n"
+        "**核心性质：**\n"
+        "- 如果图有 N 个顶点，最小生成树恰好有 N-1 条边。\n"
+        "- 最小生成树不一定唯一。\n\n"
+        "**与贪心算法的关联：**\n"
+        "求解最小生成树的经典算法（如 Kruskal 算法 和 Prim 算法）正是贪心算法的典型应用。"
+        "它们每一步都选择当前“代价最小”且不破坏约束的边，最终得到全局最优解。"
+    )
+    prefix_assistant = (
+        "你选中的内容是哈夫曼编码的一个重要性质：哈夫曼编码是一种**前缀码**。\n\n"
+        "所谓前缀码，就是任何一个字符的编码，都不会是另一个字符编码的开头部分。"
+        "如果字符 A 的编码是 01，那么字符 B 的编码就不能是 010 或 011。\n\n"
+        "这个性质保证了解码的唯一性：读取一串二进制流时，可以明确地把它切分成一个个字符编码，"
+        "不会出现“这个片段到底是一个完整字符，还是另一个字符的开头”的歧义。"
+    )
+
+    def source_metadata(parent_id: str, target_message_id: str, content: str, anchor_text: str) -> str:
+        start = content.index(anchor_text)
+        end = start + len(anchor_text)
+        paragraph_start = max(content.rfind("\n\n", 0, start) + 2, 0)
+        next_break = content.find("\n\n", end)
+        paragraph_end = next_break if next_break >= 0 else len(content)
+        return json.dumps(
+            {
+                "type": "backfill_anchor",
+                "parentNodeId": parent_id,
+                "targetMessageId": target_message_id,
+                "targetMessageRole": "assistant",
+                "targetMessageCreatedAt": ts,
+                "baseMessageContentHash": "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                "baseContentLength": len(content),
+                "coordinateSpace": "raw_markdown",
+                "selectorStrategy": "dom_to_raw_exact",
+                "anchorRangeStart": start,
+                "anchorRangeEnd": end,
+                "anchorText": anchor_text,
+                "anchorPrefix": content[max(0, start - 80):start],
+                "anchorSuffix": content[end:end + 80],
+                "beforeContext": content[paragraph_start:start],
+                "afterContext": content[end:paragraph_end],
+            },
+            ensure_ascii=False,
+        )
+
     conn.execute(
         """
         INSERT INTO notebooks(id, owner_user_id, title, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (notebook_id, user_id, "TreeLearn 入门笔记本", ts, ts),
+        (notebook_id, user_id, "ArborLearn 入门笔记本", ts, ts),
     )
 
     nodes = [
@@ -416,49 +700,91 @@ def create_starter_notebook(conn: sqlite3.Connection, user_id: str) -> str:
             notebook_id,
             notebook_id,
             None,
-            "TreeLearn 入门笔记本",
+            "ArborLearn 入门笔记本",
             "从这里开始创建学习主题、选中文本开支线，并观察树形上下文如何影响 AI 回答。",
             None,
             "mainline",
             0,
+            None,
         ),
         (
-            uid("node"),
+            huffman_id,
             notebook_id,
             notebook_id,
-            "树形上下文调度",
-            "子对话会带上父节点片段、父节点最近对话和根节点摘要，帮助模型聚焦局部问题。",
-            "树形上下文调度",
+            "哈夫曼编码",
+            "介绍哈夫曼编码如何用贪心策略合并低频节点，并生成可唯一解码的前缀码。",
+            "哈夫曼编码",
             "isolated",
             0,
+            source_metadata(notebook_id, root_msg_id, root_assistant, "哈夫曼编码"),
+        ),
+        (
+            mst_id,
+            notebook_id,
+            notebook_id,
+            "最小生成树",
+            "解释最小生成树的定义、性质，以及 Kruskal 算法和 Prim 算法与贪心思想的关系。",
+            "最小生成树",
+            "isolated",
+            1,
+            source_metadata(notebook_id, root_msg_id, root_assistant, "最小生成树"),
+        ),
+        (
+            prefix_id,
+            notebook_id,
+            huffman_id,
+            "前缀码",
+            "哈夫曼编码是前缀码，每个字符编码不是其他编码的前缀，确保解码唯一无歧义。",
+            "生成的编码是前缀码，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+            "isolated",
+            0,
+            source_metadata(
+                huffman_id,
+                huffman_msg_id,
+                huffman_assistant,
+                "生成的编码是**前缀码**，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
+            ),
         ),
     ]
     conn.executemany(
         """
         INSERT INTO nodes(
           id, notebook_id, parent_id, title, summary, selected_text,
-          context_mode, position, created_at, updated_at
+          context_mode, position, source_metadata_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [(*node, ts, ts) for node in nodes],
     )
-    conn.execute(
-        """
-        INSERT INTO messages(id, node_id, role, content, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
+    messages = [
+        (uid("msg"), notebook_id, "system", "已创建新的主对话。", None),
+        (uid("msg"), notebook_id, "user", "解释贪心算法及其应用", None),
+        (root_msg_id, notebook_id, "assistant", root_assistant, None),
+        (uid("msg"), huffman_id, "system", "已创建子对话。", "哈夫曼编码"),
+        (uid("msg"), huffman_id, "user", "解释哈夫曼编码", None),
+        (huffman_msg_id, huffman_id, "assistant", huffman_assistant, None),
+        (uid("msg"), mst_id, "system", "已创建子对话。", "最小生成树"),
+        (uid("msg"), mst_id, "user", "解释最小生成树", None),
+        (mst_msg_id, mst_id, "assistant", mst_assistant, None),
         (
             uid("msg"),
-            notebook_id,
-            "assistant",
-            "欢迎使用 ArborLearn。这个账号下的笔记本、树节点和聊天记录会独立保存，不会和其他用户混在一起。",
-            ts,
+            prefix_id,
+            "system",
+            "已创建子对话。",
+            "生成的编码是前缀码，即任何一个字符的编码都不是另一个字符编码的前缀，因此解码时不会产生歧义",
         ),
+        (uid("msg"), prefix_id, "user", "请解释我选中的这段内容。", None),
+        (prefix_msg_id, prefix_id, "assistant", prefix_assistant, None),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO messages(id, node_id, role, content, selected_text, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [(*message, ts) for message in messages],
     )
     create_transformer_demo_notebook(conn, user_id)
     return notebook_id
-
 
 def create_transformer_demo_notebook(conn: sqlite3.Connection, user_id: str) -> str:
     notebook_id = uid("nb")

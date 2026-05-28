@@ -1,8 +1,8 @@
 import { Check, Copy, GitBranch, RotateCcw, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { ChatMessage } from "../types/treelearn";
-import { useTreeLearnStore } from "../store/treelearnStore";
+import type { ChatMessage } from "../types/arborlearn";
+import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { archiveBackfillPatch } from "../lib/api";
@@ -18,6 +18,8 @@ interface MessageTreeLink {
   matchTexts?: string[];
   title: string;
   summary: string;
+  anchorRangeStart?: number;
+  anchorRangeEnd?: number;
 }
 
 async function sha256(text: string) {
@@ -324,13 +326,13 @@ function ThinkingIndicator({ label = "正在思考" }: { label?: string }) {
 
 // 单条聊天消息：根据角色切换左右布局，并把已创建子对话的选中文本渲染为可点击链接。
 export function MessageBlock({ nodeId, message }: MessageBlockProps) {
-  const nodes = useTreeLearnStore((state) => state.nodes);
-  const user = useTreeLearnStore((state) => state.user);
-  const setActiveNode = useTreeLearnStore((state) => state.setActiveNode);
-  const setSelectionDraft = useTreeLearnStore((state) => state.setSelectionDraft);
-  const retryAssistantMessage = useTreeLearnStore((state) => state.retryAssistantMessage);
-  const hydrateFromBackend = useTreeLearnStore((state) => state.hydrateFromBackend);
-  const isNodeRunning = Boolean(useTreeLearnStore((state) => state.chatRunStatusByNode[nodeId]));
+  const nodes = useArborLearnStore((state) => state.nodes);
+  const user = useArborLearnStore((state) => state.user);
+  const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
+  const setSelectionDraft = useArborLearnStore((state) => state.setSelectionDraft);
+  const retryAssistantMessage = useArborLearnStore((state) => state.retryAssistantMessage);
+  const hydrateFromBackend = useArborLearnStore((state) => state.hydrateFromBackend);
+  const isNodeRunning = Boolean(useArborLearnStore((state) => state.chatRunStatusByNode[nodeId]));
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
   const nodeMessages = nodes[nodeId]?.messages ?? [];
   const isUser = message.role === "user";
@@ -375,6 +377,16 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       .map((child) => ({
         id: child.id,
         text: child.selectedText ?? "",
+        anchorRangeStart:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeStart
+            : undefined,
+        anchorRangeEnd:
+          child.sourceMetadata?.type === "backfill_anchor" &&
+          child.sourceMetadata.targetMessageId === message.id
+            ? child.sourceMetadata.anchorRangeEnd
+            : undefined,
         title: child.title,
         summary: child.summary,
       })),
@@ -584,6 +596,8 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     <article className={cn("tl-message-row flex w-full px-2", isUser ? "justify-end" : "justify-start")}>
       <div className={cn("tl-message-wrap group flex max-w-[82%] flex-col md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
         <div
+        data-tour-message-role={message.role}
+        data-tour-message-id={message.id}
         className={cn(
           "tl-message-bubble rounded-[1.15rem] px-4 py-3 text-sm leading-7 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md",
           isUser
@@ -603,7 +617,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <span className={cn("text-xs font-semibold", isUser ? "opacity-70" : "text-muted-foreground")}>
-            {isUser ? userLabel : "TreeLearn AI"}
+            {isUser ? userLabel : "ArborLearn AI"}
           </span>
           <div className="flex items-center gap-2">
             {message.stale && (

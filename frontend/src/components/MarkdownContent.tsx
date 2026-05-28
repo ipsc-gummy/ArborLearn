@@ -9,6 +9,8 @@ interface TreeLink {
   matchTexts?: string[];
   title: string;
   summary: string;
+  anchorRangeStart?: number;
+  anchorRangeEnd?: number;
 }
 
 interface MarkdownContentProps {
@@ -20,16 +22,18 @@ interface MarkdownContentProps {
 function TreeLinkPreview({
   link,
   onTreeLinkClick,
+  children,
 }: {
   link: TreeLink;
   onTreeLinkClick?: (nodeId: string) => void;
+  children?: ReactNode;
 }) {
   const summary = link.summary.trim() || "摘要将在子对话更新后生成。";
 
   return (
     <span className="relative inline-flex">
-      <button className="tree-link peer" onClick={() => onTreeLinkClick?.(link.id)}>
-        {link.text}
+      <button className="tree-link peer" data-tour-tree-link={link.title} onClick={() => onTreeLinkClick?.(link.id)}>
+        {children ?? link.text}
       </button>
       <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
         <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
@@ -40,6 +44,33 @@ function TreeLinkPreview({
       </span>
     </span>
   );
+}
+
+function treeLinkHref(id: string) {
+  return `treelearn://node/${encodeURIComponent(id)}`;
+}
+
+function getTreeLinkIdFromHref(href?: string) {
+  const prefix = "treelearn://node/";
+  return href?.startsWith(prefix) ? decodeURIComponent(href.slice(prefix.length)) : null;
+}
+
+function applyRangeTreeLinks(content: string, treeLinks: TreeLink[]) {
+  return treeLinks
+    .filter((link) =>
+      Number.isInteger(link.anchorRangeStart) &&
+      Number.isInteger(link.anchorRangeEnd) &&
+      (link.anchorRangeStart ?? 0) >= 0 &&
+      (link.anchorRangeEnd ?? 0) > (link.anchorRangeStart ?? 0) &&
+      (link.anchorRangeEnd ?? 0) <= content.length,
+    )
+    .sort((a, b) => (b.anchorRangeStart ?? 0) - (a.anchorRangeStart ?? 0))
+    .reduce((nextContent, link) => {
+      const start = link.anchorRangeStart ?? 0;
+      const end = link.anchorRangeEnd ?? 0;
+      const selected = nextContent.slice(start, end);
+      return `${nextContent.slice(0, start)}[${selected}](${treeLinkHref(link.id)})${nextContent.slice(end)}`;
+    }, content);
 }
 
 function renderTreeLinkedText(text: string, treeLinks: TreeLink[], onTreeLinkClick?: (nodeId: string) => void) {
@@ -98,6 +129,8 @@ function renderTreeLinkedChildren(
 }
 
 export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: MarkdownContentProps) {
+  const contentWithRangeLinks = applyRangeTreeLinks(content, treeLinks);
+
   return (
     <div className="space-y-3 break-words">
       <ReactMarkdown
@@ -145,6 +178,16 @@ export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: Ma
             );
           },
           a({ children, href }) {
+            const treeLinkId = getTreeLinkIdFromHref(href);
+            const treeLink = treeLinkId ? treeLinks.find((link) => link.id === treeLinkId) : null;
+            if (treeLink) {
+              return (
+                <TreeLinkPreview link={treeLink} onTreeLinkClick={onTreeLinkClick}>
+                  {children}
+                </TreeLinkPreview>
+              );
+            }
+
             return (
               <a className="tree-link" href={href} target="_blank" rel="noreferrer">
                 {children}
@@ -198,7 +241,7 @@ export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: Ma
           },
         }}
       >
-        {content}
+        {contentWithRangeLinks}
       </ReactMarkdown>
     </div>
   );
