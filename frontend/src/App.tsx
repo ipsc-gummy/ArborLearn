@@ -316,7 +316,6 @@ export default function App() {
   ) : route.kind === "dashboard" ? (
     <NotebookDashboard
       onOpenNotebook={openNotebook}
-      onOpenOnboarding={() => setOnboardingChoiceOpen(true)}
       {...menuProps}
     />
   ) : (
