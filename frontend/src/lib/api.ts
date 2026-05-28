@@ -238,7 +238,7 @@ export function createBackfillDraft(payload: {
   userInstruction?: string;
   modelName?: DeepSeekModelId;
   thinkingMode?: DeepSeekThinkingModeId;
-}) {
+}, options?: { signal?: AbortSignal }) {
   return request<{
     draft: {
       sourceChildNodeId: string;
@@ -257,6 +257,7 @@ export function createBackfillDraft(payload: {
   }>("/api/backfill/draft", {
     method: "POST",
     body: JSON.stringify(payload),
+    signal: options?.signal,
   });
 }
 
@@ -265,7 +266,7 @@ export function decideBackfillRange(payload: {
   targetMessageId: string;
   editType: EditType;
   userInstruction?: string;
-}) {
+}, options?: { signal?: AbortSignal }) {
   return request<{
     decision: {
       sourceChildNodeId: string;
@@ -283,6 +284,7 @@ export function decideBackfillRange(payload: {
   }>("/api/backfill/range-decision", {
     method: "POST",
     body: JSON.stringify(payload),
+    signal: options?.signal,
   });
 }
 
@@ -296,7 +298,7 @@ export function reviewBackfillReplacement(payload: {
   userInstruction?: string;
   modelName?: DeepSeekModelId;
   thinkingMode?: DeepSeekThinkingModeId;
-}) {
+}, options?: { signal?: AbortSignal }) {
   return request<{
     review: {
       sourceChildNodeId: string;
@@ -311,6 +313,7 @@ export function reviewBackfillReplacement(payload: {
   }>("/api/backfill/review", {
     method: "POST",
     body: JSON.stringify(payload),
+    signal: options?.signal,
   });
 }
 
