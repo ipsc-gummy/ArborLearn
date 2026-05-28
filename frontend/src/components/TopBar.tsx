@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Share2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import type { AuthUser } from "../lib/api";
@@ -31,14 +31,6 @@ export function TopBar({ onHome, themeMode, onThemeChange, user, onLogout, onReq
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" title="导出 .tree">
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">导出</span>
-        </Button>
-        <Button variant="secondary" size="sm" title="分享学习树">
-          <Share2 className="h-4 w-4" />
-          <span className="hidden sm:inline">分享</span>
-        </Button>
         <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
         <AccountMenu
           user={user}
