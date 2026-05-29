@@ -55,6 +55,24 @@ function getTreeLinkIdFromHref(href?: string) {
   return href?.startsWith(prefix) ? decodeURIComponent(href.slice(prefix.length)) : null;
 }
 
+function transformMarkdownUrl(url: string) {
+  if (getTreeLinkIdFromHref(url)) return url;
+  const colon = url.indexOf(":");
+  const questionMark = url.indexOf("?");
+  const numberSign = url.indexOf("#");
+  const slash = url.indexOf("/");
+  if (
+    colon === -1 ||
+    (slash !== -1 && colon > slash) ||
+    (questionMark !== -1 && colon > questionMark) ||
+    (numberSign !== -1 && colon > numberSign) ||
+    /^(https?|ircs?|mailto|xmpp)$/i.test(url.slice(0, colon))
+  ) {
+    return url;
+  }
+  return "";
+}
+
 function applyRangeTreeLinks(content: string, treeLinks: TreeLink[]) {
   return treeLinks
     .filter((link) =>
@@ -135,6 +153,7 @@ export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: Ma
     <div className="space-y-3 break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={transformMarkdownUrl}
         components={{
           p({ children }) {
             return (
