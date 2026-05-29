@@ -34,6 +34,7 @@ import type { KnowledgeNode } from "../types/arborlearn";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
+  onOpenOnboarding?: () => void;
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
   user: AuthUser | null;
@@ -135,6 +136,7 @@ function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId:
 // 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 ArborLearn 笔记本。
 export function NotebookDashboard({
   onOpenNotebook,
+  onOpenOnboarding,
   themeMode,
   onThemeChange,
   user,
@@ -443,6 +445,14 @@ export function NotebookDashboard({
                   <List className="h-4 w-4" />
                 </button>
               </div>
+              <Button
+                variant="outline"
+                onClick={onOpenOnboarding}
+                className="bg-background/70"
+              >
+                <Sparkles className="h-4 w-4" />
+                调试新手教程
+              </Button>
               <Button
                 variant="primary"
                 onClick={handleCreateNotebook}
