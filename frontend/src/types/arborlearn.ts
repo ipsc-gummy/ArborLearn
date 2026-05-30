@@ -21,6 +21,13 @@ export interface ChatMessage {
   selectedText?: string;
   patches?: ConversationPatch[];
   stale?: boolean;
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    fileSize: number;
+    extractionStatus: "pending" | "ready" | "failed";
+    errorMessage?: string | null;
+  }>;
 }
 
 export interface KnowledgeNode {
@@ -99,4 +106,19 @@ export interface BackfillSourceMetadata {
   anchorSuffix: string;
   beforeContext: string;
   afterContext: string;
+}
+
+export interface UploadedFile {
+  id: string;
+  nodeId: string;
+  notebookId: string;
+  filename: string;
+  originalFilename: string;
+  mimeType?: string | null;
+  fileSize: number;
+  extractionStatus: "pending" | "ready" | "failed";
+  extractedChars: number;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
