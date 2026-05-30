@@ -1,6 +1,0 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-lancedb==0.6.0
-sentence-transformers==3.0.1
-numpy>=1.26.0,<2.0.0
-python-dotenv==1.0.1
