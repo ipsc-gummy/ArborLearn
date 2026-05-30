@@ -1,10 +1,12 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import {
   Check,
   ChevronDown,
   ChevronRight,
   CircleHelp,
+  FileText,
   Globe,
   Lightbulb,
   MessageSquareText,
@@ -12,6 +14,7 @@ import {
   Send,
   SlidersHorizontal,
   Square,
+  Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { useArborLearnStore } from "../store/arborlearnStore";
@@ -47,12 +50,20 @@ const branchQuickPrompts = [
     icon: CircleHelp,
   },
 ];
+const EMPTY_FILES: { id: string; filename: string; fileSize: number; extractionStatus: "pending" | "ready" | "failed"; errorMessage?: string | null }[] = [];
 
 export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
   const [value, setValue] = useState("");
+  const [lastSubmittedAt, setLastSubmittedAt] = useState<string>("");
   const node = useArborLearnStore((state) => state.nodes[nodeId]);
   const appendMessage = useArborLearnStore((state) => state.appendMessage);
   const stopMessage = useArborLearnStore((state) => state.stopMessage);
+  const files = useArborLearnStore((state) => state.filesByNode[nodeId] ?? EMPTY_FILES);
+  const loadNodeFiles = useArborLearnStore((state) => state.loadNodeFiles);
+  const uploadFile = useArborLearnStore((state) => state.uploadFile);
+  const deleteFile = useArborLearnStore((state) => state.deleteFile);
+  const isUploading = useArborLearnStore((state) => state.fileUploadStatusByNode[nodeId] === "uploading");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
   const scopeId = getModelScopeId(scope);
   const selectedModel = useArborLearnStore((state) => state.getModelConfig(scope).model);
@@ -65,10 +76,31 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const isStreaming = chatRunStatus === "streaming";
   const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;
   const showBranchQuickPrompts = Boolean(node?.selectedText && !hasUserQuestion && !value.trim() && !isThinking && !isStreaming);
+  const visibleFiles = files.filter((file) => !lastSubmittedAt || file.createdAt > lastSubmittedAt);
+
+  useEffect(() => {
+    void loadNodeFiles(nodeId);
+  }, [loadNodeFiles, nodeId]);
+
+  useEffect(() => {
+    setLastSubmittedAt("");
+  }, [nodeId]);
 
   const send = (content: string) => {
     if (!content.trim()) return;
-    appendMessage(nodeId, content.trim(), scope);
+    appendMessage(
+      nodeId,
+      content.trim(),
+      scope,
+      visibleFiles.map((file) => ({
+        id: file.id,
+        filename: file.filename,
+        fileSize: file.fileSize,
+        extractionStatus: file.extractionStatus,
+        errorMessage: file.errorMessage,
+      })),
+    );
+    setLastSubmittedAt(new Date().toISOString());
     setValue("");
   };
 
@@ -81,9 +113,23 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
     send(value);
   };
 
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    event.target.value = "";
+    if (!selectedFile || isUploading) return;
+    void uploadFile(nodeId, selectedFile);
+  };
+
   return (
     <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
       <div className="tl-composer-shell tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
         {showBranchQuickPrompts && (
           <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
             {branchQuickPrompts.map((prompt) => {
@@ -101,6 +147,31 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
                 </button>
               );
             })}
+          </div>
+        )}
+        {visibleFiles.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
+            {visibleFiles.map((file) => (
+              <span
+                key={file.id}
+                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2 text-xs text-muted-foreground"
+                title={file.errorMessage ?? file.filename}
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="max-w-40 truncate">{file.filename}</span>
+                <span className="text-muted-foreground/70">{formatFileSize(file.fileSize)}</span>
+                {file.extractionStatus === "failed" && <span className="text-destructive">failed</span>}
+                <button
+                  type="button"
+                  className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground"
+                  title="删除附件"
+                  aria-label={`删除附件 ${file.filename}`}
+                  onClick={() => void deleteFile(file.id, nodeId)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
           </div>
         )}
         <textarea
@@ -140,6 +211,8 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
               data-tour-composer-tool="upload"
               data-tour-composer-tool-node-id={nodeId}
               title="上传文件"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
               className="h-9 w-9 border-transparent text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0 hover:border-transparent hover:bg-foreground/5 hover:text-foreground"
             >
               <Paperclip className="h-4 w-4" />
@@ -168,6 +241,12 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       </div>
     </div>
   );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 const thinkingModeCopy = {

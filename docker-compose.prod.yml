@@ -10,10 +10,14 @@ services:
       - MODEL_BASE_URL=${MODEL_BASE_URL:-https://api.deepseek.com}
       - MODEL_NAME=${MODEL_NAME:-deepseek-v4-pro}
       - AUTH_SECRET=${AUTH_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://8.163.11.131}
       - DATABASE_PATH=/app/data/arborlearn.sqlite3
       - VECTOR_DB_PATH=/app/data/lancedb
       - ENABLE_RAG=true
       - VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - ENABLE_OCR=${ENABLE_OCR:-true}
+      - OCR_LANGUAGES=${OCR_LANGUAGES:-chi_sim+eng}
+      - TESSERACT_CMD=${TESSERACT_CMD:-}
       - HF_ENDPOINT=https://hf-mirror.com
     volumes:
       - /var/lib/arborlearn/data:/app/data

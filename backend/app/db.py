@@ -145,6 +145,29 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_web_sources_user_node_created
               ON web_sources(user_id, node_id, created_at DESC);
 
+            CREATE TABLE IF NOT EXISTS uploaded_files (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              notebook_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              original_filename TEXT NOT NULL,
+              mime_type TEXT,
+              file_size INTEGER NOT NULL,
+              storage_path TEXT NOT NULL,
+              extracted_text TEXT NOT NULL DEFAULT '',
+              extraction_status TEXT NOT NULL CHECK(extraction_status IN ('pending', 'ready', 'failed')),
+              error_message TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+              FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_uploaded_files_user_node_created
+              ON uploaded_files(user_id, node_id, created_at DESC);
+
             CREATE TABLE IF NOT EXISTS long_tasks (
               id TEXT PRIMARY KEY,
               user_id TEXT NOT NULL,
@@ -1140,6 +1163,122 @@ def list_web_sources(
     return [row_to_web_source(row, include_content=include_content) for row in rows]
 
 
+def row_to_uploaded_file(row: sqlite3.Row, include_text: bool = False) -> dict:
+    uploaded_file = {
+        "id": row["id"],
+        "userId": row["user_id"],
+        "notebookId": row["notebook_id"],
+        "nodeId": row["node_id"],
+        "filename": row["filename"],
+        "originalFilename": row["original_filename"],
+        "mimeType": row["mime_type"],
+        "fileSize": row["file_size"],
+        "extractionStatus": row["extraction_status"],
+        "extractedChars": len(row["extracted_text"] or ""),
+        "errorMessage": row["error_message"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+    if include_text:
+        uploaded_file["extractedText"] = row["extracted_text"]
+        uploaded_file["storagePath"] = row["storage_path"]
+    return uploaded_file
+
+
+def add_uploaded_file(
+    conn: sqlite3.Connection,
+    *,
+    file_id: str | None = None,
+    user_id: str,
+    notebook_id: str,
+    node_id: str,
+    filename: str,
+    original_filename: str,
+    mime_type: str | None,
+    file_size: int,
+    storage_path: str,
+    extracted_text: str,
+    extraction_status: str,
+    error_message: str | None = None,
+) -> dict:
+    file_id = file_id or uid("file")
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO uploaded_files(
+          id, user_id, notebook_id, node_id, filename, original_filename, mime_type,
+          file_size, storage_path, extracted_text, extraction_status, error_message,
+          created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            file_id,
+            user_id,
+            notebook_id,
+            node_id,
+            filename,
+            original_filename,
+            mime_type,
+            file_size,
+            storage_path,
+            extracted_text,
+            extraction_status,
+            error_message,
+            ts,
+            ts,
+        ),
+    )
+    touch_node(conn, node_id, ts)
+    row = conn.execute("SELECT * FROM uploaded_files WHERE id = ?", (file_id,)).fetchone()
+    return row_to_uploaded_file(row, include_text=True)
+
+
+def get_uploaded_file_for_user(conn: sqlite3.Connection, file_id: str, user_id: str) -> dict | None:
+    row = conn.execute(
+        """
+        SELECT uploaded_files.*
+        FROM uploaded_files
+        JOIN nodes ON nodes.id = uploaded_files.node_id
+        JOIN notebooks ON notebooks.id = nodes.notebook_id
+        WHERE uploaded_files.id = ? AND notebooks.owner_user_id = ?
+        """,
+        (file_id, user_id),
+    ).fetchone()
+    return row_to_uploaded_file(row, include_text=True) if row else None
+
+
+def list_uploaded_files(
+    conn: sqlite3.Connection,
+    user_id: str,
+    node_id: str,
+    limit: int = 20,
+    include_text: bool = False,
+) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT uploaded_files.*
+        FROM uploaded_files
+        JOIN nodes ON nodes.id = uploaded_files.node_id
+        JOIN notebooks ON notebooks.id = nodes.notebook_id
+        WHERE notebooks.owner_user_id = ? AND uploaded_files.node_id = ?
+        ORDER BY uploaded_files.created_at DESC
+        LIMIT ?
+        """,
+        (user_id, node_id, limit),
+    ).fetchall()
+    return [row_to_uploaded_file(row, include_text=include_text) for row in rows]
+
+
+def delete_uploaded_file(conn: sqlite3.Connection, file_id: str, user_id: str) -> dict | None:
+    uploaded_file = get_uploaded_file_for_user(conn, file_id, user_id)
+    if not uploaded_file:
+        return None
+    conn.execute("DELETE FROM uploaded_files WHERE id = ?", (file_id,))
+    touch_node(conn, uploaded_file["nodeId"])
+    return uploaded_file
+
+
 def row_to_long_task(row: sqlite3.Row, include_final_answer: bool = True) -> dict:
     task = {
         "id": row["id"],
@@ -1699,10 +1838,20 @@ def get_notebook_state(conn: sqlite3.Connection, user_id: str, notebook_id: str 
     notebook_query += " ORDER BY pinned DESC, updated_at DESC"
     notebooks = conn.execute(notebook_query, tuple(notebook_params)).fetchall()
 
+    # Frontend expects rootIds to be node ids (not notebook ids).
+    # Some historical data can have notebook.id != root node id, so map explicitly.
+    root_by_notebook: dict[str, str] = {}
+    for row in rows:
+        if row["parent_id"] is None:
+            root_by_notebook[row["notebook_id"]] = row["id"]
+
+    root_ids = [root_by_notebook[row["id"]] for row in notebooks if row["id"] in root_by_notebook]
+    pinned_root_ids = [root_by_notebook[row["id"]] for row in notebooks if row["pinned"] and row["id"] in root_by_notebook]
+
     return {
         "nodes": nodes,
-        "rootIds": [row["id"] for row in notebooks],
-        "pinnedRootIds": [row["id"] for row in notebooks if row["pinned"]],
+        "rootIds": root_ids,
+        "pinnedRootIds": pinned_root_ids,
     }
 
 

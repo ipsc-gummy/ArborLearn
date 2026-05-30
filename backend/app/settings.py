@@ -39,15 +39,15 @@ def get_database_path() -> Path:
 
 
 def get_cors_origins() -> list[str]:
-    default_dev_origins = ",".join(
-        [f"http://localhost:{port}" for port in range(5173, 5180)]
-        + [f"http://127.0.0.1:{port}" for port in range(5173, 5180)]
-    )
+    default_dev_origins = [f"http://localhost:{port}" for port in range(5173, 5180)] + [
+        f"http://127.0.0.1:{port}" for port in range(5173, 5180)
+    ]
     raw = os.getenv(
         "CORS_ORIGINS",
-        default_dev_origins,
+        "",
     )
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    configured_origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return list(dict.fromkeys(configured_origins + default_dev_origins))
 
 
 def get_vector_db_path() -> Path:
@@ -60,6 +60,24 @@ def get_vector_db_path() -> Path:
     return path
 
 
+def get_upload_dir() -> Path:
+    configured = os.getenv("UPLOAD_DIR", "data/uploads")
+    path = Path(configured)
+    if not path.is_absolute():
+        path = BACKEND_DIR / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_max_upload_bytes() -> int:
+    raw_value = os.getenv("MAX_UPLOAD_MB", "20")
+    try:
+        megabytes = max(1, int(raw_value))
+    except ValueError:
+        megabytes = 20
+    return megabytes * 1024 * 1024
+
+
 def get_vector_embedding_model() -> str:
     """获取向量嵌入模型名称"""
     return os.getenv("VECTOR_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -68,3 +86,24 @@ def get_vector_embedding_model() -> str:
 def is_rag_enabled() -> bool:
     """检查是否启用 RAG 功能"""
     return os.getenv("ENABLE_RAG", "false").lower() == "true"
+
+
+def is_ocr_enabled() -> bool:
+    return os.getenv("ENABLE_OCR", "true").lower() == "true"
+
+
+def get_ocr_languages() -> str:
+    return os.getenv("OCR_LANGUAGES", "chi_sim+eng")
+
+
+def get_ocr_timeout_seconds() -> int:
+    raw = os.getenv("OCR_TIMEOUT_SECONDS", "12")
+    try:
+        return max(2, int(raw))
+    except ValueError:
+        return 12
+
+
+def get_tesseract_cmd() -> str | None:
+    value = os.getenv("TESSERACT_CMD", "").strip()
+    return value or None
