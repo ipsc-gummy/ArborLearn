@@ -4,11 +4,13 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,15 +33,18 @@ from .backfill import (
 from .context_builder import build_model_messages, index_node_to_vector_store
 from .db import (
     add_message,
+    add_uploaded_file,
     add_web_source,
     connect,
     create_starter_notebook,
     create_long_task,
+    delete_uploaded_file,
     descendant_ids,
     get_long_task_for_user,
     get_long_task_step_for_user,
     get_node_for_user,
     get_notebook_for_user,
+    get_uploaded_file_for_user,
     get_notebook_state,
     init_db,
     insert_model_call_log,
@@ -48,12 +53,14 @@ from .db import (
     list_messages,
     list_step_outputs,
     list_task_evidence,
+    list_uploaded_files,
     now_iso,
     touch_node,
     update_long_task_status,
     uid,
 )
 from .effective_context import content_hash, list_effective_messages
+from .file_uploads import prepare_uploaded_file
 from .long_task_context import build_step_context
 from .long_task_runner import LongTaskRunner
 from .long_task_schemas import LongTaskCreateRequest
@@ -321,6 +328,26 @@ def step_output_public_view(output: dict) -> dict:
         "unresolved_questions": output["unresolved_questions"],
         "created_at": output["created_at"],
     }
+
+
+def uploaded_file_public_view(uploaded_file: dict, include_text: bool = False) -> dict:
+    payload = {
+        "id": uploaded_file["id"],
+        "nodeId": uploaded_file["nodeId"],
+        "notebookId": uploaded_file["notebookId"],
+        "filename": uploaded_file["filename"],
+        "originalFilename": uploaded_file["originalFilename"],
+        "mimeType": uploaded_file["mimeType"],
+        "fileSize": uploaded_file["fileSize"],
+        "extractionStatus": uploaded_file["extractionStatus"],
+        "extractedChars": uploaded_file["extractedChars"],
+        "errorMessage": uploaded_file["errorMessage"],
+        "createdAt": uploaded_file["createdAt"],
+        "updatedAt": uploaded_file["updatedAt"],
+    }
+    if include_text:
+        payload["extractedText"] = uploaded_file.get("extractedText", "")
+    return payload
 
 
 def append_source_references(content: str, sources: list[dict]) -> str:
@@ -1085,6 +1112,35 @@ def demo_session() -> dict:
     return {"token": create_token(user["id"]), "user": serialize_user(user)}
 
 
+@app.post("/api/auth/demo/notebooks/{notebook_ref}")
+def resume_demo_notebook(notebook_ref: str) -> dict:
+    with connect() as conn:
+        user = conn.execute(
+            """
+            SELECT users.id, users.email, users.display_name, users.is_temporary
+            FROM notebooks
+            JOIN users ON users.id = notebooks.owner_user_id
+            WHERE users.is_temporary = 1
+              AND (
+                notebooks.id = ?
+                OR EXISTS (
+                  SELECT 1
+                  FROM nodes
+                  WHERE nodes.notebook_id = notebooks.id
+                    AND nodes.parent_id IS NULL
+                    AND nodes.id = ?
+                )
+              )
+            LIMIT 1
+            """,
+            (notebook_ref, notebook_ref),
+        ).fetchone()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Demo notebook not found")
+    return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
+
+
 @app.post("/api/auth/login")
 def login(payload: AuthRequest) -> dict:
     email = normalize_email(payload.email)
@@ -1133,6 +1189,59 @@ def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
         if not exists:
             raise HTTPException(status_code=404, detail="Node not found")
         return {"messages": list_messages(conn, node_id)}
+
+
+@app.post("/api/nodes/{node_id}/files", status_code=201)
+async def upload_node_file(node_id: str, file: UploadFile = File(...), user: dict = Depends(require_user)) -> dict:
+    file_id = uid("file")
+    with connect() as conn:
+        node = get_node_for_user(conn, node_id, user["id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+    prepared = await prepare_uploaded_file(file, user_id=user["id"], file_id=file_id)
+    with connect() as conn:
+        uploaded_file = add_uploaded_file(
+            conn,
+            file_id=file_id,
+            user_id=user["id"],
+            notebook_id=node["notebook_id"],
+            node_id=node_id,
+            **prepared,
+        )
+    return {"file": uploaded_file_public_view(uploaded_file)}
+
+
+@app.get("/api/nodes/{node_id}/files")
+def node_files(node_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        if not get_node_for_user(conn, node_id, user["id"]):
+            raise HTTPException(status_code=404, detail="Node not found")
+        files = list_uploaded_files(conn, user["id"], node_id)
+        return {"files": [uploaded_file_public_view(file) for file in files]}
+
+
+@app.get("/api/files/{file_id}")
+def uploaded_file_detail(file_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        uploaded_file = get_uploaded_file_for_user(conn, file_id, user["id"])
+        if not uploaded_file:
+            raise HTTPException(status_code=404, detail="File not found")
+        return {"file": uploaded_file_public_view(uploaded_file, include_text=True)}
+
+
+@app.delete("/api/files/{file_id}")
+def remove_uploaded_file(file_id: str, user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        uploaded_file = delete_uploaded_file(conn, file_id, user["id"])
+        if not uploaded_file:
+            raise HTTPException(status_code=404, detail="File not found")
+
+    storage_path_value = uploaded_file.get("storagePath")
+    storage_path = Path(storage_path_value) if storage_path_value else None
+    if storage_path and storage_path.exists():
+        shutil.rmtree(storage_path.parent, ignore_errors=True)
+    return {"ok": True, "file": uploaded_file_public_view(uploaded_file)}
 
 
 @app.get("/api/messages/{message_id}/patches")
@@ -1554,7 +1663,10 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
         
         # 索引对话内容到向量存储（RAG）
         if payload.ragEnabled:
-            index_node_to_vector_store(conn, payload.nodeId)
+            try:
+                index_node_to_vector_store(conn, payload.nodeId)
+            except Exception as exc:
+                print(f"[RAG Index] Non-blocking index error: {exc}")
         
         return {
             "messageId": assistant_message["id"],
@@ -1782,7 +1894,10 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
                 # 索引对话内容到向量存储（RAG）
                 if payload.ragEnabled:
-                    index_node_to_vector_store(conn, payload.nodeId)
+                    try:
+                        index_node_to_vector_store(conn, payload.nodeId)
+                    except Exception as exc:
+                        print(f"[RAG Index] Non-blocking index error: {exc}")
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],

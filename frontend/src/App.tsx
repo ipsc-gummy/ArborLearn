@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { KnowledgeTree } from "./components/KnowledgeTree";
@@ -108,21 +108,30 @@ function getNotebookRootId(nodes: ReturnType<typeof useArborLearnStore.getState>
   return current?.id ?? nodeId;
 }
 
-function getStoredActiveNodeId() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(LAST_LOCATION_KEY) || "{}") as {
-      screen?: string;
-      activeNodeId?: string;
-    };
-    return saved.screen === "workspace" ? saved.activeNodeId : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function getNodeInNotebook(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], notebookId: string, nodeId?: string) {
   if (!nodeId || !nodes[nodeId]) return null;
   return getNotebookRootId(nodes, nodeId) === notebookId ? nodeId : null;
+}
+
+function WorkspaceUnavailable({ onHome }: { onHome: () => void }) {
+  return (
+    <div className="tl-app-bg flex min-h-screen items-center justify-center px-4 text-foreground">
+      <section className="tl-panel flex w-full max-w-md flex-col gap-4 rounded-[1.25rem] border p-6 text-center">
+        <div>
+          <h1 className="text-lg font-semibold">无法打开这个笔记本</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            这个笔记本不在当前登录账号下。请切换到拥有它的账号后再打开此链接。
+          </p>
+        </div>
+        <button
+          className="tl-hover inline-flex h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
+          onClick={onHome}
+        >
+          返回笔记本
+        </button>
+      </section>
+    </div>
+  );
 }
 
 export default function App() {
@@ -141,6 +150,7 @@ export default function App() {
   const login = useArborLearnStore((state) => state.login);
   const register = useArborLearnStore((state) => state.register);
   const createDemoSession = useArborLearnStore((state) => state.createDemoSession);
+  const resumeDemoNotebook = useArborLearnStore((state) => state.resumeDemoNotebook);
   const logout = useArborLearnStore((state) => state.logout);
   const route = parseRoute(location.pathname);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
@@ -149,6 +159,8 @@ export default function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
   const [onboardingChoiceOpen, setOnboardingChoiceOpen] = useState(false);
   const [newlyRegisteredUserId, setNewlyRegisteredUserId] = useState<string | null>(null);
+  const [missingNotebookRef, setMissingNotebookRef] = useState<string | null>(null);
+  const attemptedDemoResumeRef = useRef<string | null>(null);
 
   useEffect(() => {
     void initializeAuth();
@@ -172,45 +184,62 @@ export default function App() {
       const nextRoute: AppRoute = { kind: "dashboard" };
       navigate(routeToPath(nextRoute), { replace: true });
     }
+    if ((authStatus === "anonymous" || authStatus === "error") && route.kind === "workspace") {
+      void resumeDemoNotebook(route.notebookId).catch(() => {
+        const nextRoute: AppRoute = { kind: "landing" };
+        navigate(routeToPath(nextRoute), { replace: true });
+      });
+      return;
+    }
     if ((authStatus === "anonymous" || authStatus === "error") && route.kind !== "landing") {
       const nextRoute: AppRoute = { kind: "landing" };
       navigate(routeToPath(nextRoute), { replace: true });
     }
-  }, [authStatus, navigate, route.kind]);
+  }, [authStatus, navigate, resumeDemoNotebook, route]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace") return;
 
-    const activeNotebookId = nodes[activeNodeId] ? getNotebookRootId(nodes, activeNodeId) : null;
-    const notebookId = resolveNotebookRouteRef(nodes, route.notebookId) ?? activeNotebookId;
+    const notebookId = resolveNotebookRouteRef(nodes, route.notebookId);
     const notebookRoot = notebookId ? nodes[notebookId] : null;
     if (!notebookId || !notebookRoot || notebookRoot.parentId !== null) {
-      const nextRoute: AppRoute = { kind: "dashboard" };
-      navigate(routeToPath(nextRoute), { replace: true });
+      if (attemptedDemoResumeRef.current !== route.notebookId) {
+        attemptedDemoResumeRef.current = route.notebookId;
+        void resumeDemoNotebook(route.notebookId).catch(() => {
+          setMissingNotebookRef(route.notebookId);
+        });
+        return;
+      }
+      setMissingNotebookRef(route.notebookId);
       return;
     }
+    attemptedDemoResumeRef.current = null;
+    setMissingNotebookRef(null);
 
-    const canonicalPath = routeToPath({ kind: "workspace", notebookId: getNotebookSlug(notebookRoot) });
+    const canonicalPath = routeToPath({ kind: "workspace", notebookId });
     if (canonicalPath !== location.pathname) {
-      const nextRoute: AppRoute = { kind: "workspace", notebookId: getNotebookSlug(notebookRoot) };
+      const nextRoute: AppRoute = { kind: "workspace", notebookId };
       navigate(routeToPath(nextRoute), { replace: true });
       return;
     }
 
-    const targetNodeId =
-      getNodeInNotebook(nodes, notebookId, activeNodeId) ??
-      getNodeInNotebook(nodes, notebookId, getStoredActiveNodeId()) ??
-      notebookId;
+    const targetNodeId = getNodeInNotebook(nodes, notebookId, activeNodeId) ?? notebookId;
 
     if (activeNodeId !== targetNodeId) {
       setActiveNode(targetNodeId);
     }
-  }, [activeNodeId, apiStatus, authStatus, location.pathname, navigate, nodes, route, setActiveNode]);
+  }, [activeNodeId, apiStatus, authStatus, location.pathname, navigate, nodes, resumeDemoNotebook, route, setActiveNode]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !user) return;
     setThemeModeState(getStoredThemeMode(user.id));
   }, [authStatus, user]);
+
+  useEffect(() => {
+    if (route.kind !== "workspace" || route.notebookId === missingNotebookRef) return;
+    attemptedDemoResumeRef.current = null;
+    setMissingNotebookRef(null);
+  }, [missingNotebookRef, route]);
 
   useEffect(() => {
     if (
@@ -271,8 +300,7 @@ export default function App() {
   const openNotebook = (nodeId: string) => {
     setActiveNode(nodeId);
     const rootId = getNotebookRootId(nodes, nodeId);
-    const rootNode = nodes[rootId];
-    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootNode ? getNotebookSlug(rootNode) : rootId };
+    const nextRoute: AppRoute = { kind: "workspace", notebookId: rootId };
     navigate(routeToPath(nextRoute));
     localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ screen: "workspace", activeNodeId: nodeId }));
   };
@@ -318,6 +346,8 @@ export default function App() {
       onOpenNotebook={openNotebook}
       {...menuProps}
     />
+  ) : missingNotebookRef === route.notebookId ? (
+    <WorkspaceUnavailable onHome={goHome} />
   ) : (
     <div className="tl-app-bg tl-workspace-page relative flex h-screen min-h-0 flex-col overflow-hidden">
       <main className="relative z-10 min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-2 md:px-4">

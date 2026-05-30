@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # Windows 兼容：禁用符号链接（Windows 不支持 symlink）
 os.environ.setdefault("HF_HUB_ENABLE_SYMLINKS", "0")
+os.environ.setdefault(
+    "LANCEDB_CONFIG_DIR",
+    str((Path(__file__).resolve().parents[1] / "data" / "lancedb-config")),
+)
 
 import lancedb
 from lancedb.embeddings import EmbeddingFunctionRegistry

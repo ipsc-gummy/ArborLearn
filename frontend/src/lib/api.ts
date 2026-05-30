@@ -1,7 +1,9 @@
-import type { ChatMessage, ConversationPatch, EditType, KnowledgeNode } from "../types/arborlearn";
+import type { ChatMessage, ConversationPatch, EditType, KnowledgeNode, UploadedFile } from "../types/arborlearn";
 import type { DeepSeekModelId, DeepSeekThinkingModeId } from "./models";
 
-const DEFAULT_API_BASE_URL = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? "http://127.0.0.1:8000"
+  : (typeof window !== "undefined" ? window.location.origin : "http://8.163.11.131");
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const TOKEN_KEY = "arborlearn.authToken";
 const SESSION_TOKEN_KEY = "arborlearn.sessionAuthToken";
@@ -151,7 +153,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getAuthToken() {
-  return sessionStorage.getItem(SESSION_TOKEN_KEY) ?? localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(SESSION_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string, options?: { persist?: boolean }) {
@@ -185,6 +187,13 @@ export function login(payload: { email: string; password: string }) {
 
 export function createDemoSession() {
   return request<AuthResponse>("/api/auth/demo", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function resumeDemoNotebook(notebookRef: string) {
+  return request<AuthResponse>(`/api/auth/demo/notebooks/${encodeURIComponent(notebookRef)}`, {
     method: "POST",
     body: JSON.stringify({}),
   });
@@ -276,6 +285,42 @@ export function patchBackendNode(
 
 export function deleteBackendNode(nodeId: string) {
   return request<{ ok: true }>(`/api/nodes/${nodeId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function uploadNodeFile(nodeId: string, file: File) {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/nodes/${nodeId}/files`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? detail);
+    } catch {
+      // Keep the HTTP status text when the backend does not return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<{ file: UploadedFile }>;
+}
+
+export function fetchNodeFiles(nodeId: string) {
+  return request<{ files: UploadedFile[] }>(`/api/nodes/${nodeId}/files`);
+}
+
+export function deleteUploadedFile(fileId: string) {
+  return request<{ ok: true; file: UploadedFile }>(`/api/files/${fileId}`, {
     method: "DELETE",
   });
 }

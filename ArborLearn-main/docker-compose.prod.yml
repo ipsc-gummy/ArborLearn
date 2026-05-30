@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-https://api.deepseek.com}
+      - MODEL_NAME=${MODEL_NAME:-deepseek-v4-pro}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - DATABASE_PATH=/app/data/arborlearn.sqlite3
+      - VECTOR_DB_PATH=/app/data/lancedb
+      - ENABLE_RAG=true
+      - VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
+      - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      - /var/lib/arborlearn/data:/app/data
+      - /var/lib/arborlearn/logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html
+    depends_on:
+      - backend
+    restart: unless-stopped

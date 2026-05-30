@@ -313,6 +313,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       message.content === "正在联网检索..." ||
       message.content === "正在重新生成...");
   const thinkingLabel = message.content === "正在联网检索..." ? "正在联网检索" : "正在思考";
+  const showAttachmentChips = message.role === "user" && (message.attachments?.length ?? 0) > 0;
   const [copied, setCopied] = useState(false);
   const [manualCopyHint, setManualCopyHint] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -607,6 +608,19 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
           <div className="mb-3 rounded-lg border border-dashed border-border bg-muted/45 px-3 py-2 text-xs leading-5 text-muted-foreground">
             <p className="mb-1 font-medium text-foreground">原文</p>
             <p className="whitespace-pre-wrap">{message.originalContent}</p>
+          </div>
+        )}
+        {showAttachmentChips && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {(message.attachments ?? []).map((file) => (
+              <span
+                key={file.id}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2 text-[11px] text-muted-foreground"
+                title={file.errorMessage ?? file.filename}
+              >
+                <span className="max-w-36 truncate">{file.filename}</span>
+              </span>
+            ))}
           </div>
         )}
         <div ref={contentRef}>

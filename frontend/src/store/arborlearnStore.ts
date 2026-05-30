@@ -5,6 +5,8 @@ import {
   createBackendNode,
   createDemoSession as createDemoSessionRequest,
   deleteBackendNode,
+  deleteUploadedFile as deleteUploadedFileRequest,
+  fetchNodeFiles,
   fetchMe,
   fetchTreeState,
   getAuthToken,
@@ -15,10 +17,12 @@ import {
   postChatStream,
   postStoppedChat,
   register as registerRequest,
+  resumeDemoNotebook as resumeDemoNotebookRequest,
   setAuthToken,
   type AuthUser,
+  uploadNodeFile,
 } from "../lib/api";
-import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate } from "../types/arborlearn";
+import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate, UploadedFile } from "../types/arborlearn";
 import { uid } from "../lib/utils";
 import {
   DEFAULT_DEEPSEEK_MODEL_ID,
@@ -65,6 +69,8 @@ interface ArborLearnState {
   configsByScope: Record<string, ModelConfig>;
   webSearchEnabledByNode: Record<string, boolean>;
   chatRunStatusByNode: Record<string, ChatRunStatus>;
+  filesByNode: Record<string, UploadedFile[]>;
+  fileUploadStatusByNode: Record<string, "uploading">;
   // selectionDraft 存放用户划选文本后的临时悬浮条数据。
   selectionDraft: SelectionDraft | null;
   skills: SkillTemplate[];
@@ -72,6 +78,7 @@ interface ArborLearnState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   createDemoSession: () => Promise<void>;
+  resumeDemoNotebook: (notebookRef: string) => Promise<void>;
   logout: () => void;
   hydrateFromBackend: () => Promise<void>;
   createRootConversation: () => string;
@@ -87,7 +94,21 @@ interface ArborLearnState {
   setSelectedThinkingMode: (scopeId: string, thinkingMode: DeepSeekThinkingModeId) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string, sourceMetadata?: BackfillSourceMetadata) => string;
   setWebSearchEnabled: (nodeId: string, enabled: boolean) => void;
-  appendMessage: (nodeId: string, content: string, modelScope?: ModelScope) => void;
+  loadNodeFiles: (nodeId: string) => Promise<void>;
+  uploadFile: (nodeId: string, file: File) => Promise<void>;
+  deleteFile: (fileId: string, nodeId: string) => Promise<void>;
+  appendMessage: (
+    nodeId: string,
+    content: string,
+    modelScope?: ModelScope,
+    attachments?: Array<{
+      id: string;
+      filename: string;
+      fileSize: number;
+      extractionStatus: "pending" | "ready" | "failed";
+      errorMessage?: string | null;
+    }>,
+  ) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
   stopMessage: (nodeId: string) => void;
   renameNode: (nodeId: string, title: string) => void;
@@ -273,11 +294,13 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
   configsByScope: getStoredModelConfigsByScope(),
   webSearchEnabledByNode: getStoredWebSearchEnabledByNode(),
   chatRunStatusByNode: {},
+  filesByNode: {},
+  fileUploadStatusByNode: {},
   selectionDraft: null,
   skills: seedSkills,
   initializeAuth: async () => {
     if (!getAuthToken()) {
-      set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "" });
+      set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "", filesByNode: {} });
       return;
     }
 
@@ -296,6 +319,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
         rootIds: [],
         pinnedRootIds: [],
         activeNodeId: "",
+        filesByNode: {},
       });
     }
   },
@@ -350,6 +374,23 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       throw error;
     }
   },
+  resumeDemoNotebook: async (notebookRef) => {
+    set({ authStatus: "checking", authError: null });
+    try {
+      const response = await resumeDemoNotebookRequest(notebookRef);
+      setAuthToken(response.token, { persist: false });
+      set({ user: response.user, authStatus: "authenticated", authError: null });
+      await get().hydrateFromBackend();
+    } catch (error) {
+      clearAuthToken();
+      set({
+        authStatus: "anonymous",
+        authError: error instanceof Error ? error.message : "试用笔记本会话已失效",
+        user: null,
+      });
+      throw error;
+    }
+  },
   logout: () => {
     clearAuthToken();
     activeChatControllers.forEach((controller) => controller.abort());
@@ -362,6 +403,8 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       rootIds: [],
       pinnedRootIds: [],
       chatRunStatusByNode: {},
+      filesByNode: {},
+      fileUploadStatusByNode: {},
       activeNodeId: "",
       compareNodeId: null,
       selectionDraft: null,
@@ -385,6 +428,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
         nodes: state.nodes,
         rootIds: state.rootIds,
         pinnedRootIds: state.pinnedRootIds,
+        filesByNode: {},
         activeNodeId,
         compareNodeId: null,
         selectionDraft: null,
@@ -394,7 +438,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     } catch (error) {
       if (error instanceof Error && error.message.includes("Authentication")) {
         clearAuthToken();
-        set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "" });
+        set({ authStatus: "anonymous", user: null, nodes: {}, rootIds: [], pinnedRootIds: [], activeNodeId: "", filesByNode: {} });
       }
       set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "无法连接 ArborLearn API" });
     }
@@ -498,6 +542,69 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     saveWebSearchEnabledByNode(nextSettings);
     set({ webSearchEnabledByNode: nextSettings });
   },
+  loadNodeFiles: async (nodeId) => {
+    if (get().filesByNode[nodeId]) return;
+    try {
+      const response = await fetchNodeFiles(nodeId);
+      set((state) => ({
+        apiStatus: state.apiStatus === "error" ? "ready" : state.apiStatus,
+        apiError: state.apiStatus === "error" ? null : state.apiError,
+        filesByNode: { ...state.filesByNode, [nodeId]: response.files },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "加载附件失败";
+      if (message.includes("Node not found")) {
+        set((state) => ({
+          filesByNode: { ...state.filesByNode, [nodeId]: state.filesByNode[nodeId] ?? [] },
+        }));
+        return;
+      }
+      set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "加载附件失败" });
+    }
+  },
+  uploadFile: async (nodeId, file) => {
+    set((state) => ({
+      apiError: null,
+      fileUploadStatusByNode: { ...state.fileUploadStatusByNode, [nodeId]: "uploading" },
+    }));
+    try {
+      const response = await uploadNodeFile(nodeId, file);
+      set((state) => ({
+        apiStatus: "ready",
+        apiError: null,
+        filesByNode: {
+          ...state.filesByNode,
+          [nodeId]: [response.file, ...(state.filesByNode[nodeId] ?? []).filter((item) => item.id !== response.file.id)],
+        },
+      }));
+    } catch (error) {
+      set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "上传文件失败" });
+      throw error;
+    } finally {
+      set((state) => {
+        const { [nodeId]: _removed, ...nextStatuses } = state.fileUploadStatusByNode;
+        return { fileUploadStatusByNode: nextStatuses };
+      });
+    }
+  },
+  deleteFile: async (fileId, nodeId) => {
+    const previousFiles = get().filesByNode[nodeId] ?? [];
+    set((state) => ({
+      filesByNode: {
+        ...state.filesByNode,
+        [nodeId]: previousFiles.filter((file) => file.id !== fileId),
+      },
+    }));
+    try {
+      await deleteUploadedFileRequest(fileId);
+    } catch (error) {
+      set((state) => ({
+        apiStatus: "error",
+        apiError: error instanceof Error ? error.message : "删除附件失败",
+        filesByNode: { ...state.filesByNode, [nodeId]: previousFiles },
+      }));
+    }
+  },
   createChildConversation: (sourceNodeId, selectedText, sourceMetadata) => {
     // 从选中文本创建子对话：标题用片段截断生成，selectedText 用于后续高亮和上下文构造。
     const id = uid("node");
@@ -549,7 +656,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     });
     return id;
   },
-  appendMessage: (nodeId, content, modelScope) => {
+  appendMessage: (nodeId, content, modelScope, attachments) => {
     const state = get();
     if (state.chatRunStatusByNode[nodeId]) return;
     const useWebSearch = state.webSearchEnabledByNode[nodeId] ?? false;
@@ -559,7 +666,13 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     const modelConfig = state.getModelConfig({ nodeId, notebookId, threadId: nodeId, ...modelScope });
     const modelName = modelConfig.model;
     const thinkingMode = modelConfig.thinkingMode;
-    const userMessage: ChatMessage = { id: uid("msg"), role: "user", content, createdAt: now };
+    const userMessage: ChatMessage = {
+      id: uid("msg"),
+      role: "user",
+      content,
+      createdAt: now,
+      attachments: attachments?.length ? attachments : undefined,
+    };
     const assistantMessageId = uid("msg");
     const controller = new AbortController();
     activeChatControllers.set(nodeId, controller);
@@ -991,6 +1104,8 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       const idsToDelete = new Set(collectDescendantIds(state.nodes, nodeId));
       const nodes = { ...state.nodes };
       idsToDelete.forEach((id) => delete nodes[id]);
+      const filesByNode = { ...state.filesByNode };
+      idsToDelete.forEach((id) => delete filesByNode[id]);
 
       const rootIds = state.rootIds.filter((id) => !idsToDelete.has(id));
       const pinnedRootIds = state.pinnedRootIds.filter((id) => !idsToDelete.has(id));
@@ -1009,6 +1124,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
         nodes: nextNodes,
         rootIds,
         pinnedRootIds,
+        filesByNode,
         activeNodeId: idsToDelete.has(state.activeNodeId) && fallbackId ? fallbackId : state.activeNodeId,
         compareNodeId: null,
         selectionDraft: null,
