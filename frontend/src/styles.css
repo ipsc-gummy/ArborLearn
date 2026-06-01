@@ -622,6 +622,84 @@ input {
     background: var(--tl-panel);
   }
 
+  .tl-workspace-page .tl-mini-map {
+    --tl-mini-map-link: rgba(80, 92, 112, 0.24);
+    --tl-mini-map-node-stroke: rgba(255, 255, 255, 0.72);
+    --tl-mini-map-ring: color-mix(in srgb, var(--tl-brand) 48%, rgba(42, 57, 76, 0.38));
+    flex: 0 0 auto;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 9%, transparent), transparent 7.5rem),
+      linear-gradient(180deg, color-mix(in srgb, var(--tl-panel-soft) 74%, white 8%), color-mix(in srgb, var(--tl-panel) 88%, white 6%));
+    border-color: var(--tl-border-soft);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(24, 35, 48, 0.045) inset,
+      0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+
+  :root.dark .tl-workspace-page .tl-mini-map {
+    --tl-mini-map-link: rgba(215, 222, 235, 0.22);
+    --tl-mini-map-node-stroke: rgba(12, 12, 12, 0.82);
+    --tl-mini-map-ring: rgba(255, 255, 255, 0.64);
+    border-color: rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.07), transparent 7.5rem),
+      linear-gradient(180deg, #181818, #101010);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(0, 0, 0, 0.22) inset,
+      0 1px 0 rgba(255, 255, 255, 0.045);
+  }
+
+  .tl-workspace-page .tl-mini-map svg {
+    display: block;
+    width: 100%;
+    height: 7rem;
+  }
+
+  .tl-workspace-page .tl-mini-map-links path {
+    stroke: var(--tl-mini-map-link);
+    stroke-linecap: round;
+    stroke-width: 7;
+  }
+
+  .tl-workspace-page .tl-mini-map-links path.is-active {
+    stroke: color-mix(in srgb, var(--tl-brand) 54%, rgba(114, 93, 61, 0.54));
+    stroke-width: 9;
+  }
+
+  .tl-workspace-page .tl-mini-map-point {
+    opacity: 0.86;
+    stroke: var(--tl-mini-map-node-stroke);
+    stroke-width: 5;
+    transition:
+      opacity 160ms ease,
+      r 160ms ease,
+      stroke-width 160ms ease;
+  }
+
+  .tl-workspace-page .tl-mini-map-highlight-ring {
+    fill: color-mix(in srgb, var(--tl-brand) 16%, transparent);
+    opacity: 0.95;
+    stroke: var(--tl-mini-map-ring);
+    stroke-width: 5;
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-mini-map-highlight-ring.is-active {
+    fill: color-mix(in srgb, var(--tl-brand) 22%, transparent);
+    stroke-width: 6;
+  }
+
+  .tl-workspace-page .tl-mini-map-point.is-highlighted {
+    opacity: 1;
+    stroke: var(--tl-mini-map-ring);
+    stroke-width: 7;
+  }
+
+  .tl-workspace-page .tl-mini-map-point.is-active {
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tl-brand) 36%, transparent));
+  }
+
   .tl-workspace-page .tl-child-parent-panel {
     border-right-color: var(--tl-border-soft);
   }
