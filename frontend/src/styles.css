@@ -175,6 +175,10 @@ input {
   border-bottom: 1px solid transparent;
   color: #0645ad;
   cursor: help;
+  display: inline;
+  text-align: inherit;
+  padding: 0;
+  white-space: normal;
   text-decoration: none;
   transition:
     border-color 120ms ease,
@@ -594,8 +598,13 @@ input {
     border-bottom-color: color-mix(in srgb, #1d4ed8 42%, transparent);
     color: #1d4ed8;
     cursor: pointer;
+    display: inline;
+    line-height: inherit;
+    padding: 0;
+    text-align: inherit;
     text-decoration: none;
     text-underline-offset: 0.16em;
+    white-space: normal;
   }
 
   .tl-workspace-page .tree-link:hover,
