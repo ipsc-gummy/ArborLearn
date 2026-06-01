@@ -459,6 +459,10 @@ input {
     background: transparent !important;
   }
 
+  .tl-workspace-page .tl-node-panel {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
   .tl-workspace-page .tl-node-info-panel {
     border-color: var(--tl-border-soft);
     border-radius: 0 0 0.75rem 0.75rem;
@@ -474,6 +478,7 @@ input {
 
   .tl-workspace-page .tl-message-scroll {
     padding-top: 0.75rem;
+    padding-bottom: 8.5rem;
   }
 
   .tl-workspace-page .tl-message-stack {
@@ -522,17 +527,58 @@ input {
   }
 
   .tl-workspace-page .tl-composer-dock {
-    border-top-color: var(--tl-border-soft);
-    background: color-mix(in srgb, var(--tl-app-bg) 96%, transparent) !important;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    border-top-color: transparent;
+    background: transparent !important;
     backdrop-filter: none;
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-composer-dock::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0.15rem;
+    z-index: 0;
+    width: min(56rem, calc(100% - 2rem));
+    height: 4rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--tl-panel) 72%, transparent);
+    box-shadow:
+      0 18px 42px color-mix(in srgb, #000 12%, transparent),
+      0 0 38px color-mix(in srgb, var(--tl-panel) 64%, transparent);
+    filter: blur(20px);
+    opacity: 0.72;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-composer-dock::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 0;
+    height: 3.35rem;
+    background: color-mix(in srgb, var(--tl-panel) 42%, transparent);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+    mask-image: linear-gradient(180deg, transparent 0%, black 34%, black 100%);
+    pointer-events: none;
   }
 
   .tl-workspace-page .tl-composer-shell {
+    position: relative;
+    z-index: 1;
     max-width: 54rem;
     border-radius: 1.25rem;
     background: var(--tl-input);
     border-color: var(--tl-border);
     padding: 0.55rem 0.65rem;
+    pointer-events: auto;
   }
 
   .tl-workspace-page .tl-composer-shell:focus-within {

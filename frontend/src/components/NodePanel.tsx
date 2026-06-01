@@ -80,7 +80,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   return (
     <section
-      className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent"
+      className="tl-node-panel relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent"
       data-tour-node-id={node.id}
       data-tour-node-panel={node.title}
     >
