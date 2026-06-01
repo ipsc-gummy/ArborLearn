@@ -175,6 +175,10 @@ input {
   border-bottom: 1px solid transparent;
   color: #0645ad;
   cursor: help;
+  display: inline;
+  text-align: inherit;
+  padding: 0;
+  white-space: normal;
   text-decoration: none;
   transition:
     border-color 120ms ease,
@@ -459,6 +463,10 @@ input {
     background: transparent !important;
   }
 
+  .tl-workspace-page .tl-node-panel {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
   .tl-workspace-page .tl-node-info-panel {
     border-color: var(--tl-border-soft);
     border-radius: 0 0 0.75rem 0.75rem;
@@ -474,6 +482,7 @@ input {
 
   .tl-workspace-page .tl-message-scroll {
     padding-top: 0.75rem;
+    padding-bottom: 8.5rem;
   }
 
   .tl-workspace-page .tl-message-stack {
@@ -522,17 +531,58 @@ input {
   }
 
   .tl-workspace-page .tl-composer-dock {
-    border-top-color: var(--tl-border-soft);
-    background: color-mix(in srgb, var(--tl-app-bg) 96%, transparent) !important;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    border-top-color: transparent;
+    background: transparent !important;
     backdrop-filter: none;
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-composer-dock::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0.15rem;
+    z-index: 0;
+    width: min(56rem, calc(100% - 2rem));
+    height: 4rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--tl-panel) 72%, transparent);
+    box-shadow:
+      0 18px 42px color-mix(in srgb, #000 12%, transparent),
+      0 0 38px color-mix(in srgb, var(--tl-panel) 64%, transparent);
+    filter: blur(20px);
+    opacity: 0.72;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-composer-dock::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 0;
+    height: 3.35rem;
+    background: color-mix(in srgb, var(--tl-panel) 42%, transparent);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+    mask-image: linear-gradient(180deg, transparent 0%, black 34%, black 100%);
+    pointer-events: none;
   }
 
   .tl-workspace-page .tl-composer-shell {
+    position: relative;
+    z-index: 1;
     max-width: 54rem;
     border-radius: 1.25rem;
     background: var(--tl-input);
     border-color: var(--tl-border);
     padding: 0.55rem 0.65rem;
+    pointer-events: auto;
   }
 
   .tl-workspace-page .tl-composer-shell:focus-within {
@@ -548,8 +598,13 @@ input {
     border-bottom-color: color-mix(in srgb, #1d4ed8 42%, transparent);
     color: #1d4ed8;
     cursor: pointer;
+    display: inline;
+    line-height: inherit;
+    padding: 0;
+    text-align: inherit;
     text-decoration: none;
     text-underline-offset: 0.16em;
+    white-space: normal;
   }
 
   .tl-workspace-page .tree-link:hover,
@@ -574,6 +629,84 @@ input {
 
   .tl-workspace-page .tl-sidebar-account {
     background: var(--tl-panel);
+  }
+
+  .tl-workspace-page .tl-mini-map {
+    --tl-mini-map-link: rgba(80, 92, 112, 0.24);
+    --tl-mini-map-node-stroke: rgba(255, 255, 255, 0.72);
+    --tl-mini-map-ring: color-mix(in srgb, var(--tl-brand) 48%, rgba(42, 57, 76, 0.38));
+    flex: 0 0 auto;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 9%, transparent), transparent 7.5rem),
+      linear-gradient(180deg, color-mix(in srgb, var(--tl-panel-soft) 74%, white 8%), color-mix(in srgb, var(--tl-panel) 88%, white 6%));
+    border-color: var(--tl-border-soft);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(24, 35, 48, 0.045) inset,
+      0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+
+  :root.dark .tl-workspace-page .tl-mini-map {
+    --tl-mini-map-link: rgba(215, 222, 235, 0.22);
+    --tl-mini-map-node-stroke: rgba(12, 12, 12, 0.82);
+    --tl-mini-map-ring: rgba(255, 255, 255, 0.64);
+    border-color: rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.07), transparent 7.5rem),
+      linear-gradient(180deg, #181818, #101010);
+    box-shadow:
+      0 0.75rem 1.3rem rgba(0, 0, 0, 0.22) inset,
+      0 1px 0 rgba(255, 255, 255, 0.045);
+  }
+
+  .tl-workspace-page .tl-mini-map svg {
+    display: block;
+    width: 100%;
+    height: 7rem;
+  }
+
+  .tl-workspace-page .tl-mini-map-links path {
+    stroke: var(--tl-mini-map-link);
+    stroke-linecap: round;
+    stroke-width: 7;
+  }
+
+  .tl-workspace-page .tl-mini-map-links path.is-active {
+    stroke: color-mix(in srgb, var(--tl-brand) 54%, rgba(114, 93, 61, 0.54));
+    stroke-width: 9;
+  }
+
+  .tl-workspace-page .tl-mini-map-point {
+    opacity: 0.86;
+    stroke: var(--tl-mini-map-node-stroke);
+    stroke-width: 5;
+    transition:
+      opacity 160ms ease,
+      r 160ms ease,
+      stroke-width 160ms ease;
+  }
+
+  .tl-workspace-page .tl-mini-map-highlight-ring {
+    fill: color-mix(in srgb, var(--tl-brand) 16%, transparent);
+    opacity: 0.95;
+    stroke: var(--tl-mini-map-ring);
+    stroke-width: 5;
+    pointer-events: none;
+  }
+
+  .tl-workspace-page .tl-mini-map-highlight-ring.is-active {
+    fill: color-mix(in srgb, var(--tl-brand) 22%, transparent);
+    stroke-width: 6;
+  }
+
+  .tl-workspace-page .tl-mini-map-point.is-highlighted {
+    opacity: 1;
+    stroke: var(--tl-mini-map-ring);
+    stroke-width: 7;
+  }
+
+  .tl-workspace-page .tl-mini-map-point.is-active {
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tl-brand) 36%, transparent));
   }
 
   .tl-workspace-page .tl-child-parent-panel {

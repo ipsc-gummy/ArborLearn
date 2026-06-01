@@ -29,12 +29,25 @@ function TreeLinkPreview({
   children?: ReactNode;
 }) {
   const summary = link.summary.trim() || "摘要将在子对话更新后生成。";
+  const openLink = () => onTreeLinkClick?.(link.id);
 
   return (
-    <span className="relative inline-flex">
-      <button className="tree-link peer" data-tour-tree-link={link.title} onClick={() => onTreeLinkClick?.(link.id)}>
+    <span className="relative inline">
+      <span
+        className="tree-link peer"
+        data-tour-tree-link={link.title}
+        role="button"
+        tabIndex={0}
+        onClick={openLink}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openLink();
+          }
+        }}
+      >
         {children ?? link.text}
-      </button>
+      </span>
       <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
         <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
           <GitBranch className="tl-brand h-4 w-4" />

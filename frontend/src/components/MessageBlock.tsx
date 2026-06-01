@@ -526,10 +526,21 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
 
         return [
           before,
-          <span key={`${message.id}-${link.id}`} className="relative inline-flex">
-            <button className="tree-link peer" onClick={() => setActiveNode(link.id)}>
+          <span key={`${message.id}-${link.id}`} className="relative inline">
+            <span
+              className="tree-link peer"
+              role="button"
+              tabIndex={0}
+              onClick={() => setActiveNode(link.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setActiveNode(link.id);
+                }
+              }}
+            >
               {matchText}
-            </button>
+            </span>
             {/* 使用 peer-hover 限定触发区域：只有鼠标真正悬停在超链接按钮上时才显示预览。 */}
             <span className="tl-panel pointer-events-none absolute bottom-full left-0 z-40 mb-2 hidden w-72 rounded-md border bg-card/92 p-3 text-left text-sm leading-6 shadow-panel backdrop-blur-md peer-hover:block peer-focus:block">
               <span className="mb-2 flex items-center gap-2 font-medium text-foreground">
