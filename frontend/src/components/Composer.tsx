@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  FileText,
   Globe,
   Lightbulb,
   MessageSquareText,
@@ -14,7 +13,6 @@ import {
   Send,
   SlidersHorizontal,
   Square,
-  Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { useArborLearnStore } from "../store/arborlearnStore";
@@ -25,6 +23,8 @@ import {
 } from "../lib/models";
 import { getModelScopeId, type ModelConfig, type ModelScope } from "../lib/modelScope";
 import { cn } from "../lib/utils";
+import { AttachmentPreview } from "./AttachmentPreview";
+import type { UploadedFile } from "../types/arborlearn";
 
 interface ComposerProps {
   nodeId: string;
@@ -50,7 +50,7 @@ const branchQuickPrompts = [
     icon: CircleHelp,
   },
 ];
-const EMPTY_FILES: { id: string; filename: string; fileSize: number; extractionStatus: "pending" | "ready" | "failed"; errorMessage?: string | null }[] = [];
+const EMPTY_FILES: UploadedFile[] = [];
 const UPLOAD_ACCEPT =
   ".txt,.md,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.bmp,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*";
 const CLIPBOARD_IMAGE_EXTENSIONS: Record<string, string> = {
@@ -84,7 +84,9 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const isStreaming = chatRunStatus === "streaming";
   const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;
   const showBranchQuickPrompts = Boolean(node?.selectedText && !hasUserQuestion && !value.trim() && !isThinking && !isStreaming);
-  const visibleFiles = files.filter((file) => !lastSubmittedAt || file.createdAt > lastSubmittedAt);
+  const attachedFileIds = new Set(node?.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []) ?? []);
+  const visibleFiles = files.filter((file) => !attachedFileIds.has(file.id) && (!lastSubmittedAt || file.createdAt > lastSubmittedAt));
+  const hasPendingFiles = files.some((file) => file.extractionStatus === "pending");
   const [isDragActive, setIsDragActive] = useState(false);
   const dragDepthRef = useRef(0);
 
@@ -96,6 +98,14 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
     setLastSubmittedAt("");
   }, [nodeId]);
 
+  useEffect(() => {
+    if (!hasPendingFiles) return;
+    const intervalId = window.setInterval(() => {
+      void loadNodeFiles(nodeId, { force: true });
+    }, 1500);
+    return () => window.clearInterval(intervalId);
+  }, [hasPendingFiles, loadNodeFiles, nodeId]);
+
   const send = (content: string) => {
     if (!content.trim()) return;
     appendMessage(
@@ -105,9 +115,11 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       visibleFiles.map((file) => ({
         id: file.id,
         filename: file.filename,
+        mimeType: file.mimeType,
         fileSize: file.fileSize,
         extractionStatus: file.extractionStatus,
         errorMessage: file.errorMessage,
+        localFile: file.localFile,
       })),
     );
     setLastSubmittedAt(new Date().toISOString());
@@ -224,25 +236,11 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
         {visibleFiles.length > 0 && (
           <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
             {visibleFiles.map((file) => (
-              <span
+              <AttachmentPreview
                 key={file.id}
-                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2 text-xs text-muted-foreground"
-                title={file.errorMessage ?? file.filename}
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-40 truncate">{file.filename}</span>
-                <span className="text-muted-foreground/70">{formatFileSize(file.fileSize)}</span>
-                {file.extractionStatus === "failed" && <span className="text-destructive">failed</span>}
-                <button
-                  type="button"
-                  className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground"
-                  title="删除附件"
-                  aria-label={`删除附件 ${file.filename}`}
-                  onClick={() => void deleteFile(file.id, nodeId)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </span>
+                file={file}
+                onRemove={() => void deleteFile(file.id, nodeId)}
+              />
             ))}
           </div>
         )}
@@ -313,12 +311,6 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       </div>
     </div>
   );
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 function transferHasFiles(dataTransfer: DataTransfer) {

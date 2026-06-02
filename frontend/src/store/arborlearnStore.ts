@@ -47,6 +47,62 @@ const MODEL_SELECTION_KEY = "arborlearn.modelSelection.v2";
 const THINKING_MODE_SELECTION_KEY = "arborlearn.thinkingModeSelection";
 const MODEL_CONFIGS_BY_SCOPE_KEY = "arborlearn:model-configs:v2";
 const WEB_SEARCH_ENABLED_BY_NODE_KEY = "arborlearn.webSearchEnabledByNode";
+const IMAGE_FILE_EXTENSIONS = /\.(png|jpe?g|webp|bmp)$/i;
+
+function isImageUploadFile(file: File) {
+  return file.type.startsWith("image/") || IMAGE_FILE_EXTENSIONS.test(file.name);
+}
+
+function attachLocalFiles(nextFiles: UploadedFile[], previousFiles: UploadedFile[] = []) {
+  const localFilesById = new Map(
+    previousFiles
+      .filter((file) => file.localFile)
+      .map((file) => [file.id, file.localFile as File]),
+  );
+  return nextFiles.map((file) => {
+    const localFile = localFilesById.get(file.id);
+    return localFile ? { ...file, localFile } : file;
+  });
+}
+
+function syncMessageAttachmentsWithFiles(
+  nodes: Record<string, KnowledgeNode>,
+  nodeId: string,
+  files: UploadedFile[],
+) {
+  const node = nodes[nodeId];
+  if (!node || files.length === 0) return nodes;
+
+  const filesById = new Map(files.map((file) => [file.id, file]));
+  let changed = false;
+  const messages = node.messages.map((message) => {
+    if (!message.attachments?.length) return message;
+    let messageChanged = false;
+    const attachments = message.attachments.map((attachment) => {
+      const latestFile = filesById.get(attachment.id);
+      if (!latestFile) return attachment;
+      messageChanged = true;
+      return {
+        ...attachment,
+        filename: latestFile.filename,
+        mimeType: latestFile.mimeType,
+        fileSize: latestFile.fileSize,
+        extractionStatus: latestFile.extractionStatus,
+        errorMessage: latestFile.errorMessage,
+        localFile: attachment.localFile ?? latestFile.localFile,
+      };
+    });
+    if (!messageChanged) return message;
+    changed = true;
+    return { ...message, attachments };
+  });
+
+  if (!changed) return nodes;
+  return {
+    ...nodes,
+    [nodeId]: { ...node, messages },
+  };
+}
 
 // 全局状态集中放在 Zustand：组件只订阅自己需要的字段，避免层层传 props。
 interface ArborLearnState {
@@ -94,7 +150,7 @@ interface ArborLearnState {
   setSelectedThinkingMode: (scopeId: string, thinkingMode: DeepSeekThinkingModeId) => void;
   createChildConversation: (sourceNodeId: string, selectedText: string, sourceMetadata?: BackfillSourceMetadata) => string;
   setWebSearchEnabled: (nodeId: string, enabled: boolean) => void;
-  loadNodeFiles: (nodeId: string) => Promise<void>;
+  loadNodeFiles: (nodeId: string, options?: { force?: boolean }) => Promise<void>;
   uploadFile: (nodeId: string, file: File) => Promise<void>;
   deleteFile: (fileId: string, nodeId: string) => Promise<void>;
   appendMessage: (
@@ -104,9 +160,11 @@ interface ArborLearnState {
     attachments?: Array<{
       id: string;
       filename: string;
+      mimeType?: string | null;
       fileSize: number;
       extractionStatus: "pending" | "ready" | "failed";
       errorMessage?: string | null;
+      localFile?: File;
     }>,
   ) => void;
   retryAssistantMessage: (nodeId: string, assistantMessageId: string) => void;
@@ -542,15 +600,22 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     saveWebSearchEnabledByNode(nextSettings);
     set({ webSearchEnabledByNode: nextSettings });
   },
-  loadNodeFiles: async (nodeId) => {
-    if (get().filesByNode[nodeId]) return;
+  loadNodeFiles: async (nodeId, options) => {
+    if (!options?.force && get().filesByNode[nodeId]) return;
     try {
       const response = await fetchNodeFiles(nodeId);
-      set((state) => ({
-        apiStatus: state.apiStatus === "error" ? "ready" : state.apiStatus,
-        apiError: state.apiStatus === "error" ? null : state.apiError,
-        filesByNode: { ...state.filesByNode, [nodeId]: response.files },
-      }));
+      set((state) => {
+        const nextFiles = attachLocalFiles(response.files, state.filesByNode[nodeId]);
+        return {
+          nodes: syncMessageAttachmentsWithFiles(state.nodes, nodeId, nextFiles),
+          apiStatus: state.apiStatus === "error" ? "ready" : state.apiStatus,
+          apiError: state.apiStatus === "error" ? null : state.apiError,
+          filesByNode: {
+            ...state.filesByNode,
+            [nodeId]: nextFiles,
+          },
+        };
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "加载附件失败";
       if (message.includes("Node not found")) {
@@ -563,22 +628,110 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     }
   },
   uploadFile: async (nodeId, file) => {
+    const now = new Date().toISOString();
+    const optimisticFile: UploadedFile = {
+      id: uid("local-file"),
+      nodeId,
+      notebookId: getNotebookRootId(get().nodes, nodeId),
+      filename: file.name || "upload",
+      originalFilename: file.name || "upload",
+      mimeType: file.type || null,
+      fileSize: file.size,
+      extractionStatus: "pending",
+      extractedChars: 0,
+      errorMessage: null,
+      createdAt: now,
+      updatedAt: now,
+      localFile: isImageUploadFile(file) ? file : undefined,
+    };
     set((state) => ({
       apiError: null,
       fileUploadStatusByNode: { ...state.fileUploadStatusByNode, [nodeId]: "uploading" },
+      filesByNode: {
+        ...state.filesByNode,
+        [nodeId]: [optimisticFile, ...(state.filesByNode[nodeId] ?? [])],
+      },
     }));
     try {
       const response = await uploadNodeFile(nodeId, file);
-      set((state) => ({
-        apiStatus: "ready",
-        apiError: null,
-        filesByNode: {
-          ...state.filesByNode,
-          [nodeId]: [response.file, ...(state.filesByNode[nodeId] ?? []).filter((item) => item.id !== response.file.id)],
-        },
-      }));
+      set((state) => {
+        const uploadedFile = { ...response.file, localFile: optimisticFile.localFile };
+        const node = state.nodes[nodeId];
+        const nodes = node
+          ? {
+              ...state.nodes,
+              [nodeId]: {
+                ...node,
+                messages: node.messages.map((message) =>
+                  message.attachments?.some((attachment) => attachment.id === optimisticFile.id)
+                    ? {
+                        ...message,
+                        attachments: message.attachments.map((attachment) =>
+                          attachment.id === optimisticFile.id
+                            ? {
+                                id: uploadedFile.id,
+                                filename: uploadedFile.filename,
+                                mimeType: uploadedFile.mimeType,
+                                fileSize: uploadedFile.fileSize,
+                                extractionStatus: uploadedFile.extractionStatus,
+                                errorMessage: uploadedFile.errorMessage,
+                                localFile: uploadedFile.localFile,
+                              }
+                            : attachment,
+                        ),
+                      }
+                    : message,
+                ),
+              },
+            }
+          : state.nodes;
+        return {
+          nodes,
+          apiStatus: "ready",
+          apiError: null,
+          filesByNode: {
+            ...state.filesByNode,
+            [nodeId]: [
+              uploadedFile,
+              ...(state.filesByNode[nodeId] ?? []).filter((item) => item.id !== optimisticFile.id && item.id !== response.file.id),
+            ],
+          },
+        };
+      });
     } catch (error) {
-      set({ apiStatus: "error", apiError: error instanceof Error ? error.message : "上传文件失败" });
+      const message = error instanceof Error ? error.message : "上传文件失败";
+      set((state) => {
+        const node = state.nodes[nodeId];
+        const nodes = node
+          ? {
+              ...state.nodes,
+              [nodeId]: {
+                ...node,
+                messages: node.messages.map((item) =>
+                  item.attachments?.some((attachment) => attachment.id === optimisticFile.id)
+                    ? {
+                        ...item,
+                        attachments: item.attachments.map((attachment) =>
+                          attachment.id === optimisticFile.id
+                            ? { ...attachment, extractionStatus: "failed" as const, errorMessage: message }
+                            : attachment,
+                        ),
+                      }
+                    : item,
+                ),
+              },
+            }
+          : state.nodes;
+        return {
+          nodes,
+          apiStatus: "error",
+          apiError: message,
+          filesByNode: {
+            ...state.filesByNode,
+            [nodeId]: (state.filesByNode[nodeId] ?? []).filter((item) => item.id !== optimisticFile.id),
+          },
+        };
+      });
       throw error;
     } finally {
       set((state) => {

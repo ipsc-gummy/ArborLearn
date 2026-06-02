@@ -24,9 +24,11 @@ export interface ChatMessage {
   attachments?: Array<{
     id: string;
     filename: string;
+    mimeType?: string | null;
     fileSize: number;
     extractionStatus: "pending" | "ready" | "failed";
     errorMessage?: string | null;
+    localFile?: File;
   }>;
 }
 
@@ -121,4 +123,5 @@ export interface UploadedFile {
   errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
+  localFile?: File;
 }

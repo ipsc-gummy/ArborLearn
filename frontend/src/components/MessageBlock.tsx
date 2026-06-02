@@ -1,11 +1,12 @@
 import { Check, Copy, GitBranch, RotateCcw, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { ChatMessage } from "../types/arborlearn";
+import type { ChatMessage, UploadedFile } from "../types/arborlearn";
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
 import { archiveBackfillPatch } from "../lib/api";
+import { AttachmentPreview } from "./AttachmentPreview";
 
 interface MessageBlockProps {
   nodeId: string;
@@ -21,6 +22,8 @@ interface MessageTreeLink {
   anchorRangeStart?: number;
   anchorRangeEnd?: number;
 }
+
+const EMPTY_NODE_FILES: UploadedFile[] = [];
 
 async function sha256(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -298,6 +301,7 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const retryAssistantMessage = useArborLearnStore((state) => state.retryAssistantMessage);
   const hydrateFromBackend = useArborLearnStore((state) => state.hydrateFromBackend);
   const isNodeRunning = Boolean(useArborLearnStore((state) => state.chatRunStatusByNode[nodeId]));
+  const nodeFiles = useArborLearnStore((state) => state.filesByNode[nodeId] ?? EMPTY_NODE_FILES);
   const children = Object.values(nodes).filter((node) => node.parentId === nodeId && node.selectedText);
   const nodeMessages = nodes[nodeId]?.messages ?? [];
   const isUser = message.role === "user";
@@ -313,7 +317,11 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
       message.content === "正在联网检索..." ||
       message.content === "正在重新生成...");
   const thinkingLabel = message.content === "正在联网检索..." ? "正在联网检索" : "正在思考";
-  const showAttachmentChips = message.role === "user" && (message.attachments?.length ?? 0) > 0;
+  const attachmentFiles = (message.attachments ?? []).map((attachment) => {
+    const latestFile = nodeFiles.find((file) => file.id === attachment.id);
+    return latestFile ? { ...attachment, ...latestFile, localFile: attachment.localFile ?? latestFile.localFile } : attachment;
+  });
+  const showAttachmentChips = message.role === "user" && attachmentFiles.length > 0;
   const [copied, setCopied] = useState(false);
   const [manualCopyHint, setManualCopyHint] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -623,14 +631,8 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
         )}
         {showAttachmentChips && (
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {(message.attachments ?? []).map((file) => (
-              <span
-                key={file.id}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2 text-[11px] text-muted-foreground"
-                title={file.errorMessage ?? file.filename}
-              >
-                <span className="max-w-36 truncate">{file.filename}</span>
-              </span>
+            {attachmentFiles.map((file) => (
+              <AttachmentPreview key={file.id} file={file} variant="message" />
             ))}
           </div>
         )}

@@ -319,6 +319,28 @@ export function fetchNodeFiles(nodeId: string) {
   return request<{ files: UploadedFile[] }>(`/api/nodes/${nodeId}/files`);
 }
 
+export async function fetchUploadedFileBlob(fileId: string) {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/content`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? detail);
+    } catch {
+      // Keep the HTTP status text when the backend does not return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.blob();
+}
+
 export function deleteUploadedFile(fileId: string) {
   return request<{ ok: true; file: UploadedFile }>(`/api/files/${fileId}`, {
     method: "DELETE",
