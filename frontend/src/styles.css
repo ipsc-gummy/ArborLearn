@@ -658,8 +658,13 @@ input {
 
   .tl-workspace-page .tl-mini-map {
     --tl-mini-map-link: rgba(80, 92, 112, 0.24);
+    --tl-mini-map-node: #6f8497;
     --tl-mini-map-node-stroke: rgba(255, 255, 255, 0.72);
-    --tl-mini-map-ring: color-mix(in srgb, var(--tl-brand) 48%, rgba(42, 57, 76, 0.38));
+    --tl-mini-map-ring: rgba(86, 112, 176, 0.58);
+    --tl-mini-map-ring-active: rgba(63, 89, 157, 0.78);
+    --tl-mini-map-ring-fill: rgba(99, 124, 190, 0.12);
+    --tl-mini-map-ring-fill-active: rgba(79, 107, 178, 0.2);
+    --tl-mini-map-glow: rgba(73, 101, 177, 0.24);
     flex: 0 0 auto;
     overflow: hidden;
     background:
@@ -673,8 +678,13 @@ input {
 
   :root.dark .tl-workspace-page .tl-mini-map {
     --tl-mini-map-link: rgba(215, 222, 235, 0.22);
+    --tl-mini-map-node: #9aa8b7;
     --tl-mini-map-node-stroke: rgba(12, 12, 12, 0.82);
-    --tl-mini-map-ring: rgba(255, 255, 255, 0.64);
+    --tl-mini-map-ring: rgba(148, 178, 244, 0.68);
+    --tl-mini-map-ring-active: rgba(181, 203, 255, 0.88);
+    --tl-mini-map-ring-fill: rgba(102, 134, 220, 0.13);
+    --tl-mini-map-ring-fill-active: rgba(123, 157, 238, 0.21);
+    --tl-mini-map-glow: rgba(125, 162, 244, 0.32);
     border-color: rgba(255, 255, 255, 0.1);
     background:
       radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.07), transparent 7.5rem),
@@ -712,7 +722,7 @@ input {
   }
 
   .tl-workspace-page .tl-mini-map-highlight-ring {
-    fill: color-mix(in srgb, var(--tl-brand) 16%, transparent);
+    fill: var(--tl-mini-map-ring-fill);
     opacity: 0.95;
     stroke: var(--tl-mini-map-ring);
     stroke-width: 5;
@@ -720,7 +730,8 @@ input {
   }
 
   .tl-workspace-page .tl-mini-map-highlight-ring.is-active {
-    fill: color-mix(in srgb, var(--tl-brand) 22%, transparent);
+    fill: var(--tl-mini-map-ring-fill-active);
+    stroke: var(--tl-mini-map-ring-active);
     stroke-width: 6;
   }
 
@@ -731,7 +742,9 @@ input {
   }
 
   .tl-workspace-page .tl-mini-map-point.is-active {
-    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tl-brand) 36%, transparent));
+    filter:
+      drop-shadow(0 0 7px var(--tl-mini-map-glow))
+      drop-shadow(0 0 14px color-mix(in srgb, var(--tl-mini-map-glow) 62%, transparent));
   }
 
   .tl-workspace-page .tl-child-parent-panel {
