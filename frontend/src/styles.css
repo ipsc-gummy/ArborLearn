@@ -2169,6 +2169,22 @@ input {
     background: color-mix(in srgb, var(--tl-brand) 10%, var(--tl-panel-solid));
   }
 
+  .tl-guide-repo-card {
+    color: hsl(var(--foreground));
+    border-color: color-mix(in srgb, var(--tl-border) 78%, transparent);
+    background: color-mix(in srgb, var(--tl-panel-solid) 48%, transparent);
+    transition:
+      border-color 160ms ease,
+      background 160ms ease,
+      transform 160ms ease;
+  }
+
+  .tl-guide-repo-card:hover {
+    border-color: color-mix(in srgb, var(--tl-brand) 44%, var(--tl-border));
+    background: color-mix(in srgb, var(--tl-brand) 10%, var(--tl-panel-solid));
+    transform: translateY(-1px);
+  }
+
   .tl-guide-prose {
     max-width: 58rem;
     color: hsl(var(--muted-foreground));
@@ -3747,6 +3763,25 @@ input {
 }
 
 @media (max-width: 640px) {
+  .tl-guide-repo-card {
+    gap: 0.375rem;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .tl-guide-repo-card > svg {
+    height: 1rem;
+    width: 1rem;
+  }
+
+  .tl-guide-repo-name {
+    font-size: 0.68rem;
+  }
+
+  .tl-guide-repo-stats {
+    gap: 0.375rem;
+    font-size: 0.58rem;
+  }
+
   .tl-landing-title {
     font-size: 2.75rem;
   }
