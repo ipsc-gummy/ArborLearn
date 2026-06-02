@@ -1,10 +1,7 @@
 import { GitBranch } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 import type { ComponentProps, ReactNode } from "react";
-import "katex/dist/katex.min.css";
 
 interface TreeLink {
   id: string;
@@ -107,18 +104,6 @@ function applyRangeTreeLinks(content: string, treeLinks: TreeLink[]) {
     }, content);
 }
 
-function normalizeMathDelimiters(content: string) {
-  return content
-    .split(/(```[\s\S]*?```|`[^`]*`)/g)
-    .map((part) => {
-      if (part.startsWith("```") || part.startsWith("`")) return part;
-      return part
-        .replace(/\\\[([\s\S]*?)\\\]/g, (_match, formula: string) => `$$${formula}$$`)
-        .replace(/\\\(([\s\S]*?)\\\)/g, (_match, formula: string) => `$${formula}$`);
-    })
-    .join("");
-}
-
 function renderTreeLinkedText(text: string, treeLinks: TreeLink[], onTreeLinkClick?: (nodeId: string) => void) {
   const nodes: ReactNode[] = [];
   let rest = text;
@@ -175,13 +160,12 @@ function renderTreeLinkedChildren(
 }
 
 export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: MarkdownContentProps) {
-  const contentWithRangeLinks = normalizeMathDelimiters(applyRangeTreeLinks(content, treeLinks));
+  const contentWithRangeLinks = applyRangeTreeLinks(content, treeLinks);
 
   return (
     <div className="space-y-3 break-words">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={[remarkGfm]}
         urlTransform={transformMarkdownUrl}
         components={{
           p({ children }) {

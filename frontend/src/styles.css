@@ -638,22 +638,6 @@ input {
     color: #0b57d0;
   }
 
-  .tl-workspace-page .katex {
-    font-size: 1.03em;
-  }
-
-  .tl-workspace-page .katex-display {
-    overflow-x: auto;
-    overflow-y: hidden;
-    max-width: 100%;
-    margin: 0.75rem 0;
-    padding: 0.2rem 0.1rem;
-  }
-
-  .tl-workspace-page .katex-display > .katex {
-    white-space: nowrap;
-  }
-
   :root.dark .tl-workspace-page .tree-link {
     border-bottom-color: color-mix(in srgb, #8ab4f8 50%, transparent);
     color: #8ab4f8;
