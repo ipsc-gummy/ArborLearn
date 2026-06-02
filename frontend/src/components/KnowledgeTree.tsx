@@ -252,6 +252,12 @@ function MiniKnowledgeMap({
   const offsetX = (previewWidth - diagram.width * scale) / 2;
   const offsetY = (previewHeight - diagram.height * scale) / 2;
   const highlightedIds = new Set([activeNodeId, ...(compareNodeId ? [compareNodeId] : [])]);
+  const denseMap = diagram.nodes.length >= 18 || scale < 0.42;
+  const safeScale = Math.max(scale, 0.01);
+  const activePointRadius = denseMap ? Math.min(30, Math.max(18, 7.2 / safeScale)) : 18;
+  const comparedPointRadius = denseMap ? Math.min(28, Math.max(18, 6.4 / safeScale)) : 18;
+  const activeRingRadius = denseMap ? Math.min(44, Math.max(27, 12 / safeScale)) : 27;
+  const comparedRingRadius = denseMap ? Math.min(40, Math.max(23, 10 / safeScale)) : 23;
 
   if (diagram.nodes.length === 0) return null;
 
@@ -293,16 +299,18 @@ function MiniKnowledgeMap({
                   <circle
                     cx={x}
                     cy={y}
-                    r={active ? 27 : 23}
+                    r={active ? activeRingRadius : comparedRingRadius}
                     className={cn("tl-mini-map-highlight-ring", active && "is-active")}
+                    vectorEffect={denseMap ? "non-scaling-stroke" : undefined}
                   />
                 )}
                 <circle
                   cx={x}
                   cy={y}
-                  r={highlighted ? 18 : 12}
+                  r={active ? activePointRadius : compared ? comparedPointRadius : 12}
                   fill="var(--tl-mini-map-node)"
                   className={cn("tl-mini-map-point", highlighted && "is-highlighted", active && "is-active")}
+                  vectorEffect={highlighted && denseMap ? "non-scaling-stroke" : undefined}
                 />
               </g>
             );
