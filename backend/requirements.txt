@@ -6,6 +6,10 @@ numpy>=1.26.0,<2.0.0
 python-dotenv==1.0.1
 python-multipart==0.0.20
 pypdf==5.6.1
+PyMuPDF==1.26.1
+pdfplumber==0.11.7
 python-docx==1.1.2
+openpyxl==3.1.5
+python-pptx==1.0.2
 Pillow==11.2.1
 pytesseract==0.3.13

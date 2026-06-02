@@ -18,6 +18,12 @@ backend/data/
 node_modules/
 dist/
 
+# Local comparison baselines and backups
+ArborLearn-main/
+local-baseline/
+backups/
+ArborLearn.zip
+
 # Logs and editor metadata
 *.log
 .vscode/
