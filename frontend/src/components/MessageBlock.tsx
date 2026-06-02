@@ -1,7 +1,7 @@
 import { Check, Copy, GitBranch, RotateCcw, Undo2, Volume2, VolumeX } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { useRef, useState } from "react";
-import type { ChatMessage, UploadedFile } from "../types/arborlearn";
+import type { ChatMessage, ConversationPatch, UploadedFile } from "../types/arborlearn";
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
@@ -131,6 +131,11 @@ function buildBackfillLinkMatches(text: string) {
   return candidates
     .map((candidate) => candidate.trim())
     .filter((candidate, index, array) => candidate.length >= 2 && array.indexOf(candidate) === index);
+}
+
+function previewPatchText(text: string, maxLength = 72) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
 function isMessageTreeLink(link: MessageTreeLink | null): link is MessageTreeLink {
@@ -328,11 +333,14 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const userLabel = user?.displayName?.trim() || "用户";
   const [showOriginal, setShowOriginal] = useState(false);
+  const [archivingPatchId, setArchivingPatchId] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const patches = message.patches ?? [];
-  const hasAppliedPatches = patches.some((patch) => patch.status === "applied");
+  const appliedPatches = patches.filter((patch) => patch.status === "applied");
+  const hasAppliedPatches = appliedPatches.length > 0;
   const messageTreeLinks: MessageTreeLink[] = [
-    ...patches
-      .filter((patch) => patch.status === "applied" && patch.sourceChildNodeId && patch.replacementText)
+    ...appliedPatches
+      .filter((patch) => patch.sourceChildNodeId && patch.replacementText)
       .map((patch): MessageTreeLink | null => {
         const child = nodes[patch.sourceChildNodeId ?? ""];
         return child
@@ -510,9 +518,19 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
     });
   };
 
-  const archivePatch = async (patchId: string) => {
-    await archiveBackfillPatch(patchId);
-    await hydrateFromBackend();
+  const archivePatch = async (patch: ConversationPatch) => {
+    if (archivingPatchId) return;
+    setArchivingPatchId(patch.id);
+    setArchiveError(null);
+    try {
+      await archiveBackfillPatch(patch.id);
+      await hydrateFromBackend();
+      setShowOriginal(false);
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "撤回回填失败");
+    } finally {
+      setArchivingPatchId(null);
+    }
   };
 
   const renderLinkedContent = () => {
@@ -629,6 +647,37 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
             <p className="whitespace-pre-wrap">{message.originalContent}</p>
           </div>
         )}
+        {hasAppliedPatches && (
+          <div className="mb-3 space-y-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs leading-5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-foreground">已应用回填</span>
+              <span className="text-muted-foreground">{appliedPatches.length} 条</span>
+            </div>
+            {appliedPatches.map((patch) => (
+              <div key={patch.id} className="flex items-start justify-between gap-3 rounded-md bg-background/65 px-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-muted-foreground">原文：{previewPatchText(patch.originalText)}</p>
+                  <p className="mt-1 truncate text-foreground">回填：{previewPatchText(patch.replacementText)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-border px-2 text-[11px] text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  title="撤回应用的回填"
+                  aria-label="撤回应用的回填"
+                  disabled={isNodeRunning || archivingPatchId !== null}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void archivePatch(patch);
+                  }}
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                  {archivingPatchId === patch.id ? "撤回中" : "撤回应用"}
+                </button>
+              </div>
+            ))}
+            {archiveError && <p className="rounded-md bg-destructive/10 px-2 py-1 text-destructive">{archiveError}</p>}
+          </div>
+        )}
         {showAttachmentChips && (
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             {attachmentFiles.map((file) => (
@@ -670,16 +719,6 @@ export function MessageBlock({ nodeId, message }: MessageBlockProps) {
                     <RotateCcw className="h-4 w-4" />
                   </MessageActionButton>
                 )}
-                {patches.map((patch) => (
-                  <MessageActionButton
-                    key={patch.id}
-                    title="撤回回填"
-                    onClick={() => void archivePatch(patch.id)}
-                    disabled={isNodeRunning}
-                  >
-                    <Undo2 className="h-4 w-4" />
-                  </MessageActionButton>
-                ))}
               </>
             )}
           </div>

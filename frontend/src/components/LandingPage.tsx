@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpenText, Check, FileText, GitBranch, MessageSquareText, Network, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BookOpenText, Check, ChevronDown, ExternalLink, FileText, GitBranch, Github, MessageSquareText, Network, Sparkles } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useEffect } from "react";
 import { SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
@@ -11,6 +11,39 @@ interface LandingPageProps {
 }
 
 const proofItems = ["层级知识结构", "主对话与子对话分离", "Diagram 可视化复盘"];
+
+const faqItems = [
+  {
+    question: "ArborLearn 和普通 AI 聊天工具有什么不同？",
+    answer:
+      "普通聊天通常把所有问题堆在一条时间线上。ArborLearn 用树状结构组织学习过程：主对话保留核心脉络，局部追问进入独立分支，方便持续探索和回顾。",
+  },
+  {
+    question: "Notebook 是什么？",
+    answer:
+      "每个 Notebook 都是一个独立的学习空间，对应一门课程、一个研究主题或一项长期任务。相关对话、分支和知识结构都会沉淀在同一个 Notebook 中。",
+  },
+  {
+    question: "如何创建子对话？",
+    answer:
+      "在 AI 回复中选中希望深入理解的片段，即可从该位置发起子对话。新的追问会进入独立节点，不会打断主线内容。",
+  },
+  {
+    question: "子对话会继承哪些上下文？",
+    answer:
+      "子对话会沿着当前树路径继承必要上下文，让 AI 理解问题来源，同时避免无关分支干扰当前讨论。",
+  },
+  {
+    question: "什么是子对话回填？",
+    answer:
+      "当局部探索形成结论后，可以将整理后的内容写回父对话对应位置。这样既保留探索过程，也让主线笔记持续完善。",
+  },
+  {
+    question: "Diagram 视图有什么作用？",
+    answer:
+      "Diagram 会把主线、子节点和分支关系呈现为结构图，帮助你快速定位概念、回到历史分支，并复盘完整学习路径。",
+  },
+];
 
 export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: LandingPageProps) {
   useEffect(() => {
@@ -131,6 +164,8 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
         </div>
       </section>
 
+      <FaqSection />
+
       <section className="relative z-10 mx-auto max-w-7xl px-5 pb-24">
         <div className="tl-final-cta overflow-hidden rounded-[2rem] border px-6 py-10 text-center md:px-10 md:py-14">
           <h2 className="mx-auto max-w-3xl text-3xl font-semibold leading-tight md:text-5xl">
@@ -147,6 +182,8 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
           </div>
         </div>
       </section>
+
+      <LandingFooter />
     </main>
   );
 }
@@ -277,5 +314,102 @@ function FeatureStory({
       <h3 className="text-lg font-semibold">{title}</h3>
       <p className="mt-3 text-sm leading-7 text-muted-foreground">{description}</p>
     </article>
+  );
+}
+
+function FaqSection() {
+  return (
+    <section className="tl-faq-section relative z-10 mx-auto max-w-4xl px-5 pb-24">
+      <div className="tl-scroll-reveal text-center" data-scroll-reveal>
+        <p className="mb-3 text-sm font-semibold text-primary">FAQ</p>
+        <h2 className="text-3xl font-semibold leading-tight md:text-5xl">常见问题</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
+          关于 ArborLearn 的使用方式与核心设计，这里整理了一些常见问题。
+        </p>
+      </div>
+
+      <div className="mt-10 grid gap-3">
+        {faqItems.map((item) => (
+          <details key={item.question} className="tl-scroll-reveal tl-faq-item group" data-scroll-reveal>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left text-sm font-semibold leading-6 marker:content-none md:text-[15px]">
+              <span>{item.question}</span>
+              <ChevronDown className="tl-faq-chevron h-4 w-4 shrink-0" aria-hidden="true" />
+            </summary>
+            <div className="px-5 pb-4">
+              <p className="tl-faq-answer border-t pt-4 pb-1 text-sm leading-7 text-muted-foreground">{item.answer}</p>
+            </div>
+          </details>
+        ))}
+      </div>
+
+      <div className="tl-scroll-reveal tl-faq-contact mx-auto mt-7 flex w-fit flex-wrap items-center justify-center gap-x-1.5 gap-y-1 rounded-full border px-4 py-2.5 text-center text-sm text-muted-foreground" data-scroll-reveal>
+        <span>仍有疑问？欢迎前往</span>
+        <a
+          className="inline-flex items-center gap-1 font-semibold text-primary underline-offset-4 hover:underline"
+          href="https://github.com/ipsc-gummy/ArborLearn/issues/new"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GitHub Issues
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
+        <span>提问。</span>
+      </div>
+    </section>
+  );
+}
+
+const footerGuideLinks = [
+  { href: "/guide#why", label: "Why ArborLearn", description: "了解线性问答之外的学习方式" },
+  { href: "/guide#technology", label: "技术", description: "看看树状上下文如何保持清晰" },
+  { href: "/guide#features", label: "功能", description: "浏览围绕长期学习设计的能力" },
+  { href: "/guide", label: "完整文档", description: "从头阅读 ArborLearn 产品说明", highlighted: true },
+];
+
+function LandingFooter() {
+  return (
+    <footer className="tl-landing-footer relative z-10 overflow-hidden border-t">
+      <div className="tl-landing-footer-glow" aria-hidden="true" />
+      <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-14 md:py-16 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,1.15fr)]">
+        <div>
+          <p className="tl-landing-footer-wordmark text-4xl font-semibold">ArborLearn</p>
+          <p className="mt-4 max-w-md text-sm leading-7 text-white/62">
+            让每一次探索，都沉淀为可继续生长的知识结构。
+          </p>
+          <a
+            className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-white/82 transition hover:text-white"
+            href="https://github.com/ipsc-gummy/ArborLearn"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Github className="h-4 w-4" />
+            GitHub
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
+          <p className="mt-8 text-xs leading-6 text-white/42">
+            Privacy · 我们尊重你的隐私与数据边界。
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/42">Explore ArborLearn</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {footerGuideLinks.map((item) => (
+              <a
+                key={item.href}
+                className={`tl-landing-footer-link group rounded-2xl border px-4 py-4${item.highlighted ? " is-highlighted" : ""}`}
+                href={item.href}
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white/90">{item.label}</span>
+                  <ArrowRight className="h-4 w-4 text-white/42 transition group-hover:translate-x-0.5 group-hover:text-white/82" />
+                </span>
+                <span className="mt-2 block text-xs leading-5 text-white/48">{item.description}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </footer>
   );
 }

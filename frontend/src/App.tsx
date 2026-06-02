@@ -6,6 +6,7 @@ import { LandingPage } from "./components/LandingPage";
 import { NotebookDashboard } from "./components/NotebookDashboard";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { PageTransition } from "./components/PageTransition";
+import { ProductGuidePage } from "./components/ProductGuidePage";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { Workspace } from "./components/Workspace";
 import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
@@ -17,6 +18,7 @@ const THEME_TRANSITION_CLASS = "tl-theme-transitioning";
 
 type AppRoute =
   | { kind: "landing" }
+  | { kind: "guide" }
   | { kind: "dashboard" }
   | { kind: "workspace"; notebookId: string };
 
@@ -94,6 +96,7 @@ function saveThemeMode(mode: ThemeMode, userId?: string) {
 
 function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments[0] === "guide") return { kind: "guide" };
   if (segments[0] === "notebooks" && segments[1]) {
     return {
       kind: "workspace",
@@ -105,6 +108,7 @@ function parseRoute(pathname: string): AppRoute {
 }
 
 function routeToPath(route: AppRoute) {
+  if (route.kind === "guide") return "/guide";
   if (route.kind === "dashboard") return "/notebooks";
   if (route.kind === "workspace") return `/notebooks/${encodeURIComponent(route.notebookId)}`;
   return "/";
@@ -235,7 +239,7 @@ export default function App() {
       });
       return;
     }
-    if ((authStatus === "anonymous" || authStatus === "error") && routeKind !== "landing") {
+    if ((authStatus === "anonymous" || authStatus === "error") && routeKind !== "landing" && routeKind !== "guide") {
       const nextRoute: AppRoute = { kind: "landing" };
       navigate(routeToPath(nextRoute), { replace: true });
     }
@@ -370,7 +374,7 @@ export default function App() {
     ? "restoring"
     : routeKind === "workspace"
       ? "workspace"
-      : routeKind === "landing" || authStatus !== "authenticated"
+      : routeKind === "landing" || routeKind === "guide" || authStatus !== "authenticated"
         ? "landing"
         : "dashboard";
   const pageTransitionKey = `${pageVariant}-${routeToPath(route)}`;
@@ -379,6 +383,8 @@ export default function App() {
     <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
       正在恢复工作区...
     </div>
+  ) : routeKind === "guide" ? (
+    <ProductGuidePage themeMode={themeMode} onThemeChange={setThemeMode} onHome={goHome} />
   ) : routeKind === "landing" || authStatus !== "authenticated" ? (
     <LandingPage
       themeMode={themeMode}
@@ -438,7 +444,7 @@ export default function App() {
           {content}
         </AppErrorBoundary>
       </PageTransition>
-      {authStatus === "authenticated" && (
+      {authStatus === "authenticated" && route.kind !== "guide" && (
         <OnboardingTour
           choiceOpen={onboardingChoiceOpen}
           onChoiceOpenChange={setOnboardingChoiceOpen}

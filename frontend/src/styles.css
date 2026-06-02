@@ -1946,6 +1946,364 @@ input {
     color: color-mix(in srgb, var(--feature-glow) 72%, white);
   }
 
+  .tl-faq-section {
+    position: relative;
+  }
+
+  .tl-faq-item {
+    overflow: hidden;
+    border: 1px solid rgba(59, 120, 116, 0.14);
+    border-radius: 1.15rem;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.36)),
+      rgba(247, 252, 249, 0.62);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.72) inset,
+      0 12px 30px rgba(51, 84, 78, 0.035);
+    backdrop-filter: blur(16px) saturate(1.06);
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease,
+      background 180ms ease;
+  }
+
+  .tl-faq-item:hover {
+    border-color: rgba(39, 131, 139, 0.25);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.78) inset,
+      0 15px 34px rgba(51, 84, 78, 0.065);
+    transform: translateY(-1px);
+  }
+
+  .tl-faq-item[open] {
+    border-color: rgba(39, 131, 139, 0.25);
+    background:
+      radial-gradient(circle at 8% 0%, rgba(15, 125, 160, 0.075), transparent 18rem),
+      linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.42)),
+      rgba(247, 252, 249, 0.68);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.8) inset,
+      0 16px 36px rgba(51, 84, 78, 0.065);
+  }
+
+  .tl-faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tl-faq-answer {
+    border-color: rgba(59, 120, 116, 0.12);
+  }
+
+  .tl-faq-chevron {
+    color: hsl(var(--muted-foreground));
+    transition:
+      color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .tl-faq-item:hover .tl-faq-chevron,
+  .tl-faq-item[open] .tl-faq-chevron {
+    color: var(--tl-brand);
+  }
+
+  .tl-faq-item[open] .tl-faq-chevron {
+    transform: rotate(180deg);
+  }
+
+  .tl-faq-contact {
+    border-color: rgba(59, 120, 116, 0.14);
+    background: rgba(255, 255, 255, 0.46);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.64) inset;
+    backdrop-filter: blur(14px);
+  }
+
+  :root.dark .tl-faq-item {
+    border-color: rgba(147, 217, 214, 0.12);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.012)),
+      rgba(7, 17, 23, 0.48);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.05) inset,
+      0 14px 34px rgba(0, 0, 0, 0.14);
+  }
+
+  :root.dark .tl-faq-item:hover,
+  :root.dark .tl-faq-item[open] {
+    border-color: rgba(147, 217, 214, 0.22);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.065) inset,
+      0 18px 40px rgba(0, 0, 0, 0.2);
+  }
+
+  :root.dark .tl-faq-item[open] {
+    background:
+      radial-gradient(circle at 8% 0%, rgba(119, 220, 210, 0.07), transparent 18rem),
+      linear-gradient(145deg, rgba(255, 255, 255, 0.048), rgba(255, 255, 255, 0.016)),
+      rgba(7, 17, 23, 0.56);
+  }
+
+  :root.dark .tl-faq-answer {
+    border-color: rgba(147, 217, 214, 0.11);
+  }
+
+  :root.dark .tl-faq-contact {
+    border-color: rgba(147, 217, 214, 0.12);
+    background: rgba(9, 20, 27, 0.54);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  }
+
+  .tl-landing-footer {
+    border-color: rgba(147, 217, 214, 0.13);
+    background:
+      radial-gradient(circle at 12% -12%, rgba(48, 158, 142, 0.2), transparent 26rem),
+      radial-gradient(circle at 88% 112%, rgba(216, 151, 65, 0.1), transparent 22rem),
+      linear-gradient(145deg, #071319, #061015 62%, #050d12);
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .tl-landing-footer-glow {
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    top: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(119, 220, 210, 0.5), rgba(241, 180, 91, 0.18), transparent);
+  }
+
+  .tl-landing-footer-wordmark,
+  .tl-guide-prose h1 {
+    font-family:
+      "Songti SC", "STSong", "Noto Serif SC", "SimSun", "Microsoft YaHei", serif;
+  }
+
+  .tl-landing-footer-wordmark {
+    color: rgba(245, 252, 250, 0.96);
+    letter-spacing: 0.02em;
+    text-shadow: 0 18px 44px rgba(119, 220, 210, 0.16);
+  }
+
+  .tl-landing-footer-link {
+    border-color: rgba(147, 217, 214, 0.13);
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.045) inset;
+    transition:
+      background 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .tl-landing-footer-link:hover {
+    border-color: rgba(147, 217, 214, 0.28);
+    background: rgba(119, 220, 210, 0.075);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.065) inset,
+      0 14px 32px rgba(0, 0, 0, 0.14);
+    transform: translateY(-1px);
+  }
+
+  .tl-landing-footer-link.is-highlighted {
+    border-color: rgba(119, 220, 210, 0.34);
+    background:
+      radial-gradient(circle at 12% 0%, rgba(119, 220, 210, 0.14), transparent 12rem),
+      rgba(119, 220, 210, 0.065);
+  }
+
+  .tl-guide-page {
+    background:
+      radial-gradient(circle at 12% 2%, color-mix(in srgb, var(--tl-brand) 11%, transparent), transparent 28rem),
+      radial-gradient(circle at 88% 18%, color-mix(in srgb, var(--tl-brand-3) 8%, transparent), transparent 24rem),
+      linear-gradient(180deg, color-mix(in srgb, var(--tl-app-bg) 96%, white), var(--tl-app-bg));
+  }
+
+  :root.dark .tl-guide-page {
+    background:
+      radial-gradient(circle at 14% 0%, rgba(119, 220, 210, 0.12), transparent 30rem),
+      radial-gradient(circle at 86% 18%, rgba(241, 180, 91, 0.07), transparent 25rem),
+      linear-gradient(180deg, #061016, #071218 48%, #061016);
+  }
+
+  .tl-guide-header,
+  .tl-guide-mobile-nav {
+    border-color: color-mix(in srgb, var(--tl-border) 72%, transparent);
+    background: color-mix(in srgb, var(--tl-panel-solid) 74%, transparent);
+    backdrop-filter: blur(20px) saturate(1.12);
+  }
+
+  :root.dark .tl-guide-header,
+  :root.dark .tl-guide-mobile-nav {
+    background: rgba(7, 17, 23, 0.76);
+  }
+
+  .tl-guide-brand-mark {
+    color: var(--tl-brand);
+    border-color: color-mix(in srgb, var(--tl-brand) 24%, var(--tl-border));
+    background: color-mix(in srgb, var(--tl-brand) 10%, transparent);
+  }
+
+  .tl-guide-nav a {
+    border-radius: 0.75rem;
+    color: hsl(var(--muted-foreground));
+    padding: 0.6rem 0.75rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    transition:
+      color 160ms ease,
+      background 160ms ease;
+  }
+
+  .tl-guide-nav a:hover {
+    color: hsl(var(--foreground));
+    background: color-mix(in srgb, var(--tl-brand) 9%, transparent);
+  }
+
+  .tl-guide-ghost-button {
+    color: hsl(var(--foreground));
+    background: color-mix(in srgb, var(--tl-panel-solid) 44%, transparent);
+    transition: background 160ms ease;
+  }
+
+  .tl-guide-ghost-button:hover {
+    background: color-mix(in srgb, var(--tl-brand) 10%, var(--tl-panel-solid));
+  }
+
+  .tl-guide-prose {
+    max-width: 58rem;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.95rem;
+    line-height: 1.9;
+  }
+
+  .tl-guide-prose h1 {
+    max-width: 52rem;
+    color: color-mix(in srgb, hsl(var(--foreground)) 92%, var(--tl-brand));
+    font-size: clamp(2.5rem, 6vw, 4.4rem);
+    font-weight: 650;
+    line-height: 1.08;
+    text-shadow: 0 18px 48px rgba(72, 108, 102, 0.12);
+  }
+
+  .tl-guide-prose h2 {
+    margin-top: 6rem;
+    color: hsl(var(--foreground));
+    font-size: clamp(1.8rem, 4vw, 2.55rem);
+    font-weight: 650;
+    line-height: 1.22;
+  }
+
+  .tl-guide-prose h3 {
+    margin-top: 2.2rem;
+    color: hsl(var(--foreground));
+    font-size: 1.08rem;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .tl-guide-prose p,
+  .tl-guide-prose ul,
+  .tl-guide-prose ol,
+  .tl-guide-prose blockquote,
+  .tl-guide-table-wrap {
+    margin-top: 1rem;
+  }
+
+  .tl-guide-prose ul,
+  .tl-guide-prose ol {
+    display: grid;
+    gap: 0.45rem;
+    padding-left: 1.35rem;
+  }
+
+  .tl-guide-prose ul {
+    list-style: disc;
+  }
+
+  .tl-guide-prose ol {
+    list-style: decimal;
+  }
+
+  .tl-guide-prose strong {
+    color: hsl(var(--foreground));
+    font-weight: 700;
+  }
+
+  .tl-guide-prose a {
+    color: var(--tl-brand);
+    font-weight: 650;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--tl-brand) 34%, transparent);
+    text-underline-offset: 0.22rem;
+  }
+
+  .tl-guide-prose a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .tl-guide-prose blockquote {
+    border-left: 2px solid color-mix(in srgb, var(--tl-brand) 46%, transparent);
+    color: hsl(var(--muted-foreground));
+    padding-left: 1rem;
+  }
+
+  .tl-guide-prose code {
+    border-radius: 0.35rem;
+    color: color-mix(in srgb, var(--tl-brand) 82%, hsl(var(--foreground)));
+    background: color-mix(in srgb, var(--tl-brand) 8%, transparent);
+    padding: 0.16rem 0.35rem;
+    font-size: 0.88em;
+  }
+
+  .tl-guide-table-wrap {
+    overflow-x: auto;
+    border: 1px solid rgba(59, 120, 116, 0.14);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--tl-panel-solid) 58%, transparent);
+    box-shadow: 0 12px 30px rgba(51, 84, 78, 0.04);
+  }
+
+  .tl-guide-prose table {
+    width: 100%;
+    min-width: 42rem;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.87rem;
+    line-height: 1.75;
+  }
+
+  .tl-guide-prose th,
+  .tl-guide-prose td {
+    border-bottom: 1px solid rgba(59, 120, 116, 0.12);
+    padding: 0.85rem 1rem;
+    vertical-align: top;
+  }
+
+  .tl-guide-prose th {
+    color: hsl(var(--foreground));
+    background: color-mix(in srgb, var(--tl-brand) 7%, transparent);
+    font-weight: 700;
+  }
+
+  .tl-guide-prose tr:last-child td {
+    border-bottom: 0;
+  }
+
+  :root.dark .tl-guide-prose h1 {
+    text-shadow: 0 18px 54px rgba(0, 0, 0, 0.4);
+  }
+
+  :root.dark .tl-guide-table-wrap {
+    border-color: rgba(147, 217, 214, 0.12);
+    background: rgba(7, 17, 23, 0.5);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.16);
+  }
+
+  :root.dark .tl-guide-prose th,
+  :root.dark .tl-guide-prose td {
+    border-bottom-color: rgba(147, 217, 214, 0.1);
+  }
+
   .tl-canvas-surface {
     background:
       radial-gradient(circle at 28% 18%, color-mix(in srgb, var(--tl-brand) 10%, transparent), transparent 18rem),
@@ -3431,6 +3789,16 @@ input {
     transform: scale(0.84);
     transform-origin: center;
   }
+
+  .tl-faq-item summary,
+  .tl-faq-item > div {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .tl-landing-footer-link {
+    padding: 0.9rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3466,6 +3834,12 @@ input {
   }
 
   .tl-notebook-cover {
+    transition: none;
+  }
+
+  .tl-faq-item,
+  .tl-faq-chevron,
+  .tl-landing-footer-link {
     transition: none;
   }
 }
