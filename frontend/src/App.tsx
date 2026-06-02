@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { KnowledgeTree } from "./components/KnowledgeTree";
@@ -21,6 +21,48 @@ type AppRoute =
   | { kind: "workspace"; notebookId: string };
 
 type WorkspaceView = "chat" | "diagram";
+
+class AppErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { error: Error | null; resetKey: string }
+> {
+  state: { error: Error | null; resetKey: string } = {
+    error: null,
+    resetKey: this.props.resetKey,
+  };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  static getDerivedStateFromProps(props: { resetKey: string }, state: { error: Error | null; resetKey: string }) {
+    if (props.resetKey !== state.resetKey) {
+      return { error: null, resetKey: props.resetKey };
+    }
+    return null;
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("ArborLearn render error", error, info.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="tl-app-bg flex min-h-screen items-center justify-center px-4 text-foreground">
+        <section className="tl-panel w-full max-w-lg rounded-2xl border p-6">
+          <h1 className="text-lg font-semibold">页面渲染失败</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            当前页面组件出现异常。请返回笔记本列表后重新打开，或刷新页面重试。
+          </p>
+          <pre className="mt-4 max-h-40 overflow-auto rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+            {this.state.error.message}
+          </pre>
+        </section>
+      </div>
+    );
+  }
+}
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system";
@@ -153,6 +195,8 @@ export default function App() {
   const resumeDemoNotebook = useArborLearnStore((state) => state.resumeDemoNotebook);
   const logout = useArborLearnStore((state) => state.logout);
   const route = parseRoute(location.pathname);
+  const routeKind = route.kind;
+  const routeNotebookId = route.kind === "workspace" ? route.notebookId : null;
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
@@ -180,37 +224,37 @@ export default function App() {
   }, [themeMode]);
 
   useEffect(() => {
-    if (authStatus === "authenticated" && route.kind === "landing") {
+    if (authStatus === "authenticated" && routeKind === "landing") {
       const nextRoute: AppRoute = { kind: "dashboard" };
       navigate(routeToPath(nextRoute), { replace: true });
     }
-    if ((authStatus === "anonymous" || authStatus === "error") && route.kind === "workspace") {
-      void resumeDemoNotebook(route.notebookId).catch(() => {
+    if ((authStatus === "anonymous" || authStatus === "error") && routeKind === "workspace" && routeNotebookId) {
+      void resumeDemoNotebook(routeNotebookId).catch(() => {
         const nextRoute: AppRoute = { kind: "landing" };
         navigate(routeToPath(nextRoute), { replace: true });
       });
       return;
     }
-    if ((authStatus === "anonymous" || authStatus === "error") && route.kind !== "landing") {
+    if ((authStatus === "anonymous" || authStatus === "error") && routeKind !== "landing") {
       const nextRoute: AppRoute = { kind: "landing" };
       navigate(routeToPath(nextRoute), { replace: true });
     }
-  }, [authStatus, navigate, resumeDemoNotebook, route]);
+  }, [authStatus, navigate, resumeDemoNotebook, routeKind, routeNotebookId]);
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || apiStatus !== "ready" || route.kind !== "workspace") return;
+    if (authStatus !== "authenticated" || apiStatus !== "ready" || routeKind !== "workspace" || !routeNotebookId) return;
 
-    const notebookId = resolveNotebookRouteRef(nodes, route.notebookId);
+    const notebookId = resolveNotebookRouteRef(nodes, routeNotebookId);
     const notebookRoot = notebookId ? nodes[notebookId] : null;
     if (!notebookId || !notebookRoot || notebookRoot.parentId !== null) {
-      if (attemptedDemoResumeRef.current !== route.notebookId) {
-        attemptedDemoResumeRef.current = route.notebookId;
-        void resumeDemoNotebook(route.notebookId).catch(() => {
-          setMissingNotebookRef(route.notebookId);
+      if (attemptedDemoResumeRef.current !== routeNotebookId) {
+        attemptedDemoResumeRef.current = routeNotebookId;
+        void resumeDemoNotebook(routeNotebookId).catch(() => {
+          setMissingNotebookRef(routeNotebookId);
         });
         return;
       }
-      setMissingNotebookRef(route.notebookId);
+      setMissingNotebookRef(routeNotebookId);
       return;
     }
     attemptedDemoResumeRef.current = null;
@@ -228,7 +272,7 @@ export default function App() {
     if (activeNodeId !== targetNodeId) {
       setActiveNode(targetNodeId);
     }
-  }, [activeNodeId, apiStatus, authStatus, location.pathname, navigate, nodes, resumeDemoNotebook, route, setActiveNode]);
+  }, [activeNodeId, apiStatus, authStatus, location.pathname, navigate, nodes, resumeDemoNotebook, routeKind, routeNotebookId, setActiveNode]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !user) return;
@@ -236,17 +280,17 @@ export default function App() {
   }, [authStatus, user]);
 
   useEffect(() => {
-    if (route.kind !== "workspace" || route.notebookId === missingNotebookRef) return;
+    if (routeKind !== "workspace" || !missingNotebookRef || routeNotebookId === missingNotebookRef) return;
     attemptedDemoResumeRef.current = null;
     setMissingNotebookRef(null);
-  }, [missingNotebookRef, route]);
+  }, [missingNotebookRef, routeKind, routeNotebookId]);
 
   useEffect(() => {
     if (
       !newlyRegisteredUserId ||
       authStatus !== "authenticated" ||
       apiStatus !== "ready" ||
-      route.kind !== "dashboard" ||
+      routeKind !== "dashboard" ||
       authDialogOpen ||
       user?.id !== newlyRegisteredUserId
     ) {
@@ -254,10 +298,10 @@ export default function App() {
     }
     setOnboardingChoiceOpen(true);
     setNewlyRegisteredUserId(null);
-  }, [apiStatus, authDialogOpen, authStatus, newlyRegisteredUserId, route.kind, user]);
+  }, [apiStatus, authDialogOpen, authStatus, newlyRegisteredUserId, routeKind, user]);
 
   useEffect(() => {
-    if (route.kind !== "workspace" || !activeNodeId) return;
+    if (routeKind !== "workspace" || !activeNodeId) return;
     localStorage.setItem(
       LAST_LOCATION_KEY,
       JSON.stringify({
@@ -265,7 +309,7 @@ export default function App() {
         activeNodeId,
       }),
     );
-  }, [activeNodeId, route.kind]);
+  }, [activeNodeId, routeKind]);
 
   const setThemeMode = (mode: ThemeMode) => {
     document.documentElement.classList.add(THEME_TRANSITION_CLASS);
@@ -324,9 +368,9 @@ export default function App() {
   const isRestoring = authStatus === "checking" || (authStatus === "authenticated" && apiStatus === "loading");
   const pageVariant = isRestoring
     ? "restoring"
-    : route.kind === "workspace"
+    : routeKind === "workspace"
       ? "workspace"
-      : route.kind === "landing" || authStatus !== "authenticated"
+      : routeKind === "landing" || authStatus !== "authenticated"
         ? "landing"
         : "dashboard";
   const pageTransitionKey = `${pageVariant}-${routeToPath(route)}`;
@@ -335,18 +379,18 @@ export default function App() {
     <div className="tl-app-bg flex min-h-screen items-center justify-center text-sm text-muted-foreground">
       正在恢复工作区...
     </div>
-  ) : route.kind === "landing" || authStatus !== "authenticated" ? (
+  ) : routeKind === "landing" || authStatus !== "authenticated" ? (
     <LandingPage
       themeMode={themeMode}
       onThemeChange={setThemeMode}
       onRequestAuth={requestAuth}
     />
-  ) : route.kind === "dashboard" ? (
+  ) : routeKind === "dashboard" ? (
     <NotebookDashboard
       onOpenNotebook={openNotebook}
       {...menuProps}
     />
-  ) : missingNotebookRef === route.notebookId ? (
+  ) : missingNotebookRef === routeNotebookId ? (
     <WorkspaceUnavailable onHome={goHome} />
   ) : (
     <div className="tl-app-bg tl-workspace-page relative flex h-screen min-h-0 flex-col overflow-hidden">
@@ -390,7 +434,9 @@ export default function App() {
   return (
     <>
       <PageTransition transitionKey={pageTransitionKey} variant={pageVariant}>
-        {content}
+        <AppErrorBoundary resetKey={pageTransitionKey}>
+          {content}
+        </AppErrorBoundary>
       </PageTransition>
       {authStatus === "authenticated" && (
         <OnboardingTour
