@@ -1424,18 +1424,6 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
         meaningful_child_messages = [
             message for message in child_messages if message["role"] in {"user", "assistant"} and message["content"].strip()
         ]
-        assistant_signal = " ".join(
-            message["content"].strip() for message in meaningful_child_messages if message["role"] == "assistant"
-        )
-        if len(meaningful_child_messages) < 2 or len(assistant_signal) < 20:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "BACKFILL_INSUFFICIENT_CONTEXT",
-                    "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
-                },
-            )
-
         existing_patches = list_message_patches(conn, user["id"], payload.targetMessageId)
         parent_content = target_message["content"]
         original_text = parent_content[target_start:target_end]
@@ -1448,6 +1436,17 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
             child_messages=meaningful_child_messages,
             existing_patches=existing_patches,
         )
+        model_messages.insert(
+            1,
+            {
+                "role": "system",
+                "content": (
+                    "Always return a usable editable draft. If the child conversation has no clear conclusion, "
+                    "use the selected text, parent context, edit type, and user instruction to make a conservative replacement. "
+                    "Do not return __INSUFFICIENT_CONTEXT__."
+                ),
+            },
+        )
 
     try:
         draft_text = clean_backfill_draft(call_model(model_messages, payload.modelName, payload.thinkingMode or "fast"))
@@ -1457,13 +1456,7 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if draft_text == "__INSUFFICIENT_CONTEXT__" or not draft_text:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "BACKFILL_INSUFFICIENT_CONTEXT",
-                "message": "这个子对话里还没有足够明确的结论，暂时无法生成可靠回填。你可以继续追问，或者手动填写回填内容。",
-            },
-        )
+        draft_text = original_text
     if payload.editType not in UNLIMITED_REPLACEMENT_EDIT_TYPES and len(draft_text) > MAX_REPLACEMENT_CHARS:
         raise HTTPException(
             status_code=400,
