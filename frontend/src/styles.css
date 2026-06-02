@@ -590,6 +590,31 @@ input {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--tl-brand) 20%, transparent);
   }
 
+  .tl-workspace-page .tl-composer-shell--drag-active {
+    border-color: color-mix(in srgb, var(--tl-brand) 58%, var(--tl-border));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--tl-brand) 24%, transparent),
+      0 12px 32px color-mix(in srgb, var(--tl-brand) 14%, transparent);
+  }
+
+  .tl-workspace-page .tl-composer-drop-overlay {
+    pointer-events: none;
+    position: absolute;
+    inset: 0.35rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border-radius: 1rem;
+    border: 1px dashed color-mix(in srgb, var(--tl-brand) 64%, var(--tl-border));
+    background: color-mix(in srgb, var(--tl-input) 80%, var(--tl-brand) 20%);
+    color: var(--tl-brand);
+    font-size: 0.875rem;
+    font-weight: 650;
+    backdrop-filter: blur(8px);
+  }
+
   .tl-workspace-page .tl-composer-input {
     min-height: 2.5rem;
   }
