@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -26,6 +26,13 @@ import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { SettingsMenu, type ThemeMode } from "./AppMenus";
+import {
+  DIAGRAM_NODE_HEIGHT,
+  DIAGRAM_NODE_WIDTH,
+  DIAGRAM_PADDING,
+  buildDiagram,
+  linkPath,
+} from "../lib/diagramLayout";
 
 interface TreeItemProps {
   nodeId: string;
@@ -49,6 +56,7 @@ interface KnowledgeTreeProps {
 }
 
 type WorkspaceView = "chat" | "diagram";
+type ArborNodes = ReturnType<typeof useArborLearnStore.getState>["nodes"];
 
 // 给任意节点向上追溯到根节点，确保左侧只展示当前笔记本内的树。
 function getNotebookRootId(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string) {
@@ -226,9 +234,91 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   );
 }
 
+function MiniKnowledgeMap({
+  nodes,
+  rootId,
+  activeNodeId,
+  compareNodeId,
+}: {
+  nodes: ArborNodes;
+  rootId: string;
+  activeNodeId: string;
+  compareNodeId: string | null;
+}) {
+  const diagram = useMemo(() => buildDiagram(nodes, rootId), [nodes, rootId]);
+  const previewWidth = 300;
+  const previewHeight = 132;
+  const scale = Math.min(previewWidth / diagram.width, previewHeight / diagram.height);
+  const offsetX = (previewWidth - diagram.width * scale) / 2;
+  const offsetY = (previewHeight - diagram.height * scale) / 2;
+  const highlightedIds = new Set([activeNodeId, ...(compareNodeId ? [compareNodeId] : [])]);
+  const palette = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#a78bfa", "#22d3ee", "#fb7185"];
+
+  if (diagram.nodes.length === 0) return null;
+
+  return (
+    <div className="tl-mini-map mx-3 mb-3 rounded-xl border" aria-label="笔记本节点缩略图">
+      <svg viewBox={`0 0 ${previewWidth} ${previewHeight}`} role="img" aria-hidden="true">
+        <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
+          <g className="tl-mini-map-links">
+          {diagram.links.map((link) => {
+            const hot = Array.from(highlightedIds).some((fromId) =>
+              Array.from(highlightedIds).some((toId) => link.id === `${fromId}-${toId}` || link.id === `${toId}-${fromId}`),
+            );
+            return (
+              <path
+                key={link.id}
+                d={linkPath({
+                  ...link,
+                  fromX: link.fromX + DIAGRAM_PADDING,
+                  fromY: link.fromY + DIAGRAM_PADDING,
+                  toX: link.toX + DIAGRAM_PADDING,
+                  toY: link.toY + DIAGRAM_PADDING,
+                })}
+                fill="none"
+                className={hot ? "is-active" : undefined}
+              />
+            );
+          })}
+          </g>
+          <g>
+          {diagram.nodes.map((diagramNode, index) => {
+            const active = diagramNode.id === activeNodeId;
+            const compared = compareNodeId === diagramNode.id;
+            const highlighted = active || compared;
+            const x = DIAGRAM_PADDING + diagramNode.x + DIAGRAM_NODE_WIDTH / 2;
+            const y = DIAGRAM_PADDING + diagramNode.y + DIAGRAM_NODE_HEIGHT / 2;
+            return (
+              <g key={diagramNode.id}>
+                {highlighted && (
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={active ? 27 : 23}
+                    className={cn("tl-mini-map-highlight-ring", active && "is-active")}
+                  />
+                )}
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={highlighted ? 18 : 12}
+                  fill={palette[index % palette.length]}
+                  className={cn("tl-mini-map-point", highlighted && "is-highlighted", active && "is-active")}
+                />
+              </g>
+            );
+          })}
+          </g>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewChange }: KnowledgeTreeProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
+  const compareNodeId = useArborLearnStore((state) => state.compareNodeId);
   const moveNode = useArborLearnStore((state) => state.moveNode);
   const createChildNodeUnderActive = useArborLearnStore((state) => state.createChildNodeUnderActive);
   const deleteNode = useArborLearnStore((state) => state.deleteNode);
@@ -339,6 +429,13 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
           </div>
         </DndContext>
       </div>
+
+      <MiniKnowledgeMap
+        nodes={nodes}
+        rootId={notebookRootId}
+        activeNodeId={activeNodeId}
+        compareNodeId={compareNodeId}
+      />
 
       <div className="tl-sidebar-account border-t border-border/60 p-3">
         <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">

@@ -107,3 +107,27 @@ def get_ocr_timeout_seconds() -> int:
 def get_tesseract_cmd() -> str | None:
     value = os.getenv("TESSERACT_CMD", "").strip()
     return value or None
+
+
+def get_vision_provider() -> str:
+    return os.getenv("VISION_PROVIDER", "none").strip().lower()
+
+
+def get_vision_base_url() -> str:
+    return os.getenv("VISION_BASE_URL", "http://127.0.0.1:8001/v1").strip().rstrip("/")
+
+
+def get_vision_model() -> str:
+    return os.getenv("VISION_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct").strip()
+
+
+def get_vision_api_key() -> str:
+    return os.getenv("VISION_API_KEY", "").strip()
+
+
+def get_vision_timeout_seconds() -> int:
+    raw = os.getenv("VISION_TIMEOUT_SECONDS", "30")
+    try:
+        return max(5, int(raw))
+    except ValueError:
+        return 30

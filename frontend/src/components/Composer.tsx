@@ -1,6 +1,6 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
 import {
   Check,
   ChevronDown,
@@ -51,6 +51,14 @@ const branchQuickPrompts = [
   },
 ];
 const EMPTY_FILES: { id: string; filename: string; fileSize: number; extractionStatus: "pending" | "ready" | "failed"; errorMessage?: string | null }[] = [];
+const UPLOAD_ACCEPT =
+  ".txt,.md,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.bmp,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*";
+const CLIPBOARD_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/bmp": ".bmp",
+};
 
 export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
   const [value, setValue] = useState("");
@@ -77,6 +85,8 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;
   const showBranchQuickPrompts = Boolean(node?.selectedText && !hasUserQuestion && !value.trim() && !isThinking && !isStreaming);
   const visibleFiles = files.filter((file) => !lastSubmittedAt || file.createdAt > lastSubmittedAt);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragDepthRef = useRef(0);
 
   useEffect(() => {
     void loadNodeFiles(nodeId);
@@ -113,23 +123,85 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
     send(value);
   };
 
+  const uploadFiles = async (selectedFiles: File[]) => {
+    if (isUploading || selectedFiles.length === 0) return;
+    for (const selectedFile of selectedFiles) {
+      try {
+        await uploadFile(nodeId, selectedFile);
+      } catch {
+        // The store exposes the backend error in apiError; keep later files uploadable.
+      }
+    }
+  };
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
+    const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!selectedFile || isUploading) return;
-    void uploadFile(nodeId, selectedFile);
+    void uploadFiles(selectedFiles);
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const pastedFiles = collectTransferFiles(event.clipboardData, "paste");
+    if (pastedFiles.length === 0) return;
+    event.preventDefault();
+    void uploadFiles(pastedFiles);
+  };
+
+  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragActive(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDragActive(false);
+    void uploadFiles(collectTransferFiles(event.dataTransfer, "drop"));
   };
 
   return (
     <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
-      <div className="tl-composer-shell tl-panel group/composer mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2">
+      <div
+        className={cn(
+          "tl-composer-shell tl-panel group/composer relative mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2",
+          isDragActive && "tl-composer-shell--drag-active",
+        )}
+        onPaste={handlePaste}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <input
           ref={fileInputRef}
           type="file"
-          accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp,.bmp,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
+          accept={UPLOAD_ACCEPT}
           className="hidden"
+          multiple
           onChange={handleFileChange}
         />
+        {isDragActive && (
+          <div className="tl-composer-drop-overlay" aria-hidden="true">
+            <Paperclip className="h-5 w-5" />
+            <span>松开上传</span>
+          </div>
+        )}
         {showBranchQuickPrompts && (
           <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
             {branchQuickPrompts.map((prompt) => {
@@ -247,6 +319,30 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function transferHasFiles(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.types).includes("Files");
+}
+
+function collectTransferFiles(dataTransfer: DataTransfer, source: "drop" | "paste") {
+  const itemFiles = Array.from(dataTransfer.items ?? [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+  const files = itemFiles.length > 0 ? itemFiles : Array.from(dataTransfer.files ?? []);
+  if (source === "drop") return files;
+  return files.map((file, index) => normalizeClipboardFile(file, index));
+}
+
+function normalizeClipboardFile(file: File, index: number) {
+  const hasUsefulName = Boolean(file.name && file.name !== "image.png" && file.name !== "blob");
+  if (hasUsefulName) return file;
+  const extension = CLIPBOARD_IMAGE_EXTENSIONS[file.type] ?? (file.type.startsWith("image/") ? ".png" : ".txt");
+  return new File([file], `clipboard-${Date.now()}-${index + 1}${extension}`, {
+    type: file.type || "application/octet-stream",
+    lastModified: file.lastModified || Date.now(),
+  });
 }
 
 const thinkingModeCopy = {
