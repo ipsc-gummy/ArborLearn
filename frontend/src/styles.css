@@ -658,6 +658,7 @@ input {
 
   .tl-workspace-page .tl-mini-map {
     --tl-mini-map-link: rgba(80, 92, 112, 0.24);
+    --tl-mini-map-node: #6f8497;
     --tl-mini-map-node-stroke: rgba(255, 255, 255, 0.72);
     --tl-mini-map-ring: color-mix(in srgb, var(--tl-brand) 48%, rgba(42, 57, 76, 0.38));
     flex: 0 0 auto;
@@ -673,6 +674,7 @@ input {
 
   :root.dark .tl-workspace-page .tl-mini-map {
     --tl-mini-map-link: rgba(215, 222, 235, 0.22);
+    --tl-mini-map-node: #9aa8b7;
     --tl-mini-map-node-stroke: rgba(12, 12, 12, 0.82);
     --tl-mini-map-ring: rgba(255, 255, 255, 0.64);
     border-color: rgba(255, 255, 255, 0.1);

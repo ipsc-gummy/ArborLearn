@@ -252,7 +252,6 @@ function MiniKnowledgeMap({
   const offsetX = (previewWidth - diagram.width * scale) / 2;
   const offsetY = (previewHeight - diagram.height * scale) / 2;
   const highlightedIds = new Set([activeNodeId, ...(compareNodeId ? [compareNodeId] : [])]);
-  const palette = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#a78bfa", "#22d3ee", "#fb7185"];
 
   if (diagram.nodes.length === 0) return null;
 
@@ -302,7 +301,7 @@ function MiniKnowledgeMap({
                   cx={x}
                   cy={y}
                   r={highlighted ? 18 : 12}
-                  fill={palette[index % palette.length]}
+                  fill="var(--tl-mini-map-node)"
                   className={cn("tl-mini-map-point", highlighted && "is-highlighted", active && "is-active")}
                 />
               </g>
