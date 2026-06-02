@@ -126,8 +126,8 @@ def get_vision_api_key() -> str:
 
 
 def get_vision_timeout_seconds() -> int:
-    raw = os.getenv("VISION_TIMEOUT_SECONDS", "30")
+    raw = os.getenv("VISION_TIMEOUT_SECONDS", "75")
     try:
         return max(5, int(raw))
     except ValueError:
-        return 30
+        return 75

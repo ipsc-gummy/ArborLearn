@@ -1234,6 +1234,39 @@ def add_uploaded_file(
     return row_to_uploaded_file(row, include_text=True)
 
 
+def update_uploaded_file_extraction(
+    conn: sqlite3.Connection,
+    file_id: str,
+    user_id: str,
+    *,
+    extracted_text: str,
+    extraction_status: str,
+    error_message: str | None = None,
+) -> dict | None:
+    row = conn.execute(
+        "SELECT node_id FROM uploaded_files WHERE id = ? AND user_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    if not row:
+        return None
+
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE uploaded_files
+        SET extracted_text = ?, extraction_status = ?, error_message = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (extracted_text, extraction_status, error_message, ts, file_id, user_id),
+    )
+    touch_node(conn, row["node_id"], ts)
+    updated = conn.execute(
+        "SELECT * FROM uploaded_files WHERE id = ? AND user_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    return row_to_uploaded_file(updated, include_text=True) if updated else None
+
+
 def get_uploaded_file_for_user(conn: sqlite3.Connection, file_id: str, user_id: str) -> dict | None:
     row = conn.execute(
         """

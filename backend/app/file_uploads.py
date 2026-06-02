@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from io import BytesIO
 from pathlib import Path
 from urllib import error, request
@@ -38,6 +39,9 @@ ALLOWED_EXTENSIONS = {
     ".bmp",
 }
 MAX_EXTRACTED_CHARS = 120_000
+DEFERRED_EXTRACTION_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+VISION_MAX_ATTEMPTS = 3
+VISION_RETRY_DELAY_SECONDS = 2
 
 
 def safe_filename(filename: str | None) -> str:
@@ -58,6 +62,10 @@ def validate_upload_name(filename: str) -> str:
         allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
         raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {allowed}")
     return suffix
+
+
+def should_defer_extraction(suffix: str) -> bool:
+    return suffix in DEFERRED_EXTRACTION_EXTENSIONS
 
 
 def _trim(text: str) -> str:
@@ -275,6 +283,7 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
         mime = mime_type or f"image/{(image.format or 'png').lower()}"
         ocr_text = ""
         vision_summary = ""
+        vision_error: str | None = None
         warnings: list[str] = []
 
         # OCR (optional fallback channel)
@@ -299,12 +308,23 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
             warnings.append("OCR disabled by configuration")
 
         # Vision model (primary for image understanding)
-        try:
-            vision_summary = _call_vision_model(content, mime)
-            if not vision_summary:
-                warnings.append("Vision provider disabled or returned empty summary")
-        except Exception as exc:
-            warnings.append(str(exc))
+        provider = get_vision_provider()
+        if provider in {"", "none", "disabled"}:
+            warnings.append("Vision provider disabled")
+        else:
+            for attempt in range(1, VISION_MAX_ATTEMPTS + 1):
+                try:
+                    vision_summary = _call_vision_model(content, mime)
+                    if vision_summary:
+                        vision_error = None
+                        break
+                    vision_error = "Vision provider returned empty summary"
+                except Exception as exc:
+                    vision_error = str(exc)
+                warnings.append(f"Vision attempt {attempt} failed: {vision_error}")
+                if attempt == VISION_MAX_ATTEMPTS:
+                    break
+                time.sleep(VISION_RETRY_DELAY_SECONDS * attempt)
 
         payload = {
             "type": "image",
@@ -320,6 +340,8 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
                 "warnings": warnings,
             },
         }
+        if get_vision_provider() not in {"", "none", "disabled"} and vision_error:
+            return _json_payload(payload), "failed", vision_error
         return _json_payload(payload), "ready", None
     except Exception as exc:
         return "", "failed", f"Unable to parse image: {exc}"
@@ -341,6 +363,22 @@ def extract_file_text(content: bytes, suffix: str, filename: str, mime_type: str
     return "", "failed", "Unsupported file type"
 
 
+def extract_stored_file(*, storage_path: str, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        return "", "failed", "Unsupported file type"
+
+    path = Path(storage_path)
+    if not path.exists():
+        return "", "failed", "Stored file not found"
+
+    content = path.read_bytes()
+    if not content:
+        return "", "failed", "Stored file is empty"
+
+    return extract_file_text(content, suffix, filename, mime_type)
+
+
 async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: str) -> dict:
     filename = safe_filename(upload.filename)
     suffix = validate_upload_name(filename)
@@ -353,11 +391,17 @@ async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: st
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    extracted_text, extraction_status, error_message = extract_file_text(content, suffix, filename, upload.content_type)
     user_dir = get_upload_dir() / user_id / file_id
     user_dir.mkdir(parents=True, exist_ok=True)
     storage_path = user_dir / filename
     storage_path.write_bytes(content)
+
+    if should_defer_extraction(suffix):
+        extracted_text = ""
+        extraction_status = "pending"
+        error_message = None
+    else:
+        extracted_text, extraction_status, error_message = extract_file_text(content, suffix, filename, upload.content_type)
 
     return {
         "filename": filename,

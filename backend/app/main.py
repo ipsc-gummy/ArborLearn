@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
@@ -56,11 +56,12 @@ from .db import (
     list_uploaded_files,
     now_iso,
     touch_node,
+    update_uploaded_file_extraction,
     update_long_task_status,
     uid,
 )
 from .effective_context import content_hash, list_effective_messages
-from .file_uploads import prepare_uploaded_file
+from .file_uploads import extract_stored_file, prepare_uploaded_file
 from .long_task_context import build_step_context
 from .long_task_runner import LongTaskRunner
 from .long_task_schemas import LongTaskCreateRequest
@@ -348,6 +349,29 @@ def uploaded_file_public_view(uploaded_file: dict, include_text: bool = False) -
     if include_text:
         payload["extractedText"] = uploaded_file.get("extractedText", "")
     return payload
+
+
+def run_file_extraction_task(file_id: str, user_id: str, storage_path: str, filename: str, mime_type: str | None) -> None:
+    try:
+        extracted_text, extraction_status, error_message = extract_stored_file(
+            storage_path=storage_path,
+            filename=filename,
+            mime_type=mime_type,
+        )
+    except Exception as exc:
+        extracted_text = ""
+        extraction_status = "failed"
+        error_message = f"Unable to extract file text: {exc}"
+
+    with connect() as conn:
+        update_uploaded_file_extraction(
+            conn,
+            file_id,
+            user_id,
+            extracted_text=extracted_text,
+            extraction_status=extraction_status,
+            error_message=error_message,
+        )
 
 
 def append_source_references(content: str, sources: list[dict]) -> str:
@@ -1192,7 +1216,12 @@ def node_messages(node_id: str, user: dict = Depends(require_user)) -> dict:
 
 
 @app.post("/api/nodes/{node_id}/files", status_code=201)
-async def upload_node_file(node_id: str, file: UploadFile = File(...), user: dict = Depends(require_user)) -> dict:
+async def upload_node_file(
+    node_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_user),
+) -> dict:
     file_id = uid("file")
     with connect() as conn:
         node = get_node_for_user(conn, node_id, user["id"])
@@ -1208,6 +1237,15 @@ async def upload_node_file(node_id: str, file: UploadFile = File(...), user: dic
             notebook_id=node["notebook_id"],
             node_id=node_id,
             **prepared,
+        )
+    if uploaded_file["extractionStatus"] == "pending":
+        background_tasks.add_task(
+            run_file_extraction_task,
+            file_id,
+            user["id"],
+            prepared["storage_path"],
+            prepared["filename"],
+            prepared["mime_type"],
         )
     return {"file": uploaded_file_public_view(uploaded_file)}
 
@@ -1228,6 +1266,25 @@ def uploaded_file_detail(file_id: str, user: dict = Depends(require_user)) -> di
         if not uploaded_file:
             raise HTTPException(status_code=404, detail="File not found")
         return {"file": uploaded_file_public_view(uploaded_file, include_text=True)}
+
+
+@app.get("/api/files/{file_id}/content")
+def uploaded_file_content(file_id: str, user: dict = Depends(require_user)) -> FileResponse:
+    with connect() as conn:
+        uploaded_file = get_uploaded_file_for_user(conn, file_id, user["id"])
+        if not uploaded_file:
+            raise HTTPException(status_code=404, detail="File not found")
+
+    storage_path_value = uploaded_file.get("storagePath")
+    storage_path = Path(storage_path_value) if storage_path_value else None
+    if not storage_path or not storage_path.exists():
+        raise HTTPException(status_code=404, detail="Stored file not found")
+
+    return FileResponse(
+        storage_path,
+        media_type=uploaded_file.get("mimeType") or None,
+        filename=uploaded_file.get("originalFilename") or uploaded_file.get("filename") or "upload",
+    )
 
 
 @app.delete("/api/files/{file_id}")
