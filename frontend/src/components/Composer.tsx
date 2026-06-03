@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
 import {
   Check,
@@ -72,6 +72,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const deleteFile = useArborLearnStore((state) => state.deleteFile);
   const isUploading = useArborLearnStore((state) => state.fileUploadStatusByNode[nodeId] === "uploading");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const dockRef = useRef<HTMLDivElement | null>(null);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
   const scopeId = getModelScopeId(scope);
@@ -90,13 +91,47 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const hasPendingFiles = files.some((file) => file.extractionStatus === "pending");
   const [isDragActive, setIsDragActive] = useState(false);
 
+  const resizeComposerInput = () => {
+    const textarea = composerInputRef.current;
+    if (!textarea) return;
+
+    const styles = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
+    const paddingY = Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+    const maxHeight = Math.ceil(lineHeight * 10 + paddingY);
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  };
+
+  useLayoutEffect(() => {
+    resizeComposerInput();
+  }, [value]);
+
+  useEffect(() => {
+    window.addEventListener("resize", resizeComposerInput);
+    return () => window.removeEventListener("resize", resizeComposerInput);
+  }, []);
+
   useEffect(() => {
     const dock = dockRef.current;
     const panel = dock?.closest<HTMLElement>(".tl-node-panel");
     if (!dock || !panel) return;
 
     const updateComposerHeight = () => {
+      const scroller = panel.querySelector<HTMLElement>(".tl-message-scroll");
+      const shouldStayAtBottom = scroller
+        ? scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+        : false;
+
       panel.style.setProperty("--tl-composer-dock-height", `${Math.ceil(dock.getBoundingClientRect().height)}px`);
+
+      if (shouldStayAtBottom && scroller) {
+        requestAnimationFrame(() => {
+          scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+        });
+      }
     };
 
     updateComposerHeight();
@@ -267,6 +302,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
           </div>
         )}
         <textarea
+          ref={composerInputRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -276,7 +312,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             }
           }}
           rows={2}
-          className="tl-composer-input max-h-32 min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
+          className="tl-composer-input min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
           placeholder="围绕当前节点继续追问..."
         />
           <div className="flex items-center justify-between gap-2 pt-1" data-tour-composer-node-id={nodeId}>
