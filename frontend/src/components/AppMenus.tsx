@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Check,
   CircleUserRound,
+  Github,
   HelpCircle,
   LogIn,
   LogOut,
@@ -12,6 +13,7 @@ import {
   Monitor,
   Moon,
   Settings,
+  Star,
   Sun,
   UserPlus,
   X,
@@ -46,11 +48,81 @@ interface AuthDialogProps {
 }
 
 const GITHUB_REPO_URL = "https://github.com/ipsc-gummy/ArborLearn";
+const GITHUB_REPO_API_URL = "https://api.github.com/repos/ipsc-gummy/ArborLearn";
 const GITHUB_ISSUES_NEW_URL = `${GITHUB_REPO_URL}/issues/new`;
+const GITHUB_STARS_BADGE_URL = "https://img.shields.io/github/stars/ipsc-gummy/ArborLearn?style=flat&label=stars";
 const PRODUCT_GUIDE_PATH = "/guide";
+
+interface GithubRepoStats {
+  stars: string;
+}
 
 function openExternalUrl(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function fetchBadgeValue(url: string, signal: AbortSignal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Badge service returned ${response.status}`);
+  const document = new DOMParser().parseFromString(await response.text(), "image/svg+xml");
+  const labels = Array.from(document.querySelectorAll("text:not([aria-hidden])"));
+  const value = labels[labels.length - 1]?.textContent;
+  if (!value) throw new Error("Badge service returned an invalid SVG");
+  return value;
+}
+
+export function GithubRepoCard({ variant = "card" }: { variant?: "card" | "blend" }) {
+  const [githubRepoStats, setGithubRepoStats] = useState<GithubRepoStats | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetch(GITHUB_REPO_API_URL, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
+        return response.json() as Promise<{ stargazers_count: number }>;
+      })
+      .then(({ stargazers_count }) => {
+        setGithubRepoStats({ stars: String(stargazers_count) });
+      })
+      .catch(async (error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        try {
+          const stars = await fetchBadgeValue(GITHUB_STARS_BADGE_URL, controller.signal);
+          setGithubRepoStats({ stars });
+        } catch (fallbackError: unknown) {
+          if (fallbackError instanceof DOMException && fallbackError.name === "AbortError") return;
+          setGithubRepoStats(null);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <a
+      className={cn(
+        "tl-guide-repo-card flex items-center gap-2 rounded-xl border px-2.5 py-1.5",
+        variant === "blend" && "tl-landing-repo-card",
+      )}
+      href={GITHUB_REPO_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Open ArborLearn GitHub repository"
+    >
+      <Github className="h-5 w-5 shrink-0" />
+      <span className="tl-guide-repo-content flex min-w-0 items-center gap-2">
+        <span className="tl-guide-repo-name truncate text-xs font-semibold">ArborLearn</span>
+        <span className="tl-guide-repo-stars inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Star className="h-3 w-3" />
+          {githubRepoStats?.stars ?? "--"}
+        </span>
+      </span>
+    </a>
+  );
 }
 
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {

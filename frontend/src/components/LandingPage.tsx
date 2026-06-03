@@ -1,7 +1,7 @@
 import { ArrowRight, ArrowUpRight, BookOpenText, Check, ChevronDown, ExternalLink, FileText, GitBranch, Github, MessageSquareText, Network, Sparkles } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useEffect } from "react";
-import { SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import { GithubRepoCard, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 
 interface LandingPageProps {
@@ -85,6 +85,7 @@ export function LandingPage({ themeMode, onThemeChange, onRequestAuth }: Landing
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <GithubRepoCard variant="blend" />
           <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
           <Button variant="outline" size="sm" onClick={() => onRequestAuth("login")}>
             登录

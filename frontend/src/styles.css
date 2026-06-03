@@ -2193,6 +2193,16 @@ input {
     transform: translateY(-1px);
   }
 
+  .tl-landing-repo-card {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .tl-landing-repo-card:hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--tl-brand) 7%, transparent);
+  }
+
   .tl-guide-prose {
     max-width: 58rem;
     color: hsl(var(--muted-foreground));
@@ -3785,8 +3795,7 @@ input {
     font-size: 0.68rem;
   }
 
-  .tl-guide-repo-stats {
-    gap: 0.375rem;
+  .tl-guide-repo-stars {
     font-size: 0.58rem;
   }
 
