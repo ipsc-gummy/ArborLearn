@@ -1,6 +1,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { createPortal } from "react-dom";
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Check,
   CircleUserRound,
@@ -45,14 +46,16 @@ interface AuthDialogProps {
 }
 
 const GITHUB_REPO_URL = "https://github.com/ipsc-gummy/ArborLearn";
-const GITHUB_README_URL = `${GITHUB_REPO_URL}#readme`;
 const GITHUB_ISSUES_NEW_URL = `${GITHUB_REPO_URL}/issues/new`;
+const PRODUCT_GUIDE_PATH = "/guide";
 
 function openExternalUrl(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
+  const navigate = useNavigate();
+
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -62,7 +65,7 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={() => openExternalUrl(GITHUB_README_URL)} />
+          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={() => navigate(PRODUCT_GUIDE_PATH)} />
           <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
           <div className="tl-border-soft my-2 border-t" />
           <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">外观</p>
