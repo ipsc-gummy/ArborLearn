@@ -119,6 +119,19 @@ function normalizeMathDelimiters(content: string) {
     .join("");
 }
 
+function escapeTablePipesInsideMath(content: string) {
+  return content
+    .split(/(```[\s\S]*?```|`[^`]*`)/g)
+    .map((part) => {
+      if (part.startsWith("```") || part.startsWith("`")) return part;
+      return part.replace(/(\$\$?)([\s\S]*?)\1/g, (match, delimiter: string, formula: string) => {
+        if (!formula.includes("|")) return match;
+        return `${delimiter}${formula.replace(/(^|[^\\])\|/g, "$1\\vert ")}${delimiter}`;
+      });
+    })
+    .join("");
+}
+
 function renderTreeLinkedText(text: string, treeLinks: TreeLink[], onTreeLinkClick?: (nodeId: string) => void) {
   const nodes: ReactNode[] = [];
   let rest = text;
@@ -175,7 +188,7 @@ function renderTreeLinkedChildren(
 }
 
 export function MarkdownContent({ content, treeLinks = [], onTreeLinkClick }: MarkdownContentProps) {
-  const contentWithRangeLinks = normalizeMathDelimiters(applyRangeTreeLinks(content, treeLinks));
+  const contentWithRangeLinks = escapeTablePipesInsideMath(normalizeMathDelimiters(applyRangeTreeLinks(content, treeLinks)));
 
   return (
     <div className="space-y-3 break-words">
