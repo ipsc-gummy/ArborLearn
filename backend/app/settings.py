@@ -126,8 +126,43 @@ def get_vision_api_key() -> str:
 
 
 def get_vision_timeout_seconds() -> int:
-    raw = os.getenv("VISION_TIMEOUT_SECONDS", "75")
+    raw = os.getenv("VISION_TIMEOUT_SECONDS", "120")
     try:
-        return max(5, int(raw))
+        return max(10, int(raw))
     except ValueError:
-        return 75
+        return 120
+
+
+def get_vision_max_attempts() -> int:
+    raw = os.getenv("VISION_MAX_ATTEMPTS", "4")
+    try:
+        return min(6, max(1, int(raw)))
+    except ValueError:
+        return 4
+
+
+def get_vision_retry_initial_delay_seconds() -> float:
+    raw = os.getenv("VISION_RETRY_INITIAL_DELAY_SECONDS", "2")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 2.0
+
+
+def get_vision_retry_max_delay_seconds() -> float:
+    raw = os.getenv("VISION_RETRY_MAX_DELAY_SECONDS", "12")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 12.0
+
+
+def get_vision_max_image_edge() -> int:
+    raw = os.getenv("VISION_MAX_IMAGE_EDGE", "2400")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 2400
+    if value <= 0:
+        return 0
+    return max(512, value)

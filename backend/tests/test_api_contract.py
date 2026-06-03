@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+import types
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -87,6 +89,15 @@ def create_child(client: TestClient, headers: dict[str, str], parent_id: str) ->
     )
     assert response.status_code == 201
     return response.json()
+
+
+def tiny_png_bytes() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+        b"\x00\x00\x00\x0cIDATx\x9cc````\x00\x00\x00\x05\x00\x01\r\n-\xb4"
+        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
 
 
 def test_auth_owner_isolation(client: TestClient) -> None:
@@ -301,19 +312,71 @@ def test_node_file_upload_accepts_pdf_docx_and_image(client: TestClient) -> None
     assert docx_upload.status_code == 201
     assert docx_upload.json()["file"]["filename"] == "sample.docx"
 
-    png_bytes = (
-        b"\x89PNG\r\n\x1a\n"
-        b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
-        b"\x00\x00\x00\x0cIDATx\x9cc````\x00\x00\x00\x05\x00\x01\r\n-\xb4"
-        b"\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
     image_upload = client.post(
         f"/api/nodes/{child['id']}/files",
         headers=owner,
-        files={"file": ("sample.png", png_bytes, "image/png")},
+        files={"file": ("sample.png", tiny_png_bytes(), "image/png")},
     )
     assert image_upload.status_code == 201
     assert image_upload.json()["file"]["filename"] == "sample.png"
+
+
+def test_image_vision_retries_transient_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import file_uploads
+
+    attempts: list[str] = []
+
+    def fake_vision_call(image_bytes: bytes, mime_type: str) -> str:
+        attempts.append(mime_type)
+        if len(attempts) < 3:
+            raise file_uploads.VisionRequestError("The read operation timed out", retryable=True)
+        return "图片摘要：第三次识别成功。"
+
+    monkeypatch.setattr(file_uploads, "is_ocr_enabled", lambda: False)
+    monkeypatch.setattr(file_uploads, "get_vision_provider", lambda: "qwen_vl")
+    monkeypatch.setattr(file_uploads, "get_vision_max_attempts", lambda: 4)
+    monkeypatch.setattr(file_uploads, "_vision_retry_delay_seconds", lambda attempt: 0)
+    monkeypatch.setattr(file_uploads, "_call_vision_model", fake_vision_call)
+
+    extracted, status, error = file_uploads.decode_image_file(tiny_png_bytes(), "sample.png", "image/png")
+
+    payload = json.loads(extracted)
+    assert status == "ready"
+    assert error is None
+    assert attempts == ["image/png", "image/png", "image/png"]
+    assert payload["images_summary"] == "图片摘要：第三次识别成功。"
+    assert any("retrying" in warning for warning in payload["metadata"]["warnings"])
+
+
+def test_image_vision_failure_is_not_hidden_by_ocr(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import file_uploads
+
+    fake_pytesseract = types.SimpleNamespace(
+        pytesseract=types.SimpleNamespace(tesseract_cmd=""),
+        image_to_string=lambda *args, **kwargs: "OCR 提取到的公式文本",
+    )
+
+    monkeypatch.setitem(sys.modules, "pytesseract", fake_pytesseract)
+    monkeypatch.setattr(file_uploads, "is_ocr_enabled", lambda: True)
+    monkeypatch.setattr(file_uploads, "get_vision_provider", lambda: "qwen_vl")
+    monkeypatch.setattr(file_uploads, "get_vision_max_attempts", lambda: 2)
+    monkeypatch.setattr(file_uploads, "_vision_retry_delay_seconds", lambda attempt: 0)
+    monkeypatch.setattr(
+        file_uploads,
+        "_call_vision_model",
+        lambda image_bytes, mime_type: (_ for _ in ()).throw(
+            file_uploads.VisionRequestError("SSL: UNEXPECTED_EOF_WHILE_READING", retryable=True)
+        ),
+    )
+
+    extracted, status, error = file_uploads.decode_image_file(tiny_png_bytes(), "sample.png", "image/png")
+
+    payload = json.loads(extracted)
+    assert status == "failed"
+    assert error == "SSL: UNEXPECTED_EOF_WHILE_READING"
+    assert payload["text"] == "OCR 提取到的公式文本"
+    assert payload["images_summary"] == ""
+    assert any("SSL: UNEXPECTED_EOF_WHILE_READING" in warning for warning in payload["metadata"]["warnings"])
 
 
 def test_long_task_metadata_lifecycle(client: TestClient) -> None:

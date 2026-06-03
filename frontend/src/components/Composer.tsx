@@ -72,6 +72,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const deleteFile = useArborLearnStore((state) => state.deleteFile);
   const isUploading = useArborLearnStore((state) => state.fileUploadStatusByNode[nodeId] === "uploading");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dockRef = useRef<HTMLDivElement | null>(null);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
   const scopeId = getModelScopeId(scope);
   const selectedModel = useArborLearnStore((state) => state.getModelConfig(scope).model);
@@ -88,6 +89,27 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const visibleFiles = files.filter((file) => !attachedFileIds.has(file.id) && (!lastSubmittedAt || file.createdAt > lastSubmittedAt));
   const hasPendingFiles = files.some((file) => file.extractionStatus === "pending");
   const [isDragActive, setIsDragActive] = useState(false);
+
+  useEffect(() => {
+    const dock = dockRef.current;
+    const panel = dock?.closest<HTMLElement>(".tl-node-panel");
+    if (!dock || !panel) return;
+
+    const updateComposerHeight = () => {
+      panel.style.setProperty("--tl-composer-dock-height", `${Math.ceil(dock.getBoundingClientRect().height)}px`);
+    };
+
+    updateComposerHeight();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateComposerHeight) : null;
+    observer?.observe(dock);
+    window.addEventListener("resize", updateComposerHeight);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateComposerHeight);
+      panel.style.removeProperty("--tl-composer-dock-height");
+    };
+  }, []);
   const dragDepthRef = useRef(0);
 
   useEffect(() => {
@@ -188,7 +210,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   };
 
   return (
-    <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
+    <div ref={dockRef} className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
       <div
         className={cn(
           "tl-composer-shell tl-panel group/composer relative mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2",

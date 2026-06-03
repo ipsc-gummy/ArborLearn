@@ -36,6 +36,11 @@ function statusTitle(file: AttachmentLike) {
   return file.errorMessage ? `解析失败：${file.errorMessage}` : "解析失败";
 }
 
+function imageTitle(file: AttachmentLike) {
+  if (file.extractionStatus === "failed") return statusTitle(file);
+  return "图片附件";
+}
+
 function ProcessingSpinner() {
   return (
     <span
@@ -100,7 +105,7 @@ export function AttachmentPreview({ file, onRemove, variant = "composer" }: Atta
   const ready = file.extractionStatus === "ready";
   const progressText = pending ? `${estimatedProgress}%` : ready ? "100%" : "";
 
-  if (!isImage || !objectUrl) {
+  if (!isImage) {
     return (
       <span
         className={cn(
@@ -130,6 +135,34 @@ export function AttachmentPreview({ file, onRemove, variant = "composer" }: Atta
     );
   }
 
+  if (!objectUrl) {
+    return (
+      <span
+        className={cn(
+          "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2 text-xs text-muted-foreground",
+          variant === "message" && "h-7 bg-background/60 text-[11px]",
+        )}
+        title={imageTitle(file)}
+      >
+        <FileText className="h-3.5 w-3.5 shrink-0" />
+        <span>{status}</span>
+        {pending && <ProcessingSpinner />}
+        {progressText && <span className="text-muted-foreground/70">{progressText}</span>}
+        {onRemove && (
+          <button
+            type="button"
+            className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground"
+            title="删除图片"
+            aria-label="删除图片"
+            onClick={onRemove}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </span>
+    );
+  }
+
   return (
     <>
       <div
@@ -137,27 +170,26 @@ export function AttachmentPreview({ file, onRemove, variant = "composer" }: Atta
           "group relative inline-flex w-24 flex-col overflow-hidden rounded-md border border-border/70 bg-background/60 text-xs text-muted-foreground shadow-sm",
           variant === "message" && "w-28",
         )}
-        title={title}
+        title={imageTitle(file)}
       >
-        <button
-          type="button"
-          className="relative block aspect-video w-full overflow-hidden bg-muted text-left"
-          onClick={() => setIsOpen(true)}
-          aria-label={`查看图片 ${file.filename}`}
-        >
-          <img src={objectUrl} alt={file.filename} className="h-full w-full object-cover" />
-          <span className="absolute right-1 top-1 rounded bg-black/55 p-1 text-white opacity-0 transition group-hover:opacity-100">
-            <Maximize2 className="h-3 w-3" />
-          </span>
-        </button>
-        <div className="flex min-w-0 items-center justify-between gap-1 px-1.5 py-1">
-          <span className="min-w-0 truncate">{file.filename}</span>
+        <div className="relative aspect-video w-full overflow-hidden bg-muted">
+          <button
+            type="button"
+            className="block h-full w-full text-left"
+            onClick={() => setIsOpen(true)}
+            aria-label="查看图片"
+          >
+            <img src={objectUrl} alt={file.filename} className="h-full w-full object-cover" />
+            <span className="absolute right-1 top-1 rounded bg-black/55 p-1 text-white opacity-0 transition group-hover:opacity-100">
+              <Maximize2 className="h-3 w-3" />
+            </span>
+          </button>
           {onRemove && (
             <button
               type="button"
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition hover:bg-foreground/8 hover:text-foreground"
-              title="删除附件"
-              aria-label={`删除附件 ${file.filename}`}
+              className="absolute left-1 top-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-black/55 text-white opacity-0 transition hover:bg-black/70 group-hover:opacity-100"
+              title="删除图片"
+              aria-label="删除图片"
               onClick={onRemove}
             >
               <Trash2 className="h-3 w-3" />
