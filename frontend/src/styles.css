@@ -2127,13 +2127,13 @@ input {
   }
 
   .tl-landing-footer {
-    border-color: rgba(147, 217, 214, 0.13);
+    border-color: rgba(28, 48, 48, 0.1);
     background:
-      radial-gradient(circle at 12% -12%, rgba(48, 158, 142, 0.2), transparent 26rem),
+      radial-gradient(circle at 12% -18%, rgba(119, 220, 210, 0.16), transparent 26rem),
       radial-gradient(circle at 88% 112%, rgba(216, 151, 65, 0.1), transparent 22rem),
-      linear-gradient(145deg, #071319, #061015 62%, #050d12);
-    color: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.03);
+      linear-gradient(180deg, #fbfdfb, #f3f7f5);
+    color: rgba(22, 34, 34, 0.92);
+    box-shadow: 0 -1px 0 rgba(10, 32, 31, 0.04);
   }
 
   .tl-landing-footer-glow {
@@ -2142,7 +2142,7 @@ input {
     right: 8%;
     top: -1px;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(119, 220, 210, 0.5), rgba(241, 180, 91, 0.18), transparent);
+    background: linear-gradient(90deg, transparent, rgba(48, 158, 142, 0.36), rgba(216, 151, 65, 0.16), transparent);
   }
 
   .tl-landing-footer-wordmark,
@@ -2152,36 +2152,112 @@ input {
   }
 
   .tl-landing-footer-wordmark {
-    color: rgba(245, 252, 250, 0.96);
+    color: rgba(15, 41, 40, 0.96);
     letter-spacing: 0.02em;
-    text-shadow: 0 18px 44px rgba(119, 220, 210, 0.16);
+    text-shadow: 0 18px 44px rgba(48, 158, 142, 0.12);
   }
 
-  .tl-landing-footer-link {
-    border-color: rgba(147, 217, 214, 0.13);
-    background: rgba(255, 255, 255, 0.035);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.045) inset;
+  .tl-landing-footer-tagline {
+    color: rgba(55, 72, 72, 0.7);
+  }
+
+  .tl-landing-footer-brand-link,
+  .tl-landing-footer-sitemap-link {
     transition:
-      background 180ms ease,
-      border-color 180ms ease,
-      box-shadow 180ms ease,
+      color 180ms ease,
+      text-decoration-color 180ms ease,
       transform 180ms ease;
   }
 
-  .tl-landing-footer-link:hover {
-    border-color: rgba(147, 217, 214, 0.28);
-    background: rgba(119, 220, 210, 0.075);
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.065) inset,
-      0 14px 32px rgba(0, 0, 0, 0.14);
+  .tl-landing-footer-brand-link {
+    border: 1px solid rgba(48, 158, 142, 0.2);
+    border-radius: 999px;
+    background: rgba(48, 158, 142, 0.06);
+    color: rgba(33, 54, 54, 0.78);
+    padding: 0.48rem 0.72rem;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+    text-decoration-color: transparent;
+    text-underline-offset: 0.24em;
+  }
+
+  .tl-landing-footer-brand-link:hover {
+    border-color: rgba(48, 158, 142, 0.38);
+    background: rgba(48, 158, 142, 0.12);
+    color: rgba(12, 35, 34, 0.94);
+    text-decoration-line: underline;
+    text-decoration-color: rgba(48, 158, 142, 0.36);
     transform: translateY(-1px);
   }
 
-  .tl-landing-footer-link.is-highlighted {
-    border-color: rgba(119, 220, 210, 0.34);
-    background:
-      radial-gradient(circle at 12% 0%, rgba(119, 220, 210, 0.14), transparent 12rem),
-      rgba(119, 220, 210, 0.065);
+  .tl-landing-footer-heading {
+    color: rgba(18, 36, 36, 0.92);
+  }
+
+  .tl-landing-footer-sitemap-link {
+    position: relative;
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    color: rgba(63, 79, 79, 0.72);
+    border-radius: 0.55rem;
+    margin-left: -0.45rem;
+    padding: 0.18rem 0.52rem 0.18rem 0.7rem;
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 0.24em;
+  }
+
+  .tl-landing-footer-sitemap-link::before {
+    position: absolute;
+    left: 0.34rem;
+    width: 2px;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: rgba(48, 158, 142, 0.28);
+    content: "";
+    transition:
+      height 180ms ease,
+      background 180ms ease;
+  }
+
+  .tl-landing-footer-sitemap-link[data-external="true"]::after {
+    margin-left: 0.3rem;
+    color: rgba(48, 158, 142, 0.62);
+    content: "↗";
+    font-size: 0.78em;
+    line-height: 1;
+    transition:
+      color 180ms ease,
+      transform 180ms ease;
+  }
+
+  .tl-landing-footer-sitemap-link:hover {
+    background: rgba(48, 158, 142, 0.08);
+    color: rgba(12, 35, 34, 0.92);
+    text-decoration-color: rgba(48, 158, 142, 0.42);
+    transform: translateX(2px);
+  }
+
+  .tl-landing-footer-sitemap-link:hover::before {
+    height: 1rem;
+    background: rgba(48, 158, 142, 0.64);
+  }
+
+  .tl-landing-footer-sitemap-link[data-external="true"]:hover::after {
+    color: rgba(12, 35, 34, 0.8);
+    transform: translate(1px, -1px);
+  }
+
+  .tl-landing-footer-bottom {
+    border-color: rgba(28, 48, 48, 0.11);
+  }
+
+  .tl-landing-footer-filing {
+    color: rgba(67, 82, 82, 0.68);
+  }
+
+  .tl-landing-footer-filing a:hover {
+    color: rgba(12, 35, 34, 0.92);
   }
 
   .tl-guide-page {
@@ -3913,9 +3989,6 @@ input {
     padding-right: 1rem;
   }
 
-  .tl-landing-footer-link {
-    padding: 0.9rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3956,7 +4029,8 @@ input {
 
   .tl-faq-item,
   .tl-faq-chevron,
-  .tl-landing-footer-link {
+  .tl-landing-footer-brand-link,
+  .tl-landing-footer-sitemap-link {
     transition: none;
   }
 }

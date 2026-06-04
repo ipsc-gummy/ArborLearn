@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import { AccountMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import type { AuthUser } from "../lib/api";
 
@@ -31,11 +31,13 @@ export function TopBar({ onHome, themeMode, onThemeChange, user, onLogout, onReq
       </div>
 
       <div className="flex items-center gap-2">
-        <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
         <AccountMenu
           user={user}
+          themeMode={themeMode}
+          onThemeChange={onThemeChange}
           onLogout={onLogout}
           onRequestAuth={onRequestAuth}
+          submenuSide="left"
         />
       </div>
     </header>

@@ -1,9 +1,10 @@
 import * as Popover from "@radix-ui/react-popover";
 import { createPortal } from "react-dom";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Check,
+  ChevronRight,
   CircleUserRound,
   Github,
   HelpCircle,
@@ -34,8 +35,13 @@ interface SettingsMenuProps {
 
 interface AccountMenuProps {
   user: AuthUser | null;
+  themeMode: ThemeMode;
+  onThemeChange: (mode: ThemeMode) => void;
   onLogout: () => void;
   onRequestAuth: (mode?: AuthDialogMode) => void;
+  triggerVariant?: "avatar" | "row";
+  contentAlign?: "start" | "center" | "end";
+  submenuSide?: "left" | "right";
 }
 
 interface AuthDialogProps {
@@ -153,90 +159,225 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   );
 }
 
-export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps) {
+export function AccountMenu({
+  user,
+  themeMode,
+  onThemeChange,
+  onLogout,
+  onRequestAuth,
+  triggerVariant = "avatar",
+  contentAlign = "end",
+  submenuSide = "left",
+}: AccountMenuProps) {
+  const navigate = useNavigate();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<"appearance" | "help" | null>(null);
   const [accountInfoOpen, setAccountInfoOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
-  const avatar = (
+  const displayName = user?.displayName ?? "未登录";
+  const displayEmail = user?.email ?? "登录后保存你的学习进度";
+  const initials = user ? user.displayName.slice(0, 2).toUpperCase() : null;
+
+  const openChange = (open: boolean) => {
+    setAccountMenuOpen(open);
+    if (!open) setActiveSubmenu(null);
+  };
+
+  const closeMenu = () => {
+    setAccountMenuOpen(false);
+    setActiveSubmenu(null);
+  };
+
+  const openGuide = () => {
+    closeMenu();
+    navigate(PRODUCT_GUIDE_PATH);
+  };
+
+  const openFeedback = () => {
+    closeMenu();
+    openExternalUrl(GITHUB_ISSUES_NEW_URL);
+  };
+
+  const openGithub = () => {
+    closeMenu();
+    openExternalUrl(GITHUB_REPO_URL);
+  };
+
+  const selectTheme = (mode: ThemeMode) => {
+    onThemeChange(mode);
+    closeMenu();
+  };
+
+  const avatarMark = (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124]">
+      {initials ?? <CircleUserRound className="h-5 w-5" />}
+    </span>
+  );
+
+  const avatarTrigger = (
     <button
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
-      aria-label={user ? "打开账号菜单" : "登录或注册"}
-      onClick={user ? undefined : () => onRequestAuth("login")}
+      type="button"
+      className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-muted/70"
+      aria-label={user ? "打开账号与设置菜单" : "打开登录与设置菜单"}
     >
-      {user ? user.displayName.slice(0, 2).toUpperCase() : <CircleUserRound className="h-5 w-5" />}
+      {avatarMark}
     </button>
   );
 
-  if (!user) return avatar;
+  const rowTrigger = (
+    <button
+      type="button"
+      className="tl-hover flex w-full min-w-0 items-center gap-3 rounded-lg px-2 py-2 text-left"
+      aria-label={user ? "打开账号与设置菜单" : "打开登录与设置菜单"}
+    >
+      {avatarMark}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{displayName}</span>
+        <span className="block truncate text-xs text-muted-foreground">{displayEmail}</span>
+      </span>
+    </button>
+  );
 
   return (
     <>
-      <Popover.Root open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
-        <Popover.Trigger asChild>{avatar}</Popover.Trigger>
+      <Popover.Root open={accountMenuOpen} onOpenChange={openChange}>
+        <Popover.Trigger asChild>{triggerVariant === "row" ? rowTrigger : avatarTrigger}</Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-            <div className="tl-panel-soft rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold">{user.displayName}</p>
-                {user.isTemporary && (
-                  <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
-                    临时体验
+          <Popover.Content
+            side="bottom"
+            align={contentAlign}
+            className="tl-panel z-50 w-80 overflow-visible rounded-xl border p-2 text-sm shadow-panel"
+            onMouseLeave={() => setActiveSubmenu(null)}
+          >
+            {user ? (
+              <button
+                type="button"
+                className="tl-panel-soft mb-2 flex w-full items-center gap-3 rounded-lg border p-3 text-left transition hover:border-primary/25 hover:bg-primary/5"
+                onClick={() => {
+                  closeMenu();
+                  setAccountInfoOpen(true);
+                }}
+              >
+                {avatarMark}
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-semibold">{user.displayName}</span>
+                    {user.isTemporary && (
+                      <span className="shrink-0 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
+                        临时体验
+                      </span>
+                    )}
                   </span>
-                )}
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{user.email}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            ) : (
+              <div className="tl-panel-soft mb-2 rounded-lg border p-3">
+                <p className="font-semibold">ArborLearn 账号</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">登录后，笔记本和学习路径会保存在你的账号下。</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      closeMenu();
+                      onRequestAuth("login");
+                    }}
+                  >
+                    登录
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      closeMenu();
+                      onRequestAuth("register");
+                    }}
+                  >
+                    注册
+                  </Button>
+                </div>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
-            </div>
-            <MenuButton
-              icon={CircleUserRound}
-              label="账号信息"
-              onClick={() => {
-                setAccountMenuOpen(false);
-                setAccountInfoOpen(true);
-              }}
-            />
-            {user.isTemporary && (
+            )}
+
+            {user?.isTemporary && (
               <MenuButton
                 icon={UserPlus}
                 label="绑定正式账号"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
                   onRequestAuth("register");
                 }}
               />
             )}
-            {user.isAdmin && (
+            {user?.isAdmin && (
               <MenuButton
                 icon={ShieldCheck}
                 label="后台设置"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
                   setAdminSettingsOpen(true);
                 }}
               />
             )}
-            {!user.isTemporary && (
+            {user && !user.isTemporary && (
               <MenuButton
                 icon={KeyRound}
                 label="修改密码"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
                   setPasswordDialogOpen(true);
                 }}
               />
             )}
-            <button
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
-              onClick={onLogout}
+
+            <div className="tl-border-soft my-2 border-t" />
+            <SubmenuRow
+              icon={Settings}
+              label="外观"
+              active={activeSubmenu === "appearance"}
+              submenuSide={submenuSide}
+              onActivate={() => setActiveSubmenu("appearance")}
             >
-              <LogOut className="h-4 w-4" />
-              退出账号
-            </button>
+              <ThemeOption mode="light" current={themeMode} icon={Sun} label="浅色" onSelect={selectTheme} />
+              <ThemeOption mode="dark" current={themeMode} icon={Moon} label="深色" onSelect={selectTheme} />
+              <ThemeOption mode="system" current={themeMode} icon={Monitor} label="跟随系统" onSelect={selectTheme} />
+            </SubmenuRow>
+            <SubmenuRow
+              icon={HelpCircle}
+              label="帮助"
+              active={activeSubmenu === "help"}
+              submenuSide={submenuSide}
+              onActivate={() => setActiveSubmenu("help")}
+            >
+              <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={openGuide} />
+              <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={openFeedback} />
+              <MenuButton icon={Github} label="GitHub" onClick={openGithub} />
+            </SubmenuRow>
+
+            {user && (
+              <>
+                <div className="tl-border-soft my-2 border-t" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    closeMenu();
+                    setAccountInfoOpen(false);
+                    onLogout();
+                  }}
+                >
+                  <LogOut className="h-4 w-4" />
+                  退出账号
+                </button>
+              </>
+            )}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
 
-      {accountInfoOpen && typeof document !== "undefined" &&
+      {user && accountInfoOpen && typeof document !== "undefined" &&
         createPortal(
         <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
           <div className="tl-modal-panel tl-panel w-full max-w-sm rounded-2xl border p-5 shadow-panel">
@@ -671,19 +812,59 @@ function AccountInfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SubmenuRow({
+  icon: Icon,
+  label,
+  active,
+  submenuSide,
+  onActivate,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  submenuSide: "left" | "right";
+  onActivate: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative" onMouseEnter={onActivate} onFocus={onActivate}>
+      <button
+        type="button"
+        className={cn("tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left", active && "tl-accent-soft")}
+        onClick={onActivate}
+      >
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+        <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+      </button>
+      {active && (
+        <div
+          className={cn(
+            "absolute top-0 z-[70] w-52 text-sm",
+            submenuSide === "right" ? "left-full pl-2" : "right-full pr-2",
+          )}
+        >
+          <div className="tl-panel rounded-xl border p-2 shadow-panel">{children}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MenuButton({
   icon: Icon,
   label,
   trailing,
   onClick,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   trailing?: string;
   onClick?: () => void;
 }) {
   return (
-    <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onClick}>
+    <button type="button" className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onClick}>
       <Icon className="h-4 w-4" />
       <span>{label}</span>
       {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
@@ -700,13 +881,14 @@ function ThemeOption({
 }: {
   mode: ThemeMode;
   current: ThemeMode;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   onSelect: (mode: ThemeMode) => void;
 }) {
   const active = mode === current;
   return (
     <button
+      type="button"
       className={cn("tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left", active && "tl-accent-soft")}
       onClick={() => onSelect(mode)}
     >

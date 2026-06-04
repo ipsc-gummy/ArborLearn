@@ -1246,6 +1246,18 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       const node = state.nodes[nodeId];
       if (!node || node.parentId !== null) return {};
       const alreadyPinned = state.pinnedRootIds.includes(nodeId);
+      const nextPinned = !alreadyPinned;
+      void patchBackendNode(nodeId, { pinned: nextPinned }).catch((error) => {
+        set((currentState) => ({
+          apiStatus: "error",
+          apiError: error instanceof Error ? error.message : "更新置顶状态失败",
+          pinnedRootIds: nextPinned
+            ? currentState.pinnedRootIds.filter((id) => id !== nodeId)
+            : currentState.pinnedRootIds.includes(nodeId)
+              ? currentState.pinnedRootIds
+              : [nodeId, ...currentState.pinnedRootIds],
+        }));
+      });
       return {
         pinnedRootIds: alreadyPinned
           ? state.pinnedRootIds.filter((id) => id !== nodeId)

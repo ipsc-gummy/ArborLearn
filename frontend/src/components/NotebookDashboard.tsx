@@ -12,13 +12,14 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Pencil,
+  Pin,
   Plus,
   Search,
   Sparkles,
   Trash2,
   X,
 } from "lucide-react";
-import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import { AccountMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
@@ -154,6 +155,7 @@ export function NotebookDashboard({
   const pinnedRootIds = useArborLearnStore((state) => state.pinnedRootIds);
   const createRootConversation = useArborLearnStore((state) => state.createRootConversation);
   const renameNode = useArborLearnStore((state) => state.renameNode);
+  const togglePinRoot = useArborLearnStore((state) => state.togglePinRoot);
   const deleteNode = useArborLearnStore((state) => state.deleteNode);
   const isLoggedIn = Boolean(user);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -249,6 +251,11 @@ export function NotebookDashboard({
     setDeleteTarget({ id, title });
   };
 
+  const handleTogglePin = (id: string) => {
+    setOpenMenuId(null);
+    togglePinRoot(id);
+  };
+
   const openFirstSearchResult = () => {
     if (!hasSearchKeyword || !filteredRootIds[0]) return;
     onOpenNotebook(filteredRootIds[0]);
@@ -286,11 +293,13 @@ export function NotebookDashboard({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
             <AccountMenu
               user={user}
+              themeMode={themeMode}
+              onThemeChange={onThemeChange}
               onLogout={onLogout}
               onRequestAuth={onRequestAuth}
+              submenuSide="left"
             />
           </div>
         </div>
@@ -528,6 +537,13 @@ export function NotebookDashboard({
                         >
                           <button
                             className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
+                            onClick={() => handleTogglePin(id)}
+                          >
+                            <Pin className="h-4 w-4" />
+                            {isPinned ? "取消置顶" : "置顶"}
+                          </button>
+                          <button
+                            className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
                             onClick={() => beginRename(id, node.title)}
                           >
                             <Pencil className="h-4 w-4" />
@@ -587,6 +603,7 @@ export function NotebookDashboard({
                 {filteredRootIds.map((id) => {
                   const node = nodes[id];
                   if (!node) return null;
+                  const isPinned = pinnedRootIds.includes(id);
                   const isEditing = editingId === id;
                   const createdAt = getNotebookCreatedAt(node);
                   return (
@@ -645,6 +662,16 @@ export function NotebookDashboard({
                             align="end"
                             className="tl-panel z-50 w-36 rounded-xl border p-1 text-sm shadow-panel"
                           >
+                            <button
+                              className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleTogglePin(id);
+                              }}
+                            >
+                              <Pin className="h-4 w-4" />
+                              {isPinned ? "取消置顶" : "置顶"}
+                            </button>
                             <button
                               className="flex w-full items-center gap-2 rounded px-2 py-2 text-left hover:bg-muted"
                               onClick={(event) => {

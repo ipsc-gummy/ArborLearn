@@ -315,7 +315,7 @@ export function archiveBackfillPatch(patchId: string) {
 
 export function patchBackendNode(
   nodeId: string,
-  patch: Partial<Pick<KnowledgeNode, "title" | "summary" | "selectedText" | "contextWeight" | "parentId">>,
+  patch: Partial<Pick<KnowledgeNode, "title" | "summary" | "selectedText" | "contextWeight" | "parentId">> & { pinned?: boolean },
 ) {
   return request<{ ok: true }>(`/api/nodes/${nodeId}`, {
     method: "PATCH",
