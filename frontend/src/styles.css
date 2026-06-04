@@ -1302,20 +1302,44 @@ input {
   }
 
   :root.dark .tl-notebook-page-card {
-    color: rgba(40, 35, 28, 0.92);
+    color: rgba(230, 244, 241, 0.94);
     background:
-      linear-gradient(90deg, rgba(151, 82, 62, 0.22) 0 1px, transparent 1px) 1.4rem 0 / 1px 100% no-repeat,
-      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(113, 94, 62, 0.18) 1.43rem 1.48rem),
-      linear-gradient(rgba(113, 94, 62, 0.1) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(113, 94, 62, 0.1) 1px, transparent 1px),
-      radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.25), transparent 8rem),
-      radial-gradient(circle at 16% 82%, rgba(98, 75, 42, 0.14), transparent 8rem),
-      color-mix(in srgb, #eee4ca 82%, #172326);
-    border-color: rgba(178, 149, 96, 0.22);
+      linear-gradient(90deg, color-mix(in srgb, var(--tl-brand) 42%, rgba(255, 255, 255, 0.1)) 0 1px, transparent 1px) 1.4rem 0 / 1px 100% no-repeat,
+      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(151, 229, 222, 0.07) 1.43rem 1.48rem),
+      linear-gradient(rgba(151, 229, 222, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(151, 229, 222, 0.055) 1px, transparent 1px),
+      radial-gradient(circle at 86% 8%, color-mix(in srgb, var(--tl-brand) 18%, transparent), transparent 8rem),
+      radial-gradient(circle at 14% 82%, rgba(70, 115, 123, 0.18), transparent 9rem),
+      linear-gradient(145deg, rgba(19, 38, 45, 0.96), rgba(7, 17, 23, 0.98));
+    border-color: rgba(151, 229, 222, 0.16);
     box-shadow:
-      0 24px 62px rgba(0, 0, 0, 0.32),
-      0 1px 0 rgba(255, 255, 255, 0.28) inset,
-      -0.45rem 0 1.1rem rgba(95, 72, 42, 0.14) inset;
+      0 24px 62px rgba(0, 0, 0, 0.42),
+      0 1px 0 rgba(255, 255, 255, 0.09) inset,
+      -0.45rem 0 1.1rem rgba(0, 0, 0, 0.22) inset;
+  }
+
+  :root.dark .tl-notebook-page-card:hover,
+  :root.dark .tl-notebook-page-card:focus-within {
+    border-color: color-mix(in srgb, var(--tl-brand) 34%, rgba(255, 255, 255, 0.16));
+    box-shadow:
+      0 28px 74px rgba(0, 0, 0, 0.48),
+      0 0 34px color-mix(in srgb, var(--tl-brand) 10%, transparent),
+      0 1px 0 rgba(255, 255, 255, 0.1) inset,
+      -0.45rem 0 1.1rem rgba(0, 0, 0, 0.22) inset;
+  }
+
+  :root.dark .tl-notebook-page-card::before {
+    background:
+      radial-gradient(circle at 18% 24%, rgba(151, 229, 222, 0.12) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 72% 64%, rgba(151, 229, 222, 0.07) 0 1px, transparent 1.4px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055), transparent 12%, transparent 88%, rgba(0, 0, 0, 0.24));
+    mix-blend-mode: screen;
+    opacity: 0.4;
+  }
+
+  :root.dark .tl-notebook-page-card::after {
+    background: linear-gradient(90deg, transparent, rgba(151, 229, 222, 0.12));
+    opacity: 0.52;
   }
 
   .tl-notebook-page-rule {
@@ -1325,6 +1349,10 @@ input {
     bottom: 1rem;
     width: 1px;
     background: rgba(151, 82, 62, 0.24);
+  }
+
+  :root.dark .tl-notebook-page-rule {
+    background: color-mix(in srgb, var(--tl-brand) 36%, rgba(255, 255, 255, 0.06));
   }
 
   .tl-notebook-page-summary {
@@ -1341,7 +1369,8 @@ input {
   }
 
   :root.dark .tl-notebook-page-summary {
-    color: rgba(40, 35, 28, 0.84);
+    color: rgba(219, 236, 232, 0.82);
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
   }
 
   .tl-notebook-updated {
@@ -1349,7 +1378,7 @@ input {
   }
 
   :root.dark .tl-notebook-updated {
-    color: rgba(62, 53, 39, 0.82);
+    color: rgba(172, 200, 194, 0.76);
   }
 
   .tl-notebook-thumbnail {
@@ -1380,28 +1409,28 @@ input {
   }
 
   :root.dark .tl-notebook-thumbnail {
-    --tl-notebook-thumb-link: rgba(88, 113, 105, 0.42);
-    --tl-notebook-thumb-node: rgba(248, 239, 213, 0.94);
-    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 16%, rgba(248, 239, 213, 0.94));
-    --tl-notebook-thumb-node-stroke: rgba(116, 94, 61, 0.34);
-    --tl-notebook-thumb-node-active-stroke: color-mix(in srgb, var(--tl-brand) 48%, rgba(116, 94, 61, 0.42));
-    --tl-notebook-thumb-ink: rgba(36, 31, 24, 0.88);
-    border-color: rgba(178, 149, 96, 0.22);
-    color: rgba(36, 31, 24, 0.84);
+    --tl-notebook-thumb-link: color-mix(in srgb, var(--tl-brand) 36%, rgba(168, 208, 202, 0.24));
+    --tl-notebook-thumb-node: rgba(16, 33, 39, 0.94);
+    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 22%, rgba(18, 42, 48, 0.96));
+    --tl-notebook-thumb-node-stroke: rgba(151, 229, 222, 0.2);
+    --tl-notebook-thumb-node-active-stroke: color-mix(in srgb, var(--tl-brand) 58%, rgba(255, 255, 255, 0.18));
+    --tl-notebook-thumb-ink: rgba(224, 241, 238, 0.9);
+    border-color: rgba(151, 229, 222, 0.14);
+    color: rgba(224, 241, 238, 0.86);
     background:
-      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 10%, transparent), transparent 8rem),
-      linear-gradient(rgba(113, 94, 62, 0.13) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(113, 94, 62, 0.13) 1px, transparent 1px),
-      rgba(246, 237, 212, 0.58);
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 14%, transparent), transparent 8rem),
+      linear-gradient(rgba(151, 229, 222, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(151, 229, 222, 0.06) 1px, transparent 1px),
+      rgba(5, 15, 20, 0.55);
     box-shadow:
-      0 0.75rem 1.3rem rgba(84, 63, 34, 0.1) inset,
-      0 1px 0 rgba(255, 255, 255, 0.24);
+      0 0.75rem 1.3rem rgba(0, 0, 0, 0.22) inset,
+      0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   :root.dark .tl-notebook-thumbnail-count {
-    color: rgba(54, 45, 32, 0.82);
-    border-color: rgba(116, 94, 61, 0.28);
-    background: rgba(248, 239, 213, 0.72);
+    color: rgba(222, 240, 236, 0.86);
+    border-color: rgba(151, 229, 222, 0.18);
+    background: rgba(10, 24, 30, 0.78);
   }
 
   .tl-child-conversation-layout {
