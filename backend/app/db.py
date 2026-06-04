@@ -54,11 +54,40 @@ def init_db() -> None:
               email TEXT NOT NULL UNIQUE,
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
+              email_verified INTEGER NOT NULL DEFAULT 0,
+              email_verified_at TEXT,
               is_temporary INTEGER NOT NULL DEFAULT 0,
               is_admin INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              token_type TEXT NOT NULL CHECK(token_type IN ('email_verification', 'password_reset')),
+              token_hash TEXT NOT NULL UNIQUE,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_type
+              ON auth_tokens(user_id, token_type, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS pending_email_verifications (
+              id TEXT PRIMARY KEY,
+              email TEXT NOT NULL,
+              purpose TEXT NOT NULL CHECK(purpose IN ('registration')),
+              code_hash TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pending_email_verifications_email_purpose
+              ON pending_email_verifications(email, purpose, created_at DESC);
 
             CREATE TABLE IF NOT EXISTS app_settings (
               key TEXT PRIMARY KEY,
@@ -391,6 +420,8 @@ def init_db() -> None:
         ensure_column(conn, "wallet_ledger", "balance_after_micro_cents", "INTEGER")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "email_verified", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(conn, "users", "email_verified_at", "TEXT")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
 

@@ -133,7 +133,7 @@ interface ArborLearnState {
   skills: SkillTemplate[];
   initializeAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName?: string) => Promise<void>;
+  register: (email: string, password: string, displayName?: string, verificationCode?: string) => Promise<void>;
   createDemoSession: () => Promise<void>;
   resumeDemoNotebook: (notebookRef: string) => Promise<void>;
   logout: () => void;
@@ -386,6 +386,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     set({ authStatus: "checking", authError: null });
     try {
       const response = await loginRequest({ email, password });
+      if (!response.token) throw new Error("登录响应缺少认证令牌");
       setAuthToken(response.token);
       set({ user: response.user, authStatus: "authenticated", authError: null });
       await get().hydrateFromBackend();
@@ -399,16 +400,21 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       throw error;
     }
   },
-  register: async (email, password, displayName) => {
+  register: async (email, password, displayName, verificationCode) => {
     set({ authStatus: "checking", authError: null });
     try {
       const state = get();
       const response = state.user?.isTemporary
         ? await upgradeDemoAccount({ email, password, displayName })
-        : await registerRequest({ email, password, displayName });
-      setAuthToken(response.token);
-      set({ user: response.user, authStatus: "authenticated", authError: null });
-      await get().hydrateFromBackend();
+        : await registerRequest({ email, password, displayName, verificationCode });
+      if (response.token) {
+        setAuthToken(response.token);
+        set({ user: response.user, authStatus: "authenticated", authError: null });
+        await get().hydrateFromBackend();
+        return;
+      }
+      clearAuthToken();
+      set({ user: null, authStatus: "anonymous", authError: null });
     } catch (error) {
       clearAuthToken();
       set({
@@ -423,6 +429,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     set({ authStatus: "checking", authError: null });
     try {
       const response = await createDemoSessionRequest();
+      if (!response.token) throw new Error("演示登录响应缺少认证令牌");
       setAuthToken(response.token, { persist: false });
       set({ user: response.user, authStatus: "authenticated", authError: null });
       await get().hydrateFromBackend();
@@ -440,6 +447,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     set({ authStatus: "checking", authError: null });
     try {
       const response = await resumeDemoNotebookRequest(notebookRef);
+      if (!response.token) throw new Error("演示恢复响应缺少认证令牌");
       setAuthToken(response.token, { persist: false });
       set({ user: response.user, authStatus: "authenticated", authError: null });
       await get().hydrateFromBackend();
