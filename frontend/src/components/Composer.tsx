@@ -1,12 +1,11 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
 import {
   Check,
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  FileText,
   Globe,
   Lightbulb,
   MessageSquareText,
@@ -14,7 +13,6 @@ import {
   Send,
   SlidersHorizontal,
   Square,
-  Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { useArborLearnStore } from "../store/arborlearnStore";
@@ -25,12 +23,16 @@ import {
 } from "../lib/models";
 import { getModelScopeId, type ModelConfig, type ModelScope } from "../lib/modelScope";
 import { cn } from "../lib/utils";
+import { AttachmentPreview } from "./AttachmentPreview";
+import type { UploadedFile } from "../types/arborlearn";
 
 interface ComposerProps {
   nodeId: string;
   notebookId?: string;
   panelId?: string;
   threadId?: string;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
 const branchQuickPrompts = [
@@ -50,7 +52,7 @@ const branchQuickPrompts = [
     icon: CircleHelp,
   },
 ];
-const EMPTY_FILES: { id: string; filename: string; fileSize: number; extractionStatus: "pending" | "ready" | "failed"; errorMessage?: string | null }[] = [];
+const EMPTY_FILES: UploadedFile[] = [];
 const UPLOAD_ACCEPT =
   ".txt,.md,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.bmp,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*";
 const CLIPBOARD_IMAGE_EXTENSIONS: Record<string, string> = {
@@ -60,7 +62,7 @@ const CLIPBOARD_IMAGE_EXTENSIONS: Record<string, string> = {
   "image/bmp": ".bmp",
 };
 
-export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
+export function Composer({ nodeId, notebookId, panelId, threadId, demoUpgradeLocked = false, onRequireDemoUpgrade }: ComposerProps) {
   const [value, setValue] = useState("");
   const [lastSubmittedAt, setLastSubmittedAt] = useState<string>("");
   const node = useArborLearnStore((state) => state.nodes[nodeId]);
@@ -72,6 +74,8 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const deleteFile = useArborLearnStore((state) => state.deleteFile);
   const isUploading = useArborLearnStore((state) => state.fileUploadStatusByNode[nodeId] === "uploading");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dockRef = useRef<HTMLDivElement | null>(null);
   const scope: ModelScope = { panelId, threadId: threadId ?? nodeId, nodeId, notebookId };
   const scopeId = getModelScopeId(scope);
   const selectedModel = useArborLearnStore((state) => state.getModelConfig(scope).model);
@@ -84,8 +88,65 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   const isStreaming = chatRunStatus === "streaming";
   const hasUserQuestion = node?.messages.some((message) => message.role === "user") ?? false;
   const showBranchQuickPrompts = Boolean(node?.selectedText && !hasUserQuestion && !value.trim() && !isThinking && !isStreaming);
-  const visibleFiles = files.filter((file) => !lastSubmittedAt || file.createdAt > lastSubmittedAt);
+  const attachedFileIds = new Set(node?.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []) ?? []);
+  const visibleFiles = files.filter((file) => !attachedFileIds.has(file.id) && (!lastSubmittedAt || file.createdAt > lastSubmittedAt));
+  const hasPendingFiles = files.some((file) => file.extractionStatus === "pending");
   const [isDragActive, setIsDragActive] = useState(false);
+
+  const resizeComposerInput = () => {
+    const textarea = composerInputRef.current;
+    if (!textarea) return;
+
+    const styles = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
+    const paddingY = Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+    const maxHeight = Math.ceil(lineHeight * 10 + paddingY);
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  };
+
+  useLayoutEffect(() => {
+    resizeComposerInput();
+  }, [value]);
+
+  useEffect(() => {
+    window.addEventListener("resize", resizeComposerInput);
+    return () => window.removeEventListener("resize", resizeComposerInput);
+  }, []);
+
+  useEffect(() => {
+    const dock = dockRef.current;
+    const panel = dock?.closest<HTMLElement>(".tl-node-panel");
+    if (!dock || !panel) return;
+
+    const updateComposerHeight = () => {
+      const scroller = panel.querySelector<HTMLElement>(".tl-message-scroll");
+      const shouldStayAtBottom = scroller
+        ? scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+        : false;
+
+      panel.style.setProperty("--tl-composer-dock-height", `${Math.ceil(dock.getBoundingClientRect().height)}px`);
+
+      if (shouldStayAtBottom && scroller) {
+        requestAnimationFrame(() => {
+          scroller.scrollTo({ top: scroller.scrollHeight, behavior: "auto" });
+        });
+      }
+    };
+
+    updateComposerHeight();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateComposerHeight) : null;
+    observer?.observe(dock);
+    window.addEventListener("resize", updateComposerHeight);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateComposerHeight);
+      panel.style.removeProperty("--tl-composer-dock-height");
+    };
+  }, []);
   const dragDepthRef = useRef(0);
 
   useEffect(() => {
@@ -96,8 +157,20 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
     setLastSubmittedAt("");
   }, [nodeId]);
 
+  useEffect(() => {
+    if (!hasPendingFiles) return;
+    const intervalId = window.setInterval(() => {
+      void loadNodeFiles(nodeId, { force: true });
+    }, 1500);
+    return () => window.clearInterval(intervalId);
+  }, [hasPendingFiles, loadNodeFiles, nodeId]);
+
   const send = (content: string) => {
     if (!content.trim()) return;
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
+      return;
+    }
     appendMessage(
       nodeId,
       content.trim(),
@@ -105,9 +178,11 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       visibleFiles.map((file) => ({
         id: file.id,
         filename: file.filename,
+        mimeType: file.mimeType,
         fileSize: file.fileSize,
         extractionStatus: file.extractionStatus,
         errorMessage: file.errorMessage,
+        localFile: file.localFile,
       })),
     );
     setLastSubmittedAt(new Date().toISOString());
@@ -125,6 +200,10 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
 
   const uploadFiles = async (selectedFiles: File[]) => {
     if (isUploading || selectedFiles.length === 0) return;
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
+      return;
+    }
     for (const selectedFile of selectedFiles) {
       try {
         await uploadFile(nodeId, selectedFile);
@@ -176,7 +255,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
   };
 
   return (
-    <div className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
+    <div ref={dockRef} className="tl-composer-dock shrink-0 border-t border-border/55 px-3 py-3 backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--tl-panel-muted) 34%, transparent)" }}>
       <div
         className={cn(
           "tl-composer-shell tl-panel group/composer relative mx-auto max-w-3xl rounded-[1.65rem] border px-3 py-2",
@@ -224,29 +303,16 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
         {visibleFiles.length > 0 && (
           <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
             {visibleFiles.map((file) => (
-              <span
+              <AttachmentPreview
                 key={file.id}
-                className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border/70 bg-background/55 px-2 text-xs text-muted-foreground"
-                title={file.errorMessage ?? file.filename}
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-40 truncate">{file.filename}</span>
-                <span className="text-muted-foreground/70">{formatFileSize(file.fileSize)}</span>
-                {file.extractionStatus === "failed" && <span className="text-destructive">failed</span>}
-                <button
-                  type="button"
-                  className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-foreground/8 hover:text-foreground"
-                  title="删除附件"
-                  aria-label={`删除附件 ${file.filename}`}
-                  onClick={() => void deleteFile(file.id, nodeId)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </span>
+                file={file}
+                onRemove={() => void deleteFile(file.id, nodeId)}
+              />
             ))}
           </div>
         )}
         <textarea
+          ref={composerInputRef}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -256,7 +322,7 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
             }
           }}
           rows={2}
-          className="tl-composer-input max-h-32 min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
+          className="tl-composer-input min-h-12 w-full resize-none bg-transparent px-2 pt-1 text-sm leading-6 outline-none"
           placeholder="围绕当前节点继续追问..."
         />
           <div className="flex items-center justify-between gap-2 pt-1" data-tour-composer-node-id={nodeId}>
@@ -284,7 +350,13 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
               data-tour-composer-tool-node-id={nodeId}
               title="上传文件"
               disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (demoUpgradeLocked) {
+                  onRequireDemoUpgrade?.();
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
               className="h-9 w-9 border-transparent text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0 hover:border-transparent hover:bg-foreground/5 hover:text-foreground"
             >
               <Paperclip className="h-4 w-4" />
@@ -313,12 +385,6 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
       </div>
     </div>
   );
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 function transferHasFiles(dataTransfer: DataTransfer) {

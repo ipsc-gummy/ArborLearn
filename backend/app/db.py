@@ -40,7 +40,14 @@ def init_db() -> None:
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
               is_temporary INTEGER NOT NULL DEFAULT 0,
+              is_admin INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
 
@@ -315,6 +322,7 @@ def init_db() -> None:
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
@@ -1232,6 +1240,39 @@ def add_uploaded_file(
     touch_node(conn, node_id, ts)
     row = conn.execute("SELECT * FROM uploaded_files WHERE id = ?", (file_id,)).fetchone()
     return row_to_uploaded_file(row, include_text=True)
+
+
+def update_uploaded_file_extraction(
+    conn: sqlite3.Connection,
+    file_id: str,
+    user_id: str,
+    *,
+    extracted_text: str,
+    extraction_status: str,
+    error_message: str | None = None,
+) -> dict | None:
+    row = conn.execute(
+        "SELECT node_id FROM uploaded_files WHERE id = ? AND user_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    if not row:
+        return None
+
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE uploaded_files
+        SET extracted_text = ?, extraction_status = ?, error_message = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (extracted_text, extraction_status, error_message, ts, file_id, user_id),
+    )
+    touch_node(conn, row["node_id"], ts)
+    updated = conn.execute(
+        "SELECT * FROM uploaded_files WHERE id = ? AND user_id = ?",
+        (file_id, user_id),
+    ).fetchone()
+    return row_to_uploaded_file(updated, include_text=True) if updated else None
 
 
 def get_uploaded_file_for_user(conn: sqlite3.Connection, file_id: str, user_id: str) -> dict | None:

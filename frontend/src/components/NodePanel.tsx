@@ -12,9 +12,17 @@ interface NodePanelProps {
   node: KnowledgeNode;
   compact?: boolean;
   showCloseChild?: boolean;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
-export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
+export function NodePanel({
+  node,
+  compact = false,
+  showCloseChild = false,
+  demoUpgradeLocked = false,
+  onRequireDemoUpgrade,
+}: NodePanelProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
   const closeChildConversation = useArborLearnStore((state) => state.closeChildConversation);
@@ -80,7 +88,7 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
 
   return (
     <section
-      className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent"
+      className="tl-node-panel relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-transparent"
       data-tour-node-id={node.id}
       data-tour-node-panel={node.title}
     >
@@ -193,7 +201,14 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         </div>
       </div>
 
-      <Composer nodeId={node.id} notebookId={notebookId} threadId={node.id} panelId={panelId} />
+      <Composer
+        nodeId={node.id}
+        notebookId={notebookId}
+        threadId={node.id}
+        panelId={panelId}
+        demoUpgradeLocked={demoUpgradeLocked}
+        onRequireDemoUpgrade={onRequireDemoUpgrade}
+      />
     </section>
   );
 }

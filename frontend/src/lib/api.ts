@@ -13,7 +13,18 @@ export interface AuthUser {
   email: string;
   displayName: string;
   isTemporary?: boolean;
+  isAdmin?: boolean;
 }
+
+export interface RuntimeSetting {
+  value: number;
+  label: string;
+  default: number;
+  min: number;
+  max: number;
+}
+
+export type RuntimeSettings = Record<string, RuntimeSetting>;
 
 interface AuthResponse {
   token: string;
@@ -178,8 +189,22 @@ export function register(payload: { email: string; password: string; displayName
   });
 }
 
+export function upgradeDemoAccount(payload: { email: string; password: string; displayName?: string }) {
+  return request<AuthResponse>("/api/auth/upgrade-demo", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function login(payload: { email: string; password: string }) {
   return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function changePassword(payload: { currentPassword: string; newPassword: string }) {
+  return request<{ ok: true }>("/api/auth/change-password", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -201,6 +226,21 @@ export function resumeDemoNotebook(notebookRef: string) {
 
 export function fetchMe() {
   return request<{ user: AuthUser }>("/api/auth/me");
+}
+
+export function fetchAppSettings() {
+  return request<{ settings: RuntimeSettings }>("/api/app-settings");
+}
+
+export function fetchAdminSettings() {
+  return request<{ settings: RuntimeSettings }>("/api/admin/settings");
+}
+
+export function updateAdminSettings(settings: Record<string, number>) {
+  return request<{ settings: RuntimeSettings }>("/api/admin/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ settings }),
+  });
 }
 
 export function fetchTreeState() {
@@ -317,6 +357,28 @@ export async function uploadNodeFile(nodeId: string, file: File) {
 
 export function fetchNodeFiles(nodeId: string) {
   return request<{ files: UploadedFile[] }>(`/api/nodes/${nodeId}/files`);
+}
+
+export async function fetchUploadedFileBlob(fileId: string) {
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/content`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? detail);
+    } catch {
+      // Keep the HTTP status text when the backend does not return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.blob();
 }
 
 export function deleteUploadedFile(fileId: string) {

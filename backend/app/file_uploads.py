@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import re
+import socket
+import time
 from io import BytesIO
 from pathlib import Path
 from urllib import error, request
@@ -17,8 +19,12 @@ from .settings import (
     get_upload_dir,
     get_vision_api_key,
     get_vision_base_url,
+    get_vision_max_attempts,
+    get_vision_max_image_edge,
     get_vision_model,
     get_vision_provider,
+    get_vision_retry_initial_delay_seconds,
+    get_vision_retry_max_delay_seconds,
     get_vision_timeout_seconds,
     is_ocr_enabled,
 )
@@ -38,6 +44,13 @@ ALLOWED_EXTENSIONS = {
     ".bmp",
 }
 MAX_EXTRACTED_CHARS = 120_000
+DEFERRED_EXTRACTION_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
+
+class VisionRequestError(RuntimeError):
+    def __init__(self, message: str, *, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 def safe_filename(filename: str | None) -> str:
@@ -60,12 +73,68 @@ def validate_upload_name(filename: str) -> str:
     return suffix
 
 
+def should_defer_extraction(suffix: str) -> bool:
+    return suffix in DEFERRED_EXTRACTION_EXTENSIONS
+
+
 def _trim(text: str) -> str:
     return text[:MAX_EXTRACTED_CHARS]
 
 
 def _json_payload(payload: dict) -> str:
     return _trim(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _vision_retry_delay_seconds(attempt: int) -> float:
+    initial_delay = get_vision_retry_initial_delay_seconds()
+    max_delay = get_vision_retry_max_delay_seconds()
+    if initial_delay <= 0 or max_delay <= 0:
+        return 0.0
+    return min(max_delay, initial_delay * (2 ** max(0, attempt - 1)))
+
+
+def _image_resampling_filter():
+    try:
+        from PIL import Image
+
+        return Image.Resampling.LANCZOS
+    except Exception:
+        from PIL import Image
+
+        return Image.LANCZOS
+
+
+def _prepare_vision_image_bytes(content: bytes, image, mime_type: str) -> tuple[bytes, str, dict, list[str]]:
+    width, height = image.size
+    max_edge = get_vision_max_image_edge()
+    metadata = {
+        "original_size": {"width": width, "height": height},
+        "input_size": {"width": width, "height": height},
+        "preprocessed": False,
+        "max_image_edge": max_edge,
+    }
+    warnings: list[str] = []
+    if not max_edge or max(width, height) <= max_edge:
+        return content, mime_type, metadata, warnings
+
+    resized = image.copy()
+    if resized.mode not in {"RGB", "RGBA", "L"}:
+        resized = resized.convert("RGB")
+    resized.thumbnail((max_edge, max_edge), _image_resampling_filter())
+    output = BytesIO()
+    output_format = "PNG"
+    resized.save(output, format=output_format, optimize=True)
+    metadata.update(
+        {
+            "input_size": {"width": resized.width, "height": resized.height},
+            "preprocessed": True,
+            "preprocess_reason": f"max edge {max(width, height)}px exceeds {max_edge}px",
+        }
+    )
+    warnings.append(
+        f"Vision input resized from {width}x{height} to {resized.width}x{resized.height}"
+    )
+    return output.getvalue(), "image/png", metadata, warnings
 
 
 def decode_text_file(content: bytes) -> tuple[str, str, str | None]:
@@ -224,7 +293,7 @@ def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
     if provider in {"", "none", "disabled"}:
         return ""
     if provider not in {"openai_compatible", "qwen_vl"}:
-        raise RuntimeError(f"Unsupported VISION_PROVIDER: {provider}")
+        raise VisionRequestError(f"Unsupported VISION_PROVIDER: {provider}", retryable=False)
 
     b64 = base64.b64encode(image_bytes).decode("ascii")
     data_url = f"data:{mime_type};base64,{b64}"
@@ -255,15 +324,31 @@ def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
     try:
         with request.urlopen(req, timeout=get_vision_timeout_seconds()) as resp:
             result = json.loads(resp.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        retryable = exc.code >= 500 or exc.code in {408, 409, 425, 429}
+        detail = ""
+        try:
+            detail = exc.read(512).decode("utf-8", errors="replace").strip()
+        except Exception:
+            detail = ""
+        suffix = f": {detail}" if detail else ""
+        raise VisionRequestError(
+            f"Vision request failed with HTTP {exc.code}{suffix}",
+            retryable=retryable,
+        ) from exc
     except error.URLError as exc:
-        raise RuntimeError(f"Vision request failed: {exc}") from exc
+        raise VisionRequestError(f"Vision request failed: {exc}", retryable=True) from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise VisionRequestError(f"Vision decode failed: {exc}", retryable=True) from exc
+    except json.JSONDecodeError as exc:
+        raise VisionRequestError(f"Vision decode failed: {exc}", retryable=True) from exc
     except Exception as exc:
-        raise RuntimeError(f"Vision decode failed: {exc}") from exc
+        raise VisionRequestError(f"Vision decode failed: {exc}", retryable=True) from exc
 
     try:
         return (result["choices"][0]["message"]["content"] or "").strip()
     except Exception as exc:
-        raise RuntimeError(f"Vision response format error: {exc}") from exc
+        raise VisionRequestError(f"Vision response format error: {exc}", retryable=False) from exc
 
 
 def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
@@ -271,11 +356,21 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
         from PIL import Image
 
         image = Image.open(BytesIO(content))
+        image.load()
         width, height = image.size
         mime = mime_type or f"image/{(image.format or 'png').lower()}"
         ocr_text = ""
         vision_summary = ""
+        vision_error: str | None = None
         warnings: list[str] = []
+        vision_input_bytes = content
+        vision_mime = mime
+        vision_metadata = {
+            "original_size": {"width": width, "height": height},
+            "input_size": {"width": width, "height": height},
+            "preprocessed": False,
+            "max_image_edge": get_vision_max_image_edge(),
+        }
 
         # OCR (optional fallback channel)
         if is_ocr_enabled():
@@ -299,12 +394,40 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
             warnings.append("OCR disabled by configuration")
 
         # Vision model (primary for image understanding)
-        try:
-            vision_summary = _call_vision_model(content, mime)
-            if not vision_summary:
-                warnings.append("Vision provider disabled or returned empty summary")
-        except Exception as exc:
-            warnings.append(str(exc))
+        provider = get_vision_provider()
+        if provider in {"", "none", "disabled"}:
+            warnings.append("Vision provider disabled")
+        else:
+            vision_input_bytes, vision_mime, vision_metadata, preprocess_warnings = _prepare_vision_image_bytes(
+                content,
+                image,
+                mime,
+            )
+            warnings.extend(preprocess_warnings)
+            max_attempts = get_vision_max_attempts()
+            for attempt in range(1, max_attempts + 1):
+                started_at = time.perf_counter()
+                retryable = True
+                try:
+                    vision_summary = _call_vision_model(vision_input_bytes, vision_mime)
+                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    if vision_summary:
+                        vision_error = None
+                        break
+                    vision_error = "Vision provider returned empty summary"
+                except Exception as exc:
+                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    vision_error = str(exc)
+                    retryable = getattr(exc, "retryable", True)
+                if attempt == max_attempts or not retryable:
+                    warnings.append(f"Vision attempt {attempt} failed after {elapsed_ms}ms: {vision_error}")
+                    break
+                delay = _vision_retry_delay_seconds(attempt)
+                warnings.append(
+                    f"Vision attempt {attempt} failed after {elapsed_ms}ms: {vision_error}; retrying in {delay:g}s"
+                )
+                if delay > 0:
+                    time.sleep(delay)
 
         payload = {
             "type": "image",
@@ -316,10 +439,16 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
                 "format": image.format or "unknown",
                 "size": {"width": width, "height": height},
                 "mime_type": mime,
+                "vision_input": {**vision_metadata, "mime_type": vision_mime},
                 "vision_provider": get_vision_provider(),
+                "vision_max_attempts": get_vision_max_attempts(),
+                "vision_timeout_seconds": get_vision_timeout_seconds(),
                 "warnings": warnings,
             },
         }
+        has_vision_signal = bool(vision_summary.strip())
+        if get_vision_provider() not in {"", "none", "disabled"} and vision_error and not has_vision_signal:
+            return _json_payload(payload), "failed", vision_error
         return _json_payload(payload), "ready", None
     except Exception as exc:
         return "", "failed", f"Unable to parse image: {exc}"
@@ -341,6 +470,22 @@ def extract_file_text(content: bytes, suffix: str, filename: str, mime_type: str
     return "", "failed", "Unsupported file type"
 
 
+def extract_stored_file(*, storage_path: str, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        return "", "failed", "Unsupported file type"
+
+    path = Path(storage_path)
+    if not path.exists():
+        return "", "failed", "Stored file not found"
+
+    content = path.read_bytes()
+    if not content:
+        return "", "failed", "Stored file is empty"
+
+    return extract_file_text(content, suffix, filename, mime_type)
+
+
 async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: str) -> dict:
     filename = safe_filename(upload.filename)
     suffix = validate_upload_name(filename)
@@ -353,11 +498,17 @@ async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: st
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    extracted_text, extraction_status, error_message = extract_file_text(content, suffix, filename, upload.content_type)
     user_dir = get_upload_dir() / user_id / file_id
     user_dir.mkdir(parents=True, exist_ok=True)
     storage_path = user_dir / filename
     storage_path.write_bytes(content)
+
+    if should_defer_extraction(suffix):
+        extracted_text = ""
+        extraction_status = "pending"
+        error_message = None
+    else:
+        extracted_text, extraction_status, error_message = extract_file_text(content, suffix, filename, upload.content_type)
 
     return {
         "filename": filename,

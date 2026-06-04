@@ -17,7 +17,13 @@ services:
       - VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
       - ENABLE_OCR=${ENABLE_OCR:-true}
       - OCR_LANGUAGES=${OCR_LANGUAGES:-chi_sim+eng}
-      - TESSERACT_CMD=${TESSERACT_CMD:-}
+      - TESSERACT_CMD=${TESSERACT_CMD:-/usr/bin/tesseract}
+      - OCR_TIMEOUT_SECONDS=${OCR_TIMEOUT_SECONDS:-12}
+      - VISION_PROVIDER=${VISION_PROVIDER:-none}
+      - VISION_BASE_URL=${VISION_BASE_URL:-http://127.0.0.1:8001/v1}
+      - VISION_MODEL=${VISION_MODEL:-Qwen/Qwen2.5-VL-7B-Instruct}
+      - VISION_API_KEY=${VISION_API_KEY:-}
+      - VISION_TIMEOUT_SECONDS=${VISION_TIMEOUT_SECONDS:-75}
       - HF_ENDPOINT=https://hf-mirror.com
     volumes:
       - /var/lib/arborlearn/data:/app/data
