@@ -809,6 +809,17 @@ def http_error_from_web_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail=f"Unexpected web search error: {exc}")
 
 
+async def wait_for_node_for_user(node_id: str, user_id: str) -> sqlite3.Row | None:
+    for attempt in range(8):
+        with connect() as conn:
+            node = get_node_for_user(conn, node_id, user_id)
+            if node:
+                return node
+        if attempt < 7:
+            await asyncio.sleep(0.15)
+    return None
+
+
 async def fetch_top_web_pages(results: list[SearchResult], fetch_top_k: int) -> list[tuple[SearchResult, WebPageContent]]:
     async def fetch_one(result: SearchResult) -> tuple[SearchResult, WebPageContent] | None:
         try:
@@ -2515,6 +2526,8 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
+            node = await wait_for_node_for_user(payload.nodeId, user["id"])
+        if not node:
             raise HTTPException(status_code=404, detail="Node not found")
         if payload.notebookId and not get_notebook_for_user(conn, payload.notebookId, user["id"]):
             raise HTTPException(status_code=404, detail="Notebook not found")
@@ -2902,6 +2915,8 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
         except ModelConfigurationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
+        if not node:
+            node = await wait_for_node_for_user(payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
         if payload.notebookId and not get_notebook_for_user(conn, payload.notebookId, user["id"]):
