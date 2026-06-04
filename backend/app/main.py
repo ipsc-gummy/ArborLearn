@@ -34,9 +34,10 @@ from .backfill import (
 from .billing import (
     WalletInsufficientCreditError,
     ensure_wallet,
-    ensure_wallet_has_credit,
+    ensure_wallet_can_charge_model,
     record_successful_model_usage,
     wallet_public_view,
+    wallet_quota_for_user,
 )
 from .context_builder import build_model_messages, index_node_to_vector_store
 from .db import (
@@ -286,6 +287,7 @@ def wallet_http_error(exc: WalletInsufficientCreditError) -> HTTPException:
             "code": "WALLET_INSUFFICIENT_CREDIT",
             "message": "钱包余额不足，请补充额度后再调用模型。",
             "balanceCents": exc.balance_cents,
+            "balanceMicroCents": exc.balance_micro_cents,
             "balanceTokens": exc.balance_tokens,
         },
     )
@@ -812,7 +814,7 @@ def maybe_generate_root_title(
     ]
     try:
         if user_id:
-            ensure_wallet_has_credit(conn, user_id)
+            ensure_wallet_can_charge_model(conn, user_id, model_name)
         started = time.time()
         result = call_model_with_usage(title_messages, model_name, "fast")
         title = clean_generated_title(result.content)
@@ -887,7 +889,7 @@ def maybe_generate_branch_summary(
     ]
     try:
         if user_id:
-            ensure_wallet_has_credit(conn, user_id)
+            ensure_wallet_can_charge_model(conn, user_id, model_name)
         started = time.time()
         result = call_model_with_usage(summary_messages, model_name, "fast")
         summary = clean_generated_summary(result.content)
@@ -956,7 +958,7 @@ def maybe_generate_node_summary(
     ]
     try:
         if user_id:
-            ensure_wallet_has_credit(conn, user_id)
+            ensure_wallet_can_charge_model(conn, user_id, model_name)
         started = time.time()
         result = call_model_with_usage(summary_messages, model_name, "fast")
         summary = clean_generated_summary(result.content)
@@ -1064,7 +1066,14 @@ def health() -> dict:
 @app.get("/api/wallet")
 def wallet(user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        return {"wallet": wallet_public_view(ensure_wallet(conn, user["id"]))}
+        initial_cents, initial_tokens = wallet_quota_for_user(conn, user["id"])
+        return {
+            "wallet": wallet_public_view(
+                ensure_wallet(conn, user["id"]),
+                initial_cents=initial_cents,
+                initial_tokens=initial_tokens,
+            )
+        }
 
 
 @app.get("/api/usage/summary")
@@ -1774,9 +1783,11 @@ def build_backfill_draft_messages(
 def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
         try:
-            ensure_wallet_has_credit(conn, user["id"])
+            ensure_wallet_can_charge_model(conn, user["id"], payload.modelName)
         except WalletInsufficientCreditError as exc:
             raise wallet_http_error(exc) from exc
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         source_node = source_node_for_user(conn, user["id"], payload.sourceChildNodeId)
         if not source_node:
             raise HTTPException(status_code=404, detail="Source child node not found")
@@ -2116,9 +2127,11 @@ def delete_node(node_id: str, user: dict = Depends(require_user)) -> dict:
 async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
         try:
-            ensure_wallet_has_credit(conn, user["id"])
+            ensure_wallet_can_charge_model(conn, user["id"], payload.modelName)
         except WalletInsufficientCreditError as exc:
             raise wallet_http_error(exc) from exc
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -2252,9 +2265,11 @@ def stop_chat(payload: ChatStopRequest, user: dict = Depends(require_user)) -> d
 def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
         try:
-            ensure_wallet_has_credit(conn, user["id"])
+            ensure_wallet_can_charge_model(conn, user["id"], payload.modelName)
         except WalletInsufficientCreditError as exc:
             raise wallet_http_error(exc) from exc
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -2369,9 +2384,11 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
 def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:
         try:
-            ensure_wallet_has_credit(conn, user["id"])
+            ensure_wallet_can_charge_model(conn, user["id"], payload.modelName)
         except WalletInsufficientCreditError as exc:
             raise wallet_http_error(exc) from exc
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -2498,9 +2515,11 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
 async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:
         try:
-            ensure_wallet_has_credit(conn, user["id"])
+            ensure_wallet_can_charge_model(conn, user["id"], payload.modelName)
         except WalletInsufficientCreditError as exc:
             raise wallet_http_error(exc) from exc
+        except ModelConfigurationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")

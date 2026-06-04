@@ -9,7 +9,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 
-from .billing import ensure_wallet_has_credit, record_successful_model_usage
+from .billing import ensure_wallet_can_charge_model, record_successful_model_usage
 from .db import (
     add_step_output,
     add_task_evidence,
@@ -350,7 +350,7 @@ class LongTaskRunner:
         error_message = None
         try:
             with connect() as conn:
-                ensure_wallet_has_credit(conn, user_id)
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
             result = await asyncio.to_thread(call_model_with_usage, messages, task_model_name(task), task_thinking_mode(task))
             raw = result.content
             raw_steps = extract_json_array(raw)
@@ -425,7 +425,7 @@ class LongTaskRunner:
         result = None
         try:
             with connect() as conn:
-                ensure_wallet_has_credit(conn, user_id)
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
             result = await asyncio.to_thread(call_model_with_usage, step_context.messages, task_model_name(task), task_thinking_mode(task))
             model_output = result.content
             with connect() as conn:
@@ -627,7 +627,7 @@ class LongTaskRunner:
         result = None
         try:
             with connect() as conn:
-                ensure_wallet_has_credit(conn, user_id)
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
             result = await asyncio.to_thread(call_model_with_usage, messages, task_model_name(task), task_thinking_mode(task))
             raw = result.content
             with connect() as conn:

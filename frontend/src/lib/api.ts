@@ -141,8 +141,10 @@ export interface ContextDebugResponse {
 export interface Wallet {
   userId: string;
   balanceCents: number;
+  balanceMicroCents?: number;
   balanceTokens: number;
   initialCents: number;
+  initialMicroCents?: number;
   initialTokens: number;
   canCallApi: boolean;
   createdAt: string;
@@ -156,6 +158,7 @@ export interface UsageSummary {
     prompt_tokens: number;
     completion_tokens: number;
     cost_cents: number;
+    cost_micro_cents?: number;
     successful_requests: number;
     failed_requests: number;
   };
@@ -165,6 +168,7 @@ export interface UsageSummary {
     request_count: number;
     total_tokens: number;
     cost_cents: number;
+    cost_micro_cents?: number;
   }>;
 }
 
@@ -183,6 +187,7 @@ export interface UsageEvent {
   total_tokens?: number | null;
   usage_source?: string | null;
   cost_cents?: number | null;
+  cost_micro_cents?: number | null;
   pricing_source?: string | null;
   latency_ms?: number | null;
   success: number;

@@ -31,6 +31,8 @@ class ModelUsage:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -61,13 +63,29 @@ def _parse_usage(parsed: dict) -> ModelUsage | None:
             return None
 
     prompt_tokens = int_or_none(usage.get("prompt_tokens"))
+    prompt_cache_hit_tokens = int_or_none(usage.get("prompt_cache_hit_tokens"))
+    prompt_cache_miss_tokens = int_or_none(usage.get("prompt_cache_miss_tokens"))
     completion_tokens = int_or_none(usage.get("completion_tokens"))
     total_tokens = int_or_none(usage.get("total_tokens"))
+    if prompt_tokens is None and (prompt_cache_hit_tokens is not None or prompt_cache_miss_tokens is not None):
+        prompt_tokens = (prompt_cache_hit_tokens or 0) + (prompt_cache_miss_tokens or 0)
     if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
         total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
-    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+    if (
+        prompt_tokens is None
+        and prompt_cache_hit_tokens is None
+        and prompt_cache_miss_tokens is None
+        and completion_tokens is None
+        and total_tokens is None
+    ):
         return None
-    return ModelUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
+    return ModelUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        prompt_cache_hit_tokens=prompt_cache_hit_tokens,
+        prompt_cache_miss_tokens=prompt_cache_miss_tokens,
+    )
 
 
 def _chat_completions_url() -> str:

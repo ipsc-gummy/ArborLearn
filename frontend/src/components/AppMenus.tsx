@@ -142,19 +142,19 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <Button variant="ghost" size="icon" aria-label="鎵撳紑璁剧疆">
+        <Button variant="ghost" size="icon" aria-label="打开设置">
           <Settings className="h-4 w-4" />
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <MenuButton icon={HelpCircle} label="ArborLearn 甯姪" onClick={() => navigate(PRODUCT_GUIDE_PATH)} />
-          <MenuButton icon={MessageSquareWarning} label="鍙戦€佸弽棣? onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
+          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={() => navigate(PRODUCT_GUIDE_PATH)} />
+          <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
           <div className="tl-border-soft my-2 border-t" />
-          <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">澶栬</p>
-          <ThemeOption mode="light" current={themeMode} icon={Sun} label="娴呰壊" onSelect={onThemeChange} />
-          <ThemeOption mode="dark" current={themeMode} icon={Moon} label="娣辫壊" onSelect={onThemeChange} />
-          <ThemeOption mode="system" current={themeMode} icon={Monitor} label="璺熼殢绯荤粺" onSelect={onThemeChange} />
+          <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">外观</p>
+          <ThemeOption mode="light" current={themeMode} icon={Sun} label="浅色" onSelect={onThemeChange} />
+          <ThemeOption mode="dark" current={themeMode} icon={Moon} label="深色" onSelect={onThemeChange} />
+          <ThemeOption mode="system" current={themeMode} icon={Monitor} label="跟随系统" onSelect={onThemeChange} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -178,8 +178,8 @@ export function AccountMenu({
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
   const [walletDialogOpen, setWalletDialogOpen] = useState(false);
-  const displayName = user?.displayName ?? "鏈櫥褰?;
-  const displayEmail = user?.email ?? "鐧诲綍鍚庝繚瀛樹綘鐨勫涔犺繘搴?;
+  const displayName = user?.displayName ?? "未登录";
+  const displayEmail = user?.email ?? "登录后保存你的学习进度";
   const initials = user ? user.displayName.slice(0, 2).toUpperCase() : null;
 
   const openChange = (open: boolean) => {
@@ -222,7 +222,7 @@ export function AccountMenu({
     <button
       type="button"
       className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-muted/70"
-      aria-label={user ? "鎵撳紑璐﹀彿涓庤缃彍鍗? : "鎵撳紑鐧诲綍涓庤缃彍鍗?}
+      aria-label={user ? "打开账号与设置菜单" : "打开登录与设置菜单"}
     >
       {avatarMark}
     </button>
@@ -232,7 +232,7 @@ export function AccountMenu({
     <button
       type="button"
       className="tl-hover flex w-full min-w-0 items-center gap-3 rounded-lg px-2 py-2 text-left"
-      aria-label={user ? "鎵撳紑璐﹀彿涓庤缃彍鍗? : "鎵撳紑鐧诲綍涓庤缃彍鍗?}
+      aria-label={user ? "打开账号与设置菜单" : "打开登录与设置菜单"}
     >
       {avatarMark}
       <span className="min-w-0 flex-1">
@@ -268,7 +268,7 @@ export function AccountMenu({
                     <span className="truncate font-semibold">{user.displayName}</span>
                     {user.isTemporary && (
                       <span className="shrink-0 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
-                        涓存椂浣撻獙
+                        临时体验
                       </span>
                     )}
                   </span>
@@ -278,8 +278,8 @@ export function AccountMenu({
               </button>
             ) : (
               <div className="tl-panel-soft mb-2 rounded-lg border p-3">
-                <p className="font-semibold">ArborLearn 璐﹀彿</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">鐧诲綍鍚庯紝绗旇鏈拰瀛︿範璺緞浼氫繚瀛樺湪浣犵殑璐﹀彿涓嬨€?/p>
+                <p className="font-semibold">ArborLearn 账号</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">登录后，笔记本和学习路径会保存在你的账号下。</p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
@@ -289,7 +289,7 @@ export function AccountMenu({
                       onRequestAuth("login");
                     }}
                   >
-                    鐧诲綍
+                    登录
                   </Button>
                   <Button
                     size="sm"
@@ -298,7 +298,7 @@ export function AccountMenu({
                       onRequestAuth("register");
                     }}
                   >
-                    娉ㄥ唽
+                    注册
                   </Button>
                 </div>
               </div>
@@ -314,9 +314,10 @@ export function AccountMenu({
                 }}
               />
             )}
-            {user?.isTemporary && (<MenuButton
+            {user?.isTemporary && (
+              <MenuButton
                 icon={UserPlus}
-                label="缁戝畾姝ｅ紡璐﹀彿"
+                label="绑定正式账号"
                 onClick={() => {
                   closeMenu();
                   onRequestAuth("register");
@@ -326,7 +327,7 @@ export function AccountMenu({
             {user?.isAdmin && (
               <MenuButton
                 icon={ShieldCheck}
-                label="鍚庡彴璁剧疆"
+                label="后台设置"
                 onClick={() => {
                   closeMenu();
                   setAdminSettingsOpen(true);
@@ -336,7 +337,7 @@ export function AccountMenu({
             {user && !user.isTemporary && (
               <MenuButton
                 icon={KeyRound}
-                label="淇敼瀵嗙爜"
+                label="修改密码"
                 onClick={() => {
                   closeMenu();
                   setPasswordDialogOpen(true);
@@ -347,24 +348,24 @@ export function AccountMenu({
             <div className="tl-border-soft my-2 border-t" />
             <SubmenuRow
               icon={Settings}
-              label="澶栬"
+              label="外观"
               active={activeSubmenu === "appearance"}
               submenuSide={submenuSide}
               onActivate={() => setActiveSubmenu("appearance")}
             >
-              <ThemeOption mode="light" current={themeMode} icon={Sun} label="娴呰壊" onSelect={selectTheme} />
-              <ThemeOption mode="dark" current={themeMode} icon={Moon} label="娣辫壊" onSelect={selectTheme} />
-              <ThemeOption mode="system" current={themeMode} icon={Monitor} label="璺熼殢绯荤粺" onSelect={selectTheme} />
+              <ThemeOption mode="light" current={themeMode} icon={Sun} label="浅色" onSelect={selectTheme} />
+              <ThemeOption mode="dark" current={themeMode} icon={Moon} label="深色" onSelect={selectTheme} />
+              <ThemeOption mode="system" current={themeMode} icon={Monitor} label="跟随系统" onSelect={selectTheme} />
             </SubmenuRow>
             <SubmenuRow
               icon={HelpCircle}
-              label="甯姪"
+              label="帮助"
               active={activeSubmenu === "help"}
               submenuSide={submenuSide}
               onActivate={() => setActiveSubmenu("help")}
             >
-              <MenuButton icon={HelpCircle} label="ArborLearn 甯姪" onClick={openGuide} />
-              <MenuButton icon={MessageSquareWarning} label="鍙戦€佸弽棣? onClick={openFeedback} />
+              <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={openGuide} />
+              <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={openFeedback} />
               <MenuButton icon={Github} label="GitHub" onClick={openGithub} />
             </SubmenuRow>
 
@@ -381,7 +382,7 @@ export function AccountMenu({
                   }}
                 >
                   <LogOut className="h-4 w-4" />
-                  閫€鍑鸿处鍙?
+                  退出账号
                 </button>
               </>
             )}
@@ -397,10 +398,10 @@ export function AccountMenu({
           <div className="tl-modal-panel tl-panel w-full max-w-sm rounded-2xl border p-5 shadow-panel">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <p className="text-lg font-semibold">璐﹀彿淇℃伅</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">褰撳墠鐧诲綍璐﹀彿鐨勫熀纭€淇℃伅銆?/p>
+                <p className="text-lg font-semibold">账号信息</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">当前登录账号的基础信息。</p>
               </div>
-              <button className="tl-hover rounded-full p-2" onClick={() => setAccountInfoOpen(false)} aria-label="鍏抽棴璐﹀彿淇℃伅">
+              <button className="tl-hover rounded-full p-2" onClick={() => setAccountInfoOpen(false)} aria-label="关闭账号信息">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -410,9 +411,9 @@ export function AccountMenu({
               </div>
             </div>
             <div className="space-y-3 text-sm">
-              <AccountInfoRow label="鏄电О" value={user.displayName} />
-              <AccountInfoRow label="閭" value={user.email} />
-              <AccountInfoRow label="鐘舵€? value="宸茬櫥褰? />
+              <AccountInfoRow label="昵称" value={user.displayName} />
+              <AccountInfoRow label="邮箱" value={user.email} />
+              <AccountInfoRow label="状态" value="已登录" />
             </div>
           </div>
         </div>,
@@ -445,12 +446,12 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     setMessage(null);
     if (newPassword !== confirmPassword) {
       setStatus("error");
-      setMessage("涓ゆ杈撳叆鐨勬柊瀵嗙爜涓嶄竴鑷淬€?);
+      setMessage("两次输入的新密码不一致。");
       return;
     }
     if (currentPassword === newPassword) {
       setStatus("error");
-      setMessage("鏂板瘑鐮佷笉鑳藉拰褰撳墠瀵嗙爜鐩稿悓銆?);
+      setMessage("新密码不能和当前密码相同。");
       return;
     }
     setStatus("saving");
@@ -460,10 +461,10 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setMessage("瀵嗙爜宸叉洿鏂帮紝涓嬫鐧诲綍璇蜂娇鐢ㄦ柊瀵嗙爜銆?);
+      setMessage("密码已更新，下次登录请使用新密码。");
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "淇敼瀵嗙爜澶辫触");
+      setMessage(error instanceof Error ? error.message : "修改密码失败");
     }
   };
 
@@ -472,19 +473,19 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">淇敼瀵嗙爜</p>
+            <p className="text-lg font-semibold">修改密码</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              杈撳叆褰撳墠瀵嗙爜鍚庤缃柊瀵嗙爜銆傛柊瀵嗙爜鑷冲皯 8 浣嶃€?
+              输入当前密码后设置新密码。新密码至少 8 位。
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴淇敼瀵嗙爜绐楀彛">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭修改密码窗口">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <form className="space-y-3" onSubmit={submit}>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">褰撳墠瀵嗙爜</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">当前密码</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={currentPassword}
@@ -495,7 +496,7 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">鏂板瘑鐮?/span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">新密码</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={newPassword}
@@ -507,7 +508,7 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">纭鏂板瘑鐮?/span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={confirmPassword}
@@ -527,10 +528,10 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>
-              鍏抽棴
+              关闭
             </Button>
             <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {status === "saving" ? "淇濆瓨涓?.." : "淇濆瓨鏂板瘑鐮?}
+              {status === "saving" ? "保存中..." : "保存新密码"}
             </Button>
           </div>
         </form>
@@ -558,7 +559,7 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       .catch((error) => {
         if (cancelled) return;
         setStatus("error");
-        setMessage(error instanceof Error ? error.message : "鏃犳硶鍔犺浇鍚庡彴璁剧疆");
+        setMessage(error instanceof Error ? error.message : "无法加载后台设置");
       });
     return () => {
       cancelled = true;
@@ -573,10 +574,10 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       setSettings(response.settings);
       setDraft(Object.fromEntries(Object.entries(response.settings).map(([key, setting]) => [key, setting.value])));
       setStatus("ready");
-      setMessage("璁剧疆宸蹭繚瀛橈紝鐢ㄦ埛鍒锋柊椤甸潰鍚庣敓鏁堛€?);
+      setMessage("设置已保存，用户刷新页面后生效。");
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "淇濆瓨澶辫触");
+      setMessage(error instanceof Error ? error.message : "保存失败");
     }
   };
 
@@ -585,24 +586,24 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       <div className="tl-modal-panel tl-panel max-h-[86vh] w-full max-w-2xl overflow-auto rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">鍚庡彴璁剧疆</p>
+            <p className="text-lg font-semibold">后台设置</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              璋冩暣婕旂ず璐﹀彿鎻愮ず闃堝€煎拰淇濈暀绛栫暐銆傚缓璁皬姝ヤ慨鏀癸紝瑙傚療杞寲鍜屼娇鐢ㄤ綋楠屽悗鍐嶇户缁皟銆?
+              调整演示账号提示阈值和保留策略。建议小步修改，观察转化和使用体验后再继续调。
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴鍚庡彴璁剧疆">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭后台设置">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {status === "loading" && <p className="text-sm text-muted-foreground">姝ｅ湪鍔犺浇璁剧疆...</p>}
+        {status === "loading" && <p className="text-sm text-muted-foreground">正在加载设置...</p>}
         {settings && (
           <div className="grid gap-3">
             {Object.entries(settings).map(([key, setting]) => (
               <label key={key} className="rounded-xl border border-border bg-muted/25 p-3">
                 <span className="block text-sm font-semibold">{setting.label}</span>
                 <span className="mt-1 block text-xs text-muted-foreground">
-                  鑼冨洿 {setting.min} - {setting.max}锛岄粯璁?{setting.default}
+                  范围 {setting.min} - {setting.max}，默认 {setting.default}
                 </span>
                 <input
                   type="number"
@@ -631,10 +632,10 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
 
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
-            鍏抽棴
+            关闭
           </Button>
           <Button variant="primary" onClick={save} disabled={!settings || status === "saving" || status === "loading"}>
-            {status === "saving" ? "淇濆瓨涓?.." : "淇濆瓨璁剧疆"}
+            {status === "saving" ? "保存中..." : "保存设置"}
           </Button>
         </div>
       </div>
@@ -690,7 +691,7 @@ export function AuthDialog({
         await onLogin(email, password);
       }
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "鎿嶄綔澶辫触");
+      setLocalError(error instanceof Error ? error.message : "操作失败");
     }
   };
 
@@ -705,7 +706,7 @@ export function AuthDialog({
       await onCreateDemoSession();
       onClose();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "杩涘叆婕旂ず澶辫触");
+      setLocalError(error instanceof Error ? error.message : "进入演示失败");
     }
   };
 
@@ -714,12 +715,12 @@ export function AuthDialog({
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">{mode === "login" ? "鐧诲綍 ArborLearn" : "鍒涘缓 ArborLearn 璐﹀彿"}</p>
+            <p className="text-lg font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              鐧诲綍鍚庯紝绗旇鏈€佽妭鐐瑰拰鑱婂ぉ璁板綍浼氫繚瀛樺湪浣犵殑璐﹀彿涓嬨€?
+              登录后，笔记本、节点和聊天记录会保存在你的账号下。
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴鐧诲綍绐楀彛">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭登录窗口">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -727,18 +728,18 @@ export function AuthDialog({
         <form className="space-y-3" onSubmit={submit}>
           {mode === "register" && (
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">鏄电О</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">昵称</span>
               <input
                 className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="鍙€?
+                placeholder="可选"
                 autoComplete="name"
               />
             </label>
           )}
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">閭</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={email}
@@ -750,12 +751,12 @@ export function AuthDialog({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">瀵嗙爜</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">密码</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="鑷冲皯 8 浣?
+              placeholder="至少 8 位"
               type="password"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               minLength={8}
@@ -779,7 +780,7 @@ export function AuthDialog({
             disabled={!canSubmit}
           >
             {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-            {loading ? "澶勭悊涓?.." : mode === "login" ? "鐧诲綍" : "娉ㄥ唽骞剁櫥褰?}
+            {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
           </Button>
         </form>
 
@@ -787,7 +788,7 @@ export function AuthDialog({
           className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
           onClick={switchMode}
         >
-          {mode === "login" ? "娌℃湁璐﹀彿锛熸敞鍐? : "宸叉湁璐﹀彿锛熺櫥褰?}
+          {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
         </button>
 
         {mode === "register" && (
@@ -796,17 +797,17 @@ export function AuthDialog({
             className="tl-panel-soft group mt-4 w-full rounded-xl border p-3 text-left text-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
             onClick={startDemoSession}
             disabled={loading}
-            aria-label="杩涘叆鐙珛婕旂ず浣撻獙"
+            aria-label="进入独立演示体验"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">鐙珛婕旂ず浣撻獙</p>
+                <p className="font-semibold">独立演示体验</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  鑷姩鎵撳紑 Transformer 绀轰緥锛屼笉鍐欏叆闀挎湡璐﹀彿锛屼篃涓嶅拰鍏朵粬璁块棶鑰呭叡浜褰曘€?
+                  自动打开 Transformer 示例，不写入长期账号，也不和其他访问者共享记录。
                 </p>
               </div>
               <span className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-background/70 px-3 text-xs font-medium text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                浣撻獙绀轰緥
+                体验示例
                 <LogIn className="h-3.5 w-3.5" />
               </span>
             </div>

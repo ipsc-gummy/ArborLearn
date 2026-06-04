@@ -128,7 +128,46 @@ def test_wallet_default_quota_increase_tops_up_existing_wallet(client: TestClien
     assert decreased.json()["wallet"]["balanceTokens"] == 1_500_000
 
 
-def test_chat_usage_deducts_wallet_and_blocks_after_negative_balance(
+def test_wallet_cost_keeps_sub_cent_precision(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.billing import calculate_paid_cost_cents, calculate_paid_cost_micro_cents
+
+    monkeypatch.setenv(
+        "MODEL_PRICING_JSON",
+        json.dumps(
+            {
+                "tiny-model": {
+                    "input_cents_per_million_tokens": 1,
+                    "output_cents_per_million_tokens": 1,
+                }
+            }
+        ),
+    )
+
+    cost_micro_cents, pricing_source = calculate_paid_cost_micro_cents(
+        model_name="tiny-model",
+        prompt_tokens=1,
+        prompt_cache_hit_tokens=None,
+        prompt_cache_miss_tokens=None,
+        completion_tokens=0,
+        total_tokens=1,
+        paid_tokens=1,
+    )
+    cost_cents, _ = calculate_paid_cost_cents(
+        model_name="tiny-model",
+        prompt_tokens=1,
+        prompt_cache_hit_tokens=None,
+        prompt_cache_miss_tokens=None,
+        completion_tokens=0,
+        total_tokens=1,
+        paid_tokens=1,
+    )
+
+    assert pricing_source == "env"
+    assert cost_micro_cents == 1
+    assert cost_cents == 0
+
+
+def test_chat_usage_uses_free_tokens_then_wallet_balance(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app import main
@@ -145,12 +184,19 @@ def test_chat_usage_deducts_wallet_and_blocks_after_negative_balance(
             }
         ),
     )
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000")
     monkeypatch.setattr(
         main,
         "call_model_with_usage",
         lambda messages, model_name=None, thinking_mode=None: ModelCallResult(
             content="assistant answer",
-            usage=ModelUsage(prompt_tokens=600, completion_tokens=600, total_tokens=1200),
+            usage=ModelUsage(
+                prompt_tokens=600,
+                prompt_cache_hit_tokens=100,
+                prompt_cache_miss_tokens=500,
+                completion_tokens=600,
+                total_tokens=1200,
+            ),
         ),
     )
     monkeypatch.setattr(main, "maybe_generate_root_title", lambda *args, **kwargs: None)
@@ -167,26 +213,36 @@ def test_chat_usage_deducts_wallet_and_blocks_after_negative_balance(
     assert first.status_code == 200
 
     wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
-    assert wallet["balanceCents"] == -200
-    assert wallet["balanceTokens"] == 998800
-    assert wallet["canCallApi"] is False
+    assert wallet["balanceCents"] == 800
+    assert wallet["balanceMicroCents"] == 800_000_000
+    assert wallet["balanceTokens"] == 0
+    assert wallet["canCallApi"] is True
 
     second = client.post(
         "/api/chat",
         headers=headers,
         json={"nodeId": root["id"], "message": "again", "modelName": "deepseek-v4-pro"},
     )
-    assert second.status_code == 402
-    assert second.json()["detail"]["code"] == "WALLET_INSUFFICIENT_CREDIT"
+    assert second.status_code == 200
+
+    wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
+    assert wallet["balanceCents"] == -400
+    assert wallet["balanceMicroCents"] == -400_000_000
+    assert wallet["balanceTokens"] == 0
+    assert wallet["canCallApi"] is False
 
     summary = client.get("/api/usage/summary", headers=headers)
     assert summary.status_code == 200
-    assert summary.json()["total"]["total_tokens"] == 1200
-    assert summary.json()["total"]["cost_cents"] == 1200
+    assert summary.json()["total"]["total_tokens"] == 2400
+    assert summary.json()["total"]["cost_cents"] == 1400
+    assert summary.json()["total"]["cost_micro_cents"] == 1_400_000_000
 
     events = client.get("/api/usage/events", headers=headers)
     assert events.status_code == 200
     assert events.json()["events"][0]["usage_source"] == "provider"
+    assert events.json()["events"][0]["cost_micro_cents"] == 1_200_000_000
+    assert events.json()["events"][0]["prompt_cache_hit_tokens"] == 100
+    assert events.json()["events"][0]["prompt_cache_miss_tokens"] == 500
 
 
 def tiny_png_bytes() -> bytes:

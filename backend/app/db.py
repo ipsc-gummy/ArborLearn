@@ -19,6 +19,21 @@ def uid(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
+MICRO_CENTS_PER_CENT = 1_000_000
+
+
+def cents_to_micro_cents(cents: int | None) -> int:
+    return int(cents or 0) * MICRO_CENTS_PER_CENT
+
+
+def micro_cents_to_display_cents(micro_cents: int | None) -> int:
+    value = int(micro_cents or 0)
+    half = MICRO_CENTS_PER_CENT // 2
+    if value < 0:
+        return -((-value + half) // MICRO_CENTS_PER_CENT)
+    return (value + half) // MICRO_CENTS_PER_CENT
+
+
 STARTER_NOTEBOOK_TITLE = "ArborLearn入门笔记"
 STARTER_TEMPLATE_PATH = Path(__file__).with_name("starter_notebook_template.json")
 
@@ -277,6 +292,9 @@ def init_db() -> None:
               output_chars INTEGER,
               estimated_input_tokens INTEGER,
               estimated_output_tokens INTEGER,
+              prompt_cache_hit_tokens INTEGER,
+              prompt_cache_miss_tokens INTEGER,
+              cost_micro_cents INTEGER,
               context_chars INTEGER,
               web_search_enabled INTEGER NOT NULL DEFAULT 0,
               search_result_count INTEGER NOT NULL DEFAULT 0,
@@ -297,8 +315,10 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS user_wallets (
               user_id TEXT PRIMARY KEY,
               balance_cents INTEGER NOT NULL,
+              balance_micro_cents INTEGER NOT NULL,
               balance_tokens INTEGER NOT NULL,
               default_cents_applied INTEGER NOT NULL,
+              default_micro_cents_applied INTEGER NOT NULL,
               default_tokens_applied INTEGER NOT NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -310,8 +330,10 @@ def init_db() -> None:
               user_id TEXT NOT NULL,
               entry_type TEXT NOT NULL,
               delta_cents INTEGER NOT NULL,
+              delta_micro_cents INTEGER NOT NULL,
               delta_tokens INTEGER NOT NULL,
               balance_after_cents INTEGER NOT NULL,
+              balance_after_micro_cents INTEGER NOT NULL,
               balance_after_tokens INTEGER NOT NULL,
               source TEXT NOT NULL,
               model_call_log_id TEXT,
@@ -353,13 +375,20 @@ def init_db() -> None:
         _ensure_column(conn, "long_tasks", "thinking_mode", "TEXT")
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
         ensure_column(conn, "model_call_logs", "prompt_tokens", "INTEGER")
+        ensure_column(conn, "model_call_logs", "prompt_cache_hit_tokens", "INTEGER")
+        ensure_column(conn, "model_call_logs", "prompt_cache_miss_tokens", "INTEGER")
         ensure_column(conn, "model_call_logs", "completion_tokens", "INTEGER")
         ensure_column(conn, "model_call_logs", "total_tokens", "INTEGER")
         ensure_column(conn, "model_call_logs", "usage_source", "TEXT")
         ensure_column(conn, "model_call_logs", "cost_cents", "INTEGER")
+        ensure_column(conn, "model_call_logs", "cost_micro_cents", "INTEGER")
         ensure_column(conn, "model_call_logs", "pricing_source", "TEXT")
+        ensure_column(conn, "user_wallets", "balance_micro_cents", "INTEGER")
         ensure_column(conn, "user_wallets", "default_cents_applied", "INTEGER")
+        ensure_column(conn, "user_wallets", "default_micro_cents_applied", "INTEGER")
         ensure_column(conn, "user_wallets", "default_tokens_applied", "INTEGER")
+        ensure_column(conn, "wallet_ledger", "delta_micro_cents", "INTEGER")
+        ensure_column(conn, "wallet_ledger", "balance_after_micro_cents", "INTEGER")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
@@ -1776,10 +1805,13 @@ def insert_model_call_log(
     estimated_input_tokens: int | None = None,
     estimated_output_tokens: int | None = None,
     prompt_tokens: int | None = None,
+    prompt_cache_hit_tokens: int | None = None,
+    prompt_cache_miss_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
     usage_source: str | None = None,
     cost_cents: int | None = None,
+    cost_micro_cents: int | None = None,
     pricing_source: str | None = None,
     context_chars: int | None = None,
     web_search_enabled: bool = False,
@@ -1797,11 +1829,12 @@ def insert_model_call_log(
         INSERT INTO model_call_logs(
           id, user_id, notebook_id, node_id, task_id, step_id, call_type, model_name, thinking_mode,
           input_chars, output_chars, estimated_input_tokens, estimated_output_tokens,
-          prompt_tokens, completion_tokens, total_tokens, usage_source, cost_cents, pricing_source,
+          prompt_tokens, prompt_cache_hit_tokens, prompt_cache_miss_tokens,
+          completion_tokens, total_tokens, usage_source, cost_cents, cost_micro_cents, pricing_source,
           context_chars, web_search_enabled, search_result_count, fetched_page_count,
           source_count, evidence_count, latency_ms, success, error_message, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             log_id,
@@ -1818,10 +1851,13 @@ def insert_model_call_log(
             estimated_input_tokens,
             estimated_output_tokens,
             prompt_tokens,
+            prompt_cache_hit_tokens,
+            prompt_cache_miss_tokens,
             completion_tokens,
             total_tokens,
             usage_source,
             cost_cents,
+            cost_micro_cents,
             pricing_source,
             context_chars,
             1 if web_search_enabled else 0,
@@ -1848,34 +1884,49 @@ def get_or_create_wallet(
 ) -> dict:
     row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
     if row:
-        return sync_wallet_default_quota(conn, user_id, dict(row), initial_cents, initial_tokens)
+        wallet = normalize_wallet_precision(conn, user_id, dict(row))
+        return sync_wallet_default_quota(conn, user_id, wallet, initial_cents, initial_tokens)
 
     ts = now_iso()
+    initial_micro_cents = cents_to_micro_cents(initial_cents)
     conn.execute(
         """
         INSERT INTO user_wallets(
-          user_id, balance_cents, balance_tokens, default_cents_applied,
-          default_tokens_applied, created_at, updated_at
+          user_id, balance_cents, balance_micro_cents, balance_tokens, default_cents_applied,
+          default_micro_cents_applied, default_tokens_applied, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (user_id, initial_cents, initial_tokens, initial_cents, initial_tokens, ts, ts),
+        (
+            user_id,
+            micro_cents_to_display_cents(initial_micro_cents),
+            initial_micro_cents,
+            initial_tokens,
+            initial_cents,
+            initial_micro_cents,
+            initial_tokens,
+            ts,
+            ts,
+        ),
     )
     conn.execute(
         """
         INSERT INTO wallet_ledger(
-          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
-          balance_after_tokens, source, model_call_log_id, reason, created_at
+          id, user_id, entry_type, delta_cents, delta_micro_cents, delta_tokens,
+          balance_after_cents, balance_after_micro_cents, balance_after_tokens,
+          source, model_call_log_id, reason, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             uid("ledger"),
             user_id,
             "initial_grant",
-            initial_cents,
+            micro_cents_to_display_cents(initial_micro_cents),
+            initial_micro_cents,
             initial_tokens,
-            initial_cents,
+            micro_cents_to_display_cents(initial_micro_cents),
+            initial_micro_cents,
             initial_tokens,
             "system",
             None,
@@ -1887,10 +1938,45 @@ def get_or_create_wallet(
     return dict(row)
 
 
-def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, int]:
+def normalize_wallet_precision(conn: sqlite3.Connection, user_id: str, wallet: dict) -> dict:
+    balance_micro_cents = wallet.get("balance_micro_cents")
+    default_micro_cents_applied = wallet.get("default_micro_cents_applied")
+    if balance_micro_cents is not None and default_micro_cents_applied is not None:
+        return wallet
+
+    normalized_balance_micro_cents = (
+        int(balance_micro_cents)
+        if balance_micro_cents is not None
+        else cents_to_micro_cents(wallet.get("balance_cents"))
+    )
+    normalized_default_micro_cents = (
+        int(default_micro_cents_applied)
+        if default_micro_cents_applied is not None
+        else cents_to_micro_cents(wallet.get("default_cents_applied"))
+    )
+    conn.execute(
+        """
+        UPDATE user_wallets
+        SET balance_micro_cents = ?,
+            balance_cents = ?,
+            default_micro_cents_applied = ?
+        WHERE user_id = ?
+        """,
+        (
+            normalized_balance_micro_cents,
+            micro_cents_to_display_cents(normalized_balance_micro_cents),
+            normalized_default_micro_cents,
+            user_id,
+        ),
+    )
+    row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row)
+
+
+def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, int, int]:
     row = conn.execute(
         """
-        SELECT delta_cents, delta_tokens
+        SELECT delta_cents, delta_micro_cents, delta_tokens
         FROM wallet_ledger
         WHERE user_id = ? AND entry_type = 'initial_grant'
         ORDER BY created_at ASC
@@ -1899,8 +1985,12 @@ def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, i
         (user_id,),
     ).fetchone()
     if not row:
-        return 0, 0
-    return int(row["delta_cents"] or 0), int(row["delta_tokens"] or 0)
+        return 0, 0, 0
+    delta_cents = int(row["delta_cents"] or 0)
+    delta_micro_cents = row["delta_micro_cents"]
+    if delta_micro_cents is None:
+        delta_micro_cents = cents_to_micro_cents(delta_cents)
+    return delta_cents, int(delta_micro_cents or 0), int(row["delta_tokens"] or 0)
 
 
 def sync_wallet_default_quota(
@@ -1910,62 +2000,89 @@ def sync_wallet_default_quota(
     initial_cents: int,
     initial_tokens: int,
 ) -> dict:
-    grant_cents, grant_tokens = wallet_initial_grant(conn, user_id)
+    wallet = normalize_wallet_precision(conn, user_id, wallet)
+    grant_cents, grant_micro_cents, grant_tokens = wallet_initial_grant(conn, user_id)
     applied_cents = wallet.get("default_cents_applied")
+    applied_micro_cents = wallet.get("default_micro_cents_applied")
     applied_tokens = wallet.get("default_tokens_applied")
     applied_cents = int(applied_cents if applied_cents is not None else grant_cents)
+    applied_micro_cents = int(applied_micro_cents if applied_micro_cents is not None else grant_micro_cents)
     applied_tokens = int(applied_tokens if applied_tokens is not None else grant_tokens)
 
-    delta_cents = max(0, initial_cents - applied_cents)
+    initial_micro_cents = cents_to_micro_cents(initial_cents)
+    delta_micro_cents = max(0, initial_micro_cents - applied_micro_cents)
+    delta_cents = micro_cents_to_display_cents(delta_micro_cents)
     delta_tokens = max(0, initial_tokens - applied_tokens)
     next_applied_cents = max(applied_cents, initial_cents)
+    next_applied_micro_cents = max(applied_micro_cents, initial_micro_cents)
     next_applied_tokens = max(applied_tokens, initial_tokens)
 
     if delta_cents == 0 and delta_tokens == 0:
-        if wallet.get("default_cents_applied") is None or wallet.get("default_tokens_applied") is None:
+        if (
+            wallet.get("default_cents_applied") is None
+            or wallet.get("default_micro_cents_applied") is None
+            or wallet.get("default_tokens_applied") is None
+        ):
             conn.execute(
                 """
                 UPDATE user_wallets
                 SET default_cents_applied = ?,
+                    default_micro_cents_applied = ?,
                     default_tokens_applied = ?
                 WHERE user_id = ?
                 """,
-                (next_applied_cents, next_applied_tokens, user_id),
+                (next_applied_cents, next_applied_micro_cents, next_applied_tokens, user_id),
             )
             row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
             return dict(row)
         return wallet
 
     ts = now_iso()
+    next_balance_micro_cents = int(wallet["balance_micro_cents"] or 0) + delta_micro_cents
+    next_balance_cents = micro_cents_to_display_cents(next_balance_micro_cents)
     conn.execute(
         """
         UPDATE user_wallets
-        SET balance_cents = balance_cents + ?,
+        SET balance_cents = ?,
+            balance_micro_cents = ?,
             balance_tokens = balance_tokens + ?,
             default_cents_applied = ?,
+            default_micro_cents_applied = ?,
             default_tokens_applied = ?,
             updated_at = ?
         WHERE user_id = ?
         """,
-        (delta_cents, delta_tokens, next_applied_cents, next_applied_tokens, ts, user_id),
+        (
+            next_balance_cents,
+            next_balance_micro_cents,
+            delta_tokens,
+            next_applied_cents,
+            next_applied_micro_cents,
+            next_applied_tokens,
+            ts,
+            user_id,
+        ),
     )
     row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
     updated_wallet = dict(row)
     conn.execute(
         """
         INSERT INTO wallet_ledger(
-          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
-          balance_after_tokens, source, model_call_log_id, reason, created_at
+          id, user_id, entry_type, delta_cents, delta_micro_cents, delta_tokens,
+          balance_after_cents, balance_after_micro_cents, balance_after_tokens,
+          source, model_call_log_id, reason, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             uid("ledger"),
             user_id,
             "quota_adjustment",
             delta_cents,
+            delta_micro_cents,
             delta_tokens,
             updated_wallet["balance_cents"],
+            updated_wallet["balance_micro_cents"],
             updated_wallet["balance_tokens"],
             "system",
             None,
@@ -1981,6 +2098,7 @@ def apply_wallet_usage(
     *,
     user_id: str,
     delta_cents: int,
+    delta_micro_cents: int | None = None,
     delta_tokens: int,
     source: str,
     model_call_log_id: str | None,
@@ -1988,34 +2106,43 @@ def apply_wallet_usage(
     initial_cents: int,
     initial_tokens: int,
 ) -> dict:
-    get_or_create_wallet(conn, user_id, initial_cents=initial_cents, initial_tokens=initial_tokens)
+    wallet = get_or_create_wallet(conn, user_id, initial_cents=initial_cents, initial_tokens=initial_tokens)
+    if delta_micro_cents is None:
+        delta_micro_cents = cents_to_micro_cents(delta_cents)
+    delta_cents = micro_cents_to_display_cents(delta_micro_cents)
+    next_balance_micro_cents = int(wallet["balance_micro_cents"] or 0) + int(delta_micro_cents)
+    next_balance_cents = micro_cents_to_display_cents(next_balance_micro_cents)
     ts = now_iso()
     conn.execute(
         """
         UPDATE user_wallets
-        SET balance_cents = balance_cents + ?,
+        SET balance_cents = ?,
+            balance_micro_cents = ?,
             balance_tokens = balance_tokens + ?,
             updated_at = ?
         WHERE user_id = ?
         """,
-        (delta_cents, delta_tokens, ts, user_id),
+        (next_balance_cents, next_balance_micro_cents, delta_tokens, ts, user_id),
     )
     wallet = dict(conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone())
     conn.execute(
         """
         INSERT INTO wallet_ledger(
-          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
-          balance_after_tokens, source, model_call_log_id, reason, created_at
+          id, user_id, entry_type, delta_cents, delta_micro_cents, delta_tokens,
+          balance_after_cents, balance_after_micro_cents, balance_after_tokens,
+          source, model_call_log_id, reason, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             uid("ledger"),
             user_id,
             "usage",
             delta_cents,
+            delta_micro_cents,
             delta_tokens,
             wallet["balance_cents"],
+            wallet["balance_micro_cents"],
             wallet["balance_tokens"],
             source,
             model_call_log_id,
@@ -2049,6 +2176,7 @@ def get_usage_summary(conn: sqlite3.Connection, user_id: str, from_ts: str | Non
           COALESCE(SUM(CASE WHEN success = 1 THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
           COALESCE(SUM(CASE WHEN success = 1 THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
           COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents,
+          COALESCE(SUM(CASE WHEN success = 1 THEN COALESCE(cost_micro_cents, cost_cents * 1000000) ELSE 0 END), 0) AS cost_micro_cents,
           COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0) AS successful_requests,
           COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed_requests
         FROM model_call_logs
@@ -2063,17 +2191,25 @@ def get_usage_summary(conn: sqlite3.Connection, user_id: str, from_ts: str | Non
           call_type,
           COUNT(*) AS request_count,
           COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
-          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents,
+          COALESCE(SUM(CASE WHEN success = 1 THEN COALESCE(cost_micro_cents, cost_cents * 1000000) ELSE 0 END), 0) AS cost_micro_cents
         FROM model_call_logs
         WHERE user_id = ?{time_clause}
         GROUP BY COALESCE(model_name, 'unknown'), call_type
-        ORDER BY cost_cents DESC, total_tokens DESC, request_count DESC
+        ORDER BY cost_micro_cents DESC, total_tokens DESC, request_count DESC
         """,
         params,
     ).fetchall()
+    total_dict = dict(total)
+    total_dict["cost_cents"] = micro_cents_to_display_cents(total_dict.get("cost_micro_cents"))
+    group_items = []
+    for row in grouped:
+        item = dict(row)
+        item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+        group_items.append(item)
     return {
-        "total": dict(total),
-        "groups": [dict(row) for row in grouped],
+        "total": total_dict,
+        "groups": group_items,
     }
 
 
@@ -2102,7 +2238,13 @@ def list_usage_events(
         """,
         params,
     ).fetchall()
-    items = [dict(row) for row in rows[:limit]]
+    items = []
+    for row in rows[:limit]:
+        item = dict(row)
+        if item.get("cost_micro_cents") is None:
+            item["cost_micro_cents"] = cents_to_micro_cents(item.get("cost_cents"))
+        item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+        items.append(item)
     return {
         "events": items,
         "nextCursor": rows[limit]["created_at"] if len(rows) > limit else None,
@@ -2125,7 +2267,8 @@ def get_usage_timeseries(
           {bucket_expr} AS bucket,
           COUNT(*) AS request_count,
           COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
-          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents,
+          COALESCE(SUM(CASE WHEN success = 1 THEN COALESCE(cost_micro_cents, cost_cents * 1000000) ELSE 0 END), 0) AS cost_micro_cents
         FROM model_call_logs
         WHERE user_id = ?{time_clause}
         GROUP BY {bucket_expr}
@@ -2133,7 +2276,12 @@ def get_usage_timeseries(
         """,
         [user_id, *time_params],
     ).fetchall()
-    return [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+        items.append(item)
+    return items
 
 
 def get_usage_tree(
@@ -2151,11 +2299,12 @@ def get_usage_tree(
           call_type,
           COUNT(*) AS request_count,
           COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
-          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents,
+          COALESCE(SUM(CASE WHEN success = 1 THEN COALESCE(cost_micro_cents, cost_cents * 1000000) ELSE 0 END), 0) AS cost_micro_cents
         FROM model_call_logs
         WHERE user_id = ?{time_clause}
         GROUP BY COALESCE(model_name, 'unknown'), call_type
-        ORDER BY model_name ASC, cost_cents DESC, total_tokens DESC
+        ORDER BY model_name ASC, cost_micro_cents DESC, total_tokens DESC
         """,
         [user_id, *time_params],
     ).fetchall()
@@ -2164,18 +2313,20 @@ def get_usage_tree(
         model_name = row["model_name"]
         parent = grouped.setdefault(
             model_name,
-            {"name": model_name, "requestCount": 0, "totalTokens": 0, "costCents": 0, "children": []},
+            {"name": model_name, "requestCount": 0, "totalTokens": 0, "costCents": 0, "costMicroCents": 0, "children": []},
         )
         child = {
             "name": row["call_type"],
             "requestCount": row["request_count"],
             "totalTokens": row["total_tokens"],
-            "costCents": row["cost_cents"],
+            "costCents": micro_cents_to_display_cents(row["cost_micro_cents"]),
+            "costMicroCents": row["cost_micro_cents"],
         }
         parent["children"].append(child)
         parent["requestCount"] += row["request_count"]
         parent["totalTokens"] += row["total_tokens"]
-        parent["costCents"] += row["cost_cents"]
+        parent["costMicroCents"] = parent.get("costMicroCents", 0) + row["cost_micro_cents"]
+        parent["costCents"] = micro_cents_to_display_cents(parent["costMicroCents"])
     return list(grouped.values())
 
 

@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import * as Popover from "@radix-ui/react-popover";
 import { AlertCircle, Coins, CreditCard, RefreshCw, Wallet as WalletIcon, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
@@ -17,8 +16,10 @@ import type { AuthUser } from "../lib/api";
 interface WalletMenuProps {
   user: AuthUser | null;
   trigger?: ReactNode;
-  side?: Popover.PopoverContentProps["side"];
-  align?: Popover.PopoverContentProps["align"];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onOpen?: () => void;
+  hideTrigger?: boolean;
 }
 
 const MOCK_TOPUP_AMOUNTS = [3, 5, 10];
@@ -68,8 +69,8 @@ function eventLabel(event: UsageEvent) {
   return labels[event.call_type] ?? event.call_type;
 }
 
-export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: WalletMenuProps) {
-  const [open, setOpen] = useState(false);
+export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, onOpen, hideTrigger = false }: WalletMenuProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [events, setEvents] = useState<UsageEvent[]>([]);
@@ -79,6 +80,13 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
   const [customTopup, setCustomTopup] = useState("");
   const [mockNotice, setMockNotice] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setWalletOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setInternalOpen(nextOpen);
+    }
+    onOpenChange?.(nextOpen);
+  };
 
   const loadWallet = async () => {
     if (!user) return;
@@ -116,34 +124,41 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
 
   if (!user) return null;
 
-  const tokenPerCent = wallet && wallet.initialCents > 0 ? wallet.initialTokens / wallet.initialCents : 1000;
-  const mockTopupTokens = Math.round(mockTopupCents * tokenPerCent);
   const balanceCents = (wallet?.balanceCents ?? 0) + mockTopupCents;
-  const rawRemainingTokens = (wallet?.balanceTokens ?? 0) + mockTopupTokens;
+  const rawRemainingTokens = wallet?.balanceTokens ?? 0;
   const displayRemainingTokens = Math.max(rawRemainingTokens, 0);
   const usedTokens = summary?.total.total_tokens ?? 0;
   const monthTokenQuota = Math.max(displayRemainingTokens + usedTokens, wallet?.initialTokens ?? displayRemainingTokens + usedTokens);
   const usagePercent = monthTokenQuota > 0 ? Math.min(100, Math.max(0, (usedTokens / monthTokenQuota) * 100)) : 0;
-  const isLowBalance = wallet ? balanceCents <= 0 : false;
+  const isLowBalance = wallet ? displayRemainingTokens <= 0 && balanceCents <= 0 : false;
   const customAmount = Number(customTopup);
   const customInvalid = customTopup.trim() !== "" && (!Number.isFinite(customAmount) || customAmount < 0.1 || customAmount > 500);
   const tooltip = wallet
-    ? `余额 ${formatCents(balanceCents)} · 剩余 ${formatTokens(displayRemainingTokens)} tokens`
+    ? `钱包 ${formatCents(balanceCents)} · 免费 token ${formatTokens(displayRemainingTokens)}`
     : "钱包加载中";
 
   const applyMockTopup = (amountYuan: number) => {
     const cents = Math.round(amountYuan * 100);
     setMockTopupCents((value) => value + cents);
-    setMockNotice(`模拟充值 ${formatCents(cents)} 成功，当前仅用于演示。`);
+    setMockNotice(`模拟充值钱包 ${formatCents(cents)} 成功，当前仅用于演示。`);
+  };
+
+  const openWallet = () => {
+    onOpen?.();
+    setWalletOpen(true);
   };
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        {trigger ?? (
+    <>
+      {!hideTrigger && (trigger ? (
+        <span className="contents" onClick={openWallet}>
+          {trigger}
+        </span>
+      ) : (
           <Button
             variant="ghost"
             size="sm"
+            onClick={openWallet}
             className={cn(
               "h-9 gap-1.5 px-2.5",
               isLowBalance && "border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/12",
@@ -154,10 +169,20 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
             <WalletIcon className="h-4 w-4" />
             <span className="hidden text-xs font-semibold sm:inline">{wallet ? formatCompactCents(balanceCents) : "--"}</span>
           </Button>
-        )}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content side={side} align={align} className="tl-panel z-50 w-[22rem] rounded-xl border p-3 text-sm shadow-panel">
+      ))}
+      {open && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm"
+            onMouseDown={() => setWalletOpen(false)}
+          >
+            <section
+              className="tl-modal-panel tl-panel max-h-[88vh] w-full max-w-[26rem] overflow-auto rounded-2xl border p-3 text-sm shadow-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="钱包"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-muted-foreground">钱包</p>
@@ -166,9 +191,14 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
                 {isLowBalance && <AlertCircle className="h-4 w-4 text-destructive" />}
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => void loadWallet()} disabled={loading} title="刷新钱包">
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => void loadWallet()} disabled={loading} title="刷新钱包">
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              </Button>
+              <button className="tl-hover rounded-full p-2" onClick={() => setWalletOpen(false)} aria-label="关闭钱包">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -178,11 +208,11 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
           )}
 
           <div className="mt-3 rounded-lg border border-primary/20 bg-primary/8 p-3 text-xs leading-5 text-muted-foreground">
-            token 额度和钱包余额会连续保留；本页按本月汇总展示用量，token 不会因为月份切换自动清零。
+            免费 token 和钱包余额会连续保留；本页按本月汇总展示用量。免费 token 用完后，会按模型价格消耗钱包余额。
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <Metric label="剩余 token" value={formatTokens(displayRemainingTokens)} />
+            <Metric label="免费 token" value={formatTokens(displayRemainingTokens)} />
             <Metric label="本月请求" value={formatTokens(summary?.total.request_count)} />
             <Metric label="本月花费" value={formatCents(summary?.total.cost_cents)} />
           </div>
@@ -202,14 +232,14 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
               <span>已用 {formatTokens(usedTokens)}</span>
-              <span className="text-right">剩余 {formatTokens(displayRemainingTokens)}</span>
+              <span className="text-right">免费剩余 {formatTokens(displayRemainingTokens)}</span>
             </div>
           </div>
 
           <div className="mt-4">
             <div className="mb-2 flex items-center gap-2">
               <Coins className="h-4 w-4 text-primary" />
-              <p className="text-xs font-semibold text-muted-foreground">模拟充值</p>
+              <p className="text-xs font-semibold text-muted-foreground">模拟充值钱包</p>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {MOCK_TOPUP_AMOUNTS.map((amount) => (
@@ -274,14 +304,16 @@ export function WalletMenu({ user, trigger, side = "bottom", align = "end" }: Wa
               ))}
             </div>
           </div>
-        </Popover.Content>
-      </Popover.Portal>
+            </section>
+          </div>,
+          document.body,
+        )}
       {detailsOpen && typeof document !== "undefined" &&
         createPortal(
           <UsageDetailsModal onClose={() => setDetailsOpen(false)} />,
           document.body,
         )}
-    </Popover.Root>
+    </>
   );
 }
 

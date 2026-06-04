@@ -11,7 +11,7 @@ from urllib import error, request
 
 from fastapi import HTTPException, UploadFile
 
-from .billing import WalletInsufficientCreditError, ensure_wallet_has_credit, record_successful_model_usage
+from .billing import WalletInsufficientCreditError, ensure_wallet_can_charge_model, record_successful_model_usage
 from .db import connect
 from .model_client import ModelUsage
 from .settings import (
@@ -305,13 +305,29 @@ def _parse_usage(result: dict) -> ModelUsage | None:
             return None
 
     prompt_tokens = int_or_none(usage.get("prompt_tokens"))
+    prompt_cache_hit_tokens = int_or_none(usage.get("prompt_cache_hit_tokens"))
+    prompt_cache_miss_tokens = int_or_none(usage.get("prompt_cache_miss_tokens"))
     completion_tokens = int_or_none(usage.get("completion_tokens"))
     total_tokens = int_or_none(usage.get("total_tokens"))
+    if prompt_tokens is None and (prompt_cache_hit_tokens is not None or prompt_cache_miss_tokens is not None):
+        prompt_tokens = (prompt_cache_hit_tokens or 0) + (prompt_cache_miss_tokens or 0)
     if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
         total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
-    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+    if (
+        prompt_tokens is None
+        and prompt_cache_hit_tokens is None
+        and prompt_cache_miss_tokens is None
+        and completion_tokens is None
+        and total_tokens is None
+    ):
         return None
-    return ModelUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
+    return ModelUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        prompt_cache_hit_tokens=prompt_cache_hit_tokens,
+        prompt_cache_miss_tokens=prompt_cache_miss_tokens,
+    )
 
 
 def _call_vision_model(image_bytes: bytes, mime_type: str, billing_context: dict | None = None) -> str:
@@ -350,7 +366,7 @@ def _call_vision_model(image_bytes: bytes, mime_type: str, billing_context: dict
     )
     if billing_context:
         with connect() as conn:
-            ensure_wallet_has_credit(conn, billing_context["user_id"])
+            ensure_wallet_can_charge_model(conn, billing_context["user_id"], get_vision_model())
     started = time.time()
     try:
         with request.urlopen(req, timeout=get_vision_timeout_seconds()) as resp:
