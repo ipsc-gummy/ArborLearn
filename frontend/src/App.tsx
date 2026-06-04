@@ -88,9 +88,9 @@ function themeKeyForUser(userId: string) {
   return `${THEME_MODE_KEY}.${userId}`;
 }
 
-function getStoredThemeMode(userId?: string): ThemeMode {
+function getStoredThemeMode(): ThemeMode {
   try {
-    const saved = localStorage.getItem(userId ? themeKeyForUser(userId) : THEME_MODE_KEY);
+    const saved = localStorage.getItem(THEME_MODE_KEY);
     return isThemeMode(saved) ? saved : "light";
   } catch {
     return "light";
@@ -389,8 +389,8 @@ export default function App() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !user) return;
-    setThemeModeState(getStoredThemeMode(user.id));
-  }, [authStatus, user]);
+    saveThemeMode(themeMode, user.id);
+  }, [authStatus, themeMode, user?.id]);
 
   useEffect(() => {
     if (routeKind !== "workspace" || !missingNotebookRef || routeNotebookId === missingNotebookRef) return;
@@ -490,11 +490,10 @@ export default function App() {
     saveThemeMode(mode, user?.id);
   };
 
-  const registerWithDefaultTheme = async (email: string, password: string, displayName?: string, verificationCode?: string) => {
+  const registerWithCurrentTheme = async (email: string, password: string, displayName?: string, verificationCode?: string) => {
     await register(email, password, displayName, verificationCode);
     const createdUser = useArborLearnStore.getState().user;
-    setThemeModeState("light");
-    saveThemeMode("light", createdUser?.id);
+    saveThemeMode(themeMode, createdUser?.id);
     if (createdUser?.id) {
       setNewlyRegisteredUserId(createdUser.id);
     }
@@ -546,7 +545,7 @@ export default function App() {
     authStatus,
     authError,
     onLogin: login,
-    onRegister: registerWithDefaultTheme,
+    onRegister: registerWithCurrentTheme,
     onCreateDemoSession: createDemoSession,
     onLogout: () => {
       logout();
@@ -744,7 +743,7 @@ export default function App() {
           }
         }}
         onLogin={login}
-        onRegister={registerWithDefaultTheme}
+        onRegister={registerWithCurrentTheme}
         onCreateDemoSession={createDemoSession}
       />
       {oauthPending && (
