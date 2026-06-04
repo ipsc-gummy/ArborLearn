@@ -4,6 +4,8 @@ import json
 import os
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
+from typing import Iterator
 
 DEEPSEEK_MODEL_NAMES = {"deepseek-v4-flash", "deepseek-v4-pro"}
 DEEPSEEK_THINKING_MODES = {"fast", "deep", "challenge"}
@@ -22,6 +24,50 @@ class ModelConfigurationError(RuntimeError):
 
 class ModelProviderError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ModelUsage:
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class ModelCallResult:
+    content: str
+    usage: ModelUsage | None = None
+
+
+@dataclass(frozen=True)
+class ModelStreamEvent:
+    content: str = ""
+    usage: ModelUsage | None = None
+
+
+def _parse_usage(parsed: dict) -> ModelUsage | None:
+    usage = parsed.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    def int_or_none(value: object) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    prompt_tokens = int_or_none(usage.get("prompt_tokens"))
+    completion_tokens = int_or_none(usage.get("completion_tokens"))
+    total_tokens = int_or_none(usage.get("total_tokens"))
+    if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+        total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+        return None
+    return ModelUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
 
 
 def _chat_completions_url() -> str:
@@ -74,7 +120,9 @@ def build_model_payload(
     return payload
 
 
-def call_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None) -> str:
+def call_model_with_usage(
+    messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None
+) -> ModelCallResult:
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
@@ -104,12 +152,18 @@ def call_model(messages: list[dict[str, str]], model_name: str | None = None, th
 
     try:
         parsed = json.loads(body)
-        return parsed["choices"][0]["message"]["content"]
+        return ModelCallResult(content=parsed["choices"][0]["message"]["content"], usage=_parse_usage(parsed))
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         raise ModelProviderError(f"Unexpected model provider response: {body[:500]}") from exc
 
 
-def stream_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None):
+def call_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None) -> str:
+    return call_model_with_usage(messages, model_name, thinking_mode).content
+
+
+def stream_model_events(
+    messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None
+) -> Iterator[ModelStreamEvent]:
     api_key = os.getenv("MODEL_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ModelConfigurationError(
@@ -148,6 +202,15 @@ def stream_model(messages: list[dict[str, str]], model_name: str | None = None, 
                 parsed = json.loads(data_line)
             except json.JSONDecodeError as exc:
                 raise ModelProviderError(f"Unexpected model stream frame: {data_line[:500]}") from exc
+            usage = _parse_usage(parsed)
+            if usage:
+                yield ModelStreamEvent(usage=usage)
             delta = parsed.get("choices", [{}])[0].get("delta", {}).get("content")
             if delta:
-                yield delta
+                yield ModelStreamEvent(content=delta)
+
+
+def stream_model(messages: list[dict[str, str]], model_name: str | None = None, thinking_mode: str | None = None):
+    for event in stream_model_events(messages, model_name, thinking_mode):
+        if event.content:
+            yield event.content

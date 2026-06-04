@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -30,6 +31,13 @@ from .backfill import (
     resolve_anchor_range,
     source_node_for_user,
 )
+from .billing import (
+    WalletInsufficientCreditError,
+    ensure_wallet,
+    ensure_wallet_has_credit,
+    record_successful_model_usage,
+    wallet_public_view,
+)
 from .context_builder import build_model_messages, index_node_to_vector_store
 from .db import (
     add_message,
@@ -46,8 +54,12 @@ from .db import (
     get_notebook_for_user,
     get_uploaded_file_for_user,
     get_notebook_state,
+    get_usage_summary,
+    get_usage_timeseries,
+    get_usage_tree,
     init_db,
     insert_model_call_log,
+    list_usage_events,
     list_long_task_steps,
     list_long_tasks_for_node,
     list_messages,
@@ -71,7 +83,9 @@ from .model_client import (
     ModelConfigurationError,
     ModelProviderError,
     call_model,
+    call_model_with_usage,
     stream_model,
+    stream_model_events,
 )
 from .settings import get_cors_origins
 from .web_search import (
@@ -213,6 +227,18 @@ class NodeWebSearchRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+def wallet_http_error(exc: WalletInsufficientCreditError) -> HTTPException:
+    return HTTPException(
+        status_code=402,
+        detail={
+            "code": "WALLET_INSUFFICIENT_CREDIT",
+            "message": "钱包余额不足，请补充额度后再调用模型。",
+            "balanceCents": exc.balance_cents,
+            "balanceTokens": exc.balance_tokens,
+        },
+    )
+
+
 def serialize_user(user: dict) -> dict:
     return {
         "id": user["id"],
@@ -351,12 +377,21 @@ def uploaded_file_public_view(uploaded_file: dict, include_text: bool = False) -
     return payload
 
 
-def run_file_extraction_task(file_id: str, user_id: str, storage_path: str, filename: str, mime_type: str | None) -> None:
+def run_file_extraction_task(
+    file_id: str,
+    user_id: str,
+    storage_path: str,
+    filename: str,
+    mime_type: str | None,
+    notebook_id: str | None = None,
+    node_id: str | None = None,
+) -> None:
     try:
         extracted_text, extraction_status, error_message = extract_stored_file(
             storage_path=storage_path,
             filename=filename,
             mime_type=mime_type,
+            billing_context={"user_id": user_id, "notebook_id": notebook_id, "node_id": node_id},
         )
     except Exception as exc:
         extracted_text = ""
@@ -624,6 +659,7 @@ def maybe_generate_root_title(
     user_question: str,
     assistant_answer: str,
     model_name: str | None = None,
+    user_id: str | None = None,
 ) -> str | None:
     node = conn.execute(
         """
@@ -659,8 +695,26 @@ def maybe_generate_root_title(
         },
     ]
     try:
-        title = clean_generated_title(call_model(title_messages, model_name, "fast"))
-    except (ModelConfigurationError, ModelProviderError):
+        if user_id:
+            ensure_wallet_has_credit(conn, user_id)
+        started = time.time()
+        result = call_model_with_usage(title_messages, model_name, "fast")
+        title = clean_generated_title(result.content)
+        if user_id:
+            record_successful_model_usage(
+                conn,
+                user_id=user_id,
+                notebook_id=node["notebook_id"],
+                node_id=node_id,
+                call_type="title",
+                model_name=model_name,
+                thinking_mode="fast",
+                messages=title_messages,
+                output_text=result.content,
+                usage=result.usage,
+                latency_ms=int((time.time() - started) * 1000),
+            )
+    except (WalletInsufficientCreditError, ModelConfigurationError, ModelProviderError):
         return None
     if not title:
         return None
@@ -681,7 +735,9 @@ def clean_generated_summary(raw_summary: str) -> str:
     return summary[:180].strip()
 
 
-def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_name: str | None = None) -> str | None:
+def maybe_generate_branch_summary(
+    conn: sqlite3.Connection, node_id: str, model_name: str | None = None, user_id: str | None = None
+) -> str | None:
     node = conn.execute(
         """
         SELECT id, parent_id, title, selected_text
@@ -714,8 +770,25 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages, model_name, "fast"))
-    except (ModelConfigurationError, ModelProviderError):
+        if user_id:
+            ensure_wallet_has_credit(conn, user_id)
+        started = time.time()
+        result = call_model_with_usage(summary_messages, model_name, "fast")
+        summary = clean_generated_summary(result.content)
+        if user_id:
+            record_successful_model_usage(
+                conn,
+                user_id=user_id,
+                node_id=node_id,
+                call_type="branch_summary",
+                model_name=model_name,
+                thinking_mode="fast",
+                messages=summary_messages,
+                output_text=result.content,
+                usage=result.usage,
+                latency_ms=int((time.time() - started) * 1000),
+            )
+    except (WalletInsufficientCreditError, ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
         return None
@@ -724,7 +797,9 @@ def maybe_generate_branch_summary(conn: sqlite3.Connection, node_id: str, model_
     return summary
 
 
-def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_name: str | None = None) -> str | None:
+def maybe_generate_node_summary(
+    conn: sqlite3.Connection, node_id: str, model_name: str | None = None, user_id: str | None = None
+) -> str | None:
     node = conn.execute(
         """
         SELECT id, parent_id, title, selected_text
@@ -764,8 +839,25 @@ def maybe_generate_node_summary(conn: sqlite3.Connection, node_id: str, model_na
         },
     ]
     try:
-        summary = clean_generated_summary(call_model(summary_messages, model_name, "fast"))
-    except (ModelConfigurationError, ModelProviderError):
+        if user_id:
+            ensure_wallet_has_credit(conn, user_id)
+        started = time.time()
+        result = call_model_with_usage(summary_messages, model_name, "fast")
+        summary = clean_generated_summary(result.content)
+        if user_id:
+            record_successful_model_usage(
+                conn,
+                user_id=user_id,
+                node_id=node_id,
+                call_type="node_summary",
+                model_name=model_name,
+                thinking_mode="fast",
+                messages=summary_messages,
+                output_text=result.content,
+                usage=result.usage,
+                latency_ms=int((time.time() - started) * 1000),
+            )
+    except (WalletInsufficientCreditError, ModelConfigurationError, ModelProviderError):
         return None
     if not summary:
         return None
@@ -821,6 +913,58 @@ def health() -> dict:
         "availableModels": sorted(DEEPSEEK_MODEL_NAMES),
         "webSearch": get_web_search_config_status(),
     }
+
+
+@app.get("/api/wallet")
+def wallet(user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        return {"wallet": wallet_public_view(ensure_wallet(conn, user["id"]))}
+
+
+@app.get("/api/usage/summary")
+def usage_summary(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    user: dict = Depends(require_user),
+) -> dict:
+    with connect() as conn:
+        return get_usage_summary(conn, user["id"], from_, to)
+
+
+@app.get("/api/usage/events")
+def usage_events(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = Query(None),
+    user: dict = Depends(require_user),
+) -> dict:
+    with connect() as conn:
+        return list_usage_events(conn, user["id"], from_ts=from_, to_ts=to, limit=limit, cursor=cursor)
+
+
+@app.get("/api/usage/timeseries")
+def usage_timeseries(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    bucket: Literal["day", "hour"] = "day",
+    user: dict = Depends(require_user),
+) -> dict:
+    with connect() as conn:
+        return {"series": get_usage_timeseries(conn, user["id"], from_ts=from_, to_ts=to, bucket=bucket)}
+
+
+@app.get("/api/usage/tree")
+def usage_tree(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    groupBy: str = Query("model,callType"),
+    user: dict = Depends(require_user),
+) -> dict:
+    if groupBy != "model,callType":
+        raise HTTPException(status_code=400, detail="Only groupBy=model,callType is supported.")
+    with connect() as conn:
+        return {"tree": get_usage_tree(conn, user["id"], from_ts=from_, to_ts=to)}
 
 
 @app.post("/api/web/search")
@@ -1228,7 +1372,13 @@ async def upload_node_file(
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
 
-    prepared = await prepare_uploaded_file(file, user_id=user["id"], file_id=file_id)
+    prepared = await prepare_uploaded_file(
+        file,
+        user_id=user["id"],
+        file_id=file_id,
+        notebook_id=node["notebook_id"],
+        node_id=node_id,
+    )
     with connect() as conn:
         uploaded_file = add_uploaded_file(
             conn,
@@ -1246,6 +1396,8 @@ async def upload_node_file(
             prepared["storage_path"],
             prepared["filename"],
             prepared["mime_type"],
+            node["notebook_id"],
+            node_id,
         )
     return {"file": uploaded_file_public_view(uploaded_file)}
 
@@ -1394,6 +1546,10 @@ def build_backfill_draft_messages(
 @app.post("/api/backfill/draft", status_code=201)
 def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
+        try:
+            ensure_wallet_has_credit(conn, user["id"])
+        except WalletInsufficientCreditError as exc:
+            raise wallet_http_error(exc) from exc
         source_node = source_node_for_user(conn, user["id"], payload.sourceChildNodeId)
         if not source_node:
             raise HTTPException(status_code=404, detail="Source child node not found")
@@ -1448,11 +1604,48 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
             },
         )
 
+    started = time.time()
+    result = None
     try:
-        draft_text = clean_backfill_draft(call_model(model_messages, payload.modelName, payload.thinkingMode or "fast"))
+        result = call_model_with_usage(model_messages, payload.modelName, payload.thinkingMode or "fast")
+        draft_text = clean_backfill_draft(result.content)
     except ModelConfigurationError as exc:
+        with connect() as conn:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=source_node["notebook_id"],
+                node_id=payload.sourceChildNodeId,
+                call_type="backfill_draft",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode or "fast",
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                success=False,
+                latency_ms=int((time.time() - started) * 1000),
+                error_message=str(exc),
+            )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ModelProviderError as exc:
+        with connect() as conn:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=source_node["notebook_id"],
+                node_id=payload.sourceChildNodeId,
+                call_type="backfill_draft",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode or "fast",
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                success=False,
+                latency_ms=int((time.time() - started) * 1000),
+                error_message=str(exc),
+            )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if draft_text == "__INSUFFICIENT_CONTEXT__" or not draft_text:
@@ -1464,6 +1657,21 @@ def create_backfill_draft(payload: BackfillDraftCreate, user: dict = Depends(req
                 "code": "BACKFILL_DRAFT_TOO_LONG",
                 "message": "生成的回填内容过长，可能会破坏原文节奏。请缩短回填内容，或改用“补充/重构”方式重新生成。",
             },
+        )
+
+    with connect() as conn:
+        record_successful_model_usage(
+            conn,
+            user_id=user["id"],
+            notebook_id=source_node["notebook_id"],
+            node_id=payload.sourceChildNodeId,
+            call_type="backfill_draft",
+            model_name=payload.modelName,
+            thinking_mode=payload.thinkingMode or "fast",
+            messages=model_messages,
+            output_text=result.content if result else draft_text,
+            usage=result.usage if result else None,
+            latency_ms=int((time.time() - started) * 1000),
         )
 
     return {
@@ -1672,6 +1880,10 @@ def delete_node(node_id: str, user: dict = Depends(require_user)) -> dict:
 @app.post("/api/chat")
 async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
+        try:
+            ensure_wallet_has_credit(conn, user["id"])
+        except WalletInsufficientCreditError as exc:
+            raise wallet_http_error(exc) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -1699,17 +1911,74 @@ async def chat(payload: ChatRequest, user: dict = Depends(require_user)) -> dict
             enable_rag=payload.rag_enabled,
         )
 
+        started = time.time()
+        result = None
         try:
-            content = call_model(model_messages, payload.modelName, payload.thinkingMode)
+            result = call_model_with_usage(model_messages, payload.modelName, payload.thinkingMode)
+            content = result.content
         except ModelConfigurationError as exc:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=node["notebook_id"],
+                node_id=payload.nodeId,
+                call_type="chat",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode,
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                context_chars=sum(len(message["content"]) for message in model_messages),
+                web_search_enabled=payload.web_search,
+                source_count=len(web_sources),
+                latency_ms=int((time.time() - started) * 1000),
+                success=False,
+                error_message=str(exc),
+            )
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=node["notebook_id"],
+                node_id=payload.nodeId,
+                call_type="chat",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode,
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                context_chars=sum(len(message["content"]) for message in model_messages),
+                web_search_enabled=payload.web_search,
+                source_count=len(web_sources),
+                latency_ms=int((time.time() - started) * 1000),
+                success=False,
+                error_message=str(exc),
+            )
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         content = finalize_web_search_answer(content, web_sources, web_search_warning)
+        record_successful_model_usage(
+            conn,
+            user_id=user["id"],
+            notebook_id=node["notebook_id"],
+            node_id=payload.nodeId,
+            call_type="chat",
+            model_name=payload.modelName,
+            thinking_mode=payload.thinkingMode,
+            messages=model_messages,
+            output_text=content,
+            usage=result.usage if result else None,
+            context_chars=sum(len(message["content"]) for message in model_messages),
+            web_search_enabled=payload.web_search,
+            source_count=len(web_sources),
+            latency_ms=int((time.time() - started) * 1000),
+        )
         assistant_message = add_message(conn, payload.nodeId, "assistant", content)
-        node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
-        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName, user["id"])
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName, user["id"])
         
         # 索引对话内容到向量存储（RAG）
         if payload.ragEnabled:
@@ -1747,6 +2016,10 @@ def stop_chat(payload: ChatStopRequest, user: dict = Depends(require_user)) -> d
 @app.post("/api/chat/retry")
 def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
+        try:
+            ensure_wallet_has_credit(conn, user["id"])
+        except WalletInsufficientCreditError as exc:
+            raise wallet_http_error(exc) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -1783,16 +2056,67 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
             "target_message_regenerated",
         )
 
+        started = time.time()
+        result = None
         try:
-            content = call_model(model_messages, payload.modelName, payload.thinkingMode)
+            result = call_model_with_usage(model_messages, payload.modelName, payload.thinkingMode)
+            content = result.content
         except ModelConfigurationError as exc:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=node["notebook_id"],
+                node_id=payload.nodeId,
+                call_type="retry",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode,
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                context_chars=sum(len(message["content"]) for message in model_messages),
+                latency_ms=int((time.time() - started) * 1000),
+                success=False,
+                error_message=str(exc),
+            )
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ModelProviderError as exc:
+            insert_model_call_log(
+                conn,
+                user_id=user["id"],
+                notebook_id=node["notebook_id"],
+                node_id=payload.nodeId,
+                call_type="retry",
+                model_name=payload.modelName,
+                thinking_mode=payload.thinkingMode,
+                input_chars=sum(len(message["content"]) for message in model_messages),
+                output_chars=0,
+                estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                estimated_output_tokens=0,
+                context_chars=sum(len(message["content"]) for message in model_messages),
+                latency_ms=int((time.time() - started) * 1000),
+                success=False,
+                error_message=str(exc),
+            )
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+        record_successful_model_usage(
+            conn,
+            user_id=user["id"],
+            notebook_id=node["notebook_id"],
+            node_id=payload.nodeId,
+            call_type="retry",
+            model_name=payload.modelName,
+            thinking_mode=payload.thinkingMode,
+            messages=model_messages,
+            output_text=content,
+            usage=result.usage if result else None,
+            context_chars=sum(len(message["content"]) for message in model_messages),
+            latency_ms=int((time.time() - started) * 1000),
+        )
         assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
-        node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_message["content"], content, payload.modelName)
-        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+        node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_message["content"], content, payload.modelName, user["id"])
+        node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName, user["id"])
         return {
             "messageId": assistant_message["id"],
             "role": "assistant",
@@ -1809,6 +2133,10 @@ def retry_chat(payload: ChatRetryRequest, user: dict = Depends(require_user)) ->
 @app.post("/api/chat/retry/stream")
 def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:
+        try:
+            ensure_wallet_has_credit(conn, user["id"])
+        except WalletInsufficientCreditError as exc:
+            raise wallet_http_error(exc) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -1848,18 +2176,37 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
 
     def generate():
         content_parts: list[str] = []
+        provider_usage = None
         model_stream = None
+        started = time.time()
         try:
-            model_stream = stream_model(model_messages, payload.modelName, payload.thinkingMode)
-            for delta in model_stream:
-                content_parts.append(delta)
-                yield sse_event({"content": delta})
+            model_stream = stream_model_events(model_messages, payload.modelName, payload.thinkingMode)
+            for event in model_stream:
+                if event.usage:
+                    provider_usage = event.usage
+                if event.content:
+                    content_parts.append(event.content)
+                    yield sse_event({"content": event.content})
 
             content = "".join(content_parts).strip() or "模型没有返回内容。"
             with connect() as conn:
+                record_successful_model_usage(
+                    conn,
+                    user_id=user["id"],
+                    notebook_id=node["notebook_id"],
+                    node_id=payload.nodeId,
+                    call_type="retry_stream",
+                    model_name=payload.modelName,
+                    thinking_mode=payload.thinkingMode,
+                    messages=model_messages,
+                    output_text=content,
+                    usage=provider_usage,
+                    context_chars=sum(len(message["content"]) for message in model_messages),
+                    latency_ms=int((time.time() - started) * 1000),
+                )
                 assistant_message = update_assistant_message(conn, payload.assistantMessageId, payload.nodeId, content)
-                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content, payload.modelName)
-                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, previous_user_content, content, payload.modelName, user["id"])
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName, user["id"])
             yield sse_event(
                 {
                     "messageId": assistant_message["id"],
@@ -1879,6 +2226,24 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
                 model_stream.close()
             raise
         except (ModelConfigurationError, ModelProviderError) as exc:
+            with connect() as conn:
+                insert_model_call_log(
+                    conn,
+                    user_id=user["id"],
+                    notebook_id=node["notebook_id"],
+                    node_id=payload.nodeId,
+                    call_type="retry_stream",
+                    model_name=payload.modelName,
+                    thinking_mode=payload.thinkingMode,
+                    input_chars=sum(len(message["content"]) for message in model_messages),
+                    output_chars=len("".join(content_parts)),
+                    estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                    estimated_output_tokens=max(0, len("".join(content_parts)) // 4),
+                    context_chars=sum(len(message["content"]) for message in model_messages),
+                    latency_ms=int((time.time() - started) * 1000),
+                    success=False,
+                    error_message=str(exc),
+                )
             yield sse_event({"error": str(exc)}, "error")
         except Exception as exc:
             yield sse_event({"error": f"Unexpected server error: {exc}"}, "error")
@@ -1897,6 +2262,10 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
 @app.post("/api/chat/stream")
 async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) -> StreamingResponse:
     with connect() as conn:
+        try:
+            ensure_wallet_has_credit(conn, user["id"])
+        except WalletInsufficientCreditError as exc:
+            raise wallet_http_error(exc) from exc
         node = get_node_for_user(conn, payload.nodeId, user["id"])
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
@@ -1926,12 +2295,17 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
 
     def generate():
         content_parts: list[str] = []
+        provider_usage = None
         model_stream = None
+        started = time.time()
         try:
-            model_stream = stream_model(model_messages, payload.modelName, payload.thinkingMode)
-            for delta in model_stream:
-                content_parts.append(delta)
-                yield sse_event({"content": delta})
+            model_stream = stream_model_events(model_messages, payload.modelName, payload.thinkingMode)
+            for event in model_stream:
+                if event.usage:
+                    provider_usage = event.usage
+                if event.content:
+                    content_parts.append(event.content)
+                    yield sse_event({"content": event.content})
 
             content = finalize_web_search_answer(
                 "".join(content_parts).strip() or "模型没有返回内容。",
@@ -1939,9 +2313,25 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 web_search_warning,
             )
             with connect() as conn:
+                record_successful_model_usage(
+                    conn,
+                    user_id=user["id"],
+                    notebook_id=node["notebook_id"],
+                    node_id=payload.nodeId,
+                    call_type="chat_stream",
+                    model_name=payload.modelName,
+                    thinking_mode=payload.thinkingMode,
+                    messages=model_messages,
+                    output_text=content,
+                    usage=provider_usage,
+                    context_chars=sum(len(message["content"]) for message in model_messages),
+                    web_search_enabled=payload.web_search,
+                    source_count=len(web_sources),
+                    latency_ms=int((time.time() - started) * 1000),
+                )
                 assistant_message = add_message(conn, payload.nodeId, "assistant", content)
-                node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName)
-                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName)
+                node_title = maybe_generate_root_title(conn, payload.nodeId, payload.message.strip(), content, payload.modelName, user["id"])
+                node_summary = maybe_generate_node_summary(conn, payload.nodeId, payload.modelName, user["id"])
                 # 索引对话内容到向量存储（RAG）
                 if payload.ragEnabled:
                     try:
@@ -1973,6 +2363,26 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
                 pass
             raise
         except (ModelConfigurationError, ModelProviderError) as exc:
+            with connect() as conn:
+                insert_model_call_log(
+                    conn,
+                    user_id=user["id"],
+                    notebook_id=node["notebook_id"],
+                    node_id=payload.nodeId,
+                    call_type="chat_stream",
+                    model_name=payload.modelName,
+                    thinking_mode=payload.thinkingMode,
+                    input_chars=sum(len(message["content"]) for message in model_messages),
+                    output_chars=len("".join(content_parts)),
+                    estimated_input_tokens=max(1, sum(len(message["content"]) for message in model_messages) // 4),
+                    estimated_output_tokens=max(0, len("".join(content_parts)) // 4),
+                    context_chars=sum(len(message["content"]) for message in model_messages),
+                    web_search_enabled=payload.web_search,
+                    source_count=len(web_sources),
+                    latency_ms=int((time.time() - started) * 1000),
+                    success=False,
+                    error_message=str(exc),
+                )
             yield sse_event({"error": str(exc)}, "error")
         except Exception as exc:
             yield sse_event({"error": f"Unexpected server error: {exc}"}, "error")

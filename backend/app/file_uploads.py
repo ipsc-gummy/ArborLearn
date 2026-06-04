@@ -11,6 +11,9 @@ from urllib import error, request
 
 from fastapi import HTTPException, UploadFile
 
+from .billing import WalletInsufficientCreditError, ensure_wallet_has_credit, record_successful_model_usage
+from .db import connect
+from .model_client import ModelUsage
 from .settings import (
     get_max_upload_bytes,
     get_ocr_languages,
@@ -288,7 +291,30 @@ def decode_pptx_file(content: bytes, filename: str) -> tuple[str, str, str | Non
         return "", "failed", f"Unable to parse PPTX: {exc}"
 
 
-def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
+def _parse_usage(result: dict) -> ModelUsage | None:
+    usage = result.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    def int_or_none(value: object) -> int | None:
+        if isinstance(value, bool):
+            return None
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    prompt_tokens = int_or_none(usage.get("prompt_tokens"))
+    completion_tokens = int_or_none(usage.get("completion_tokens"))
+    total_tokens = int_or_none(usage.get("total_tokens"))
+    if total_tokens is None and (prompt_tokens is not None or completion_tokens is not None):
+        total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+    if prompt_tokens is None and completion_tokens is None and total_tokens is None:
+        return None
+    return ModelUsage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
+
+
+def _call_vision_model(image_bytes: bytes, mime_type: str, billing_context: dict | None = None) -> str:
     provider = get_vision_provider()
     if provider in {"", "none", "disabled"}:
         return ""
@@ -310,6 +336,7 @@ def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
         ],
         "temperature": 0.1,
     }
+    messages = payload["messages"]
     body = json.dumps(payload).encode("utf-8")
     api_key = get_vision_api_key()
     headers = {"Content-Type": "application/json"}
@@ -321,6 +348,10 @@ def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
         headers=headers,
         method="POST",
     )
+    if billing_context:
+        with connect() as conn:
+            ensure_wallet_has_credit(conn, billing_context["user_id"])
+    started = time.time()
     try:
         with request.urlopen(req, timeout=get_vision_timeout_seconds()) as resp:
             result = json.loads(resp.read().decode("utf-8"))
@@ -346,12 +377,29 @@ def _call_vision_model(image_bytes: bytes, mime_type: str) -> str:
         raise VisionRequestError(f"Vision decode failed: {exc}", retryable=True) from exc
 
     try:
-        return (result["choices"][0]["message"]["content"] or "").strip()
+        content = (result["choices"][0]["message"]["content"] or "").strip()
     except Exception as exc:
         raise VisionRequestError(f"Vision response format error: {exc}", retryable=False) from exc
+    if billing_context and content:
+        with connect() as conn:
+            record_successful_model_usage(
+                conn,
+                user_id=billing_context["user_id"],
+                notebook_id=billing_context.get("notebook_id"),
+                node_id=billing_context.get("node_id"),
+                call_type="vision_extract",
+                model_name=get_vision_model(),
+                messages=messages,
+                output_text=content,
+                usage=_parse_usage(result),
+                latency_ms=int((time.time() - started) * 1000),
+            )
+    return content
 
 
-def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
+def decode_image_file(
+    content: bytes, filename: str, mime_type: str | None, billing_context: dict | None = None
+) -> tuple[str, str, str | None]:
     try:
         from PIL import Image
 
@@ -409,12 +457,16 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
                 started_at = time.perf_counter()
                 retryable = True
                 try:
-                    vision_summary = _call_vision_model(vision_input_bytes, vision_mime)
+                    vision_summary = _call_vision_model(vision_input_bytes, vision_mime, billing_context)
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                     if vision_summary:
                         vision_error = None
                         break
                     vision_error = "Vision provider returned empty summary"
+                except WalletInsufficientCreditError as exc:
+                    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                    vision_error = str(exc)
+                    retryable = False
                 except Exception as exc:
                     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                     vision_error = str(exc)
@@ -454,7 +506,13 @@ def decode_image_file(content: bytes, filename: str, mime_type: str | None) -> t
         return "", "failed", f"Unable to parse image: {exc}"
 
 
-def extract_file_text(content: bytes, suffix: str, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
+def extract_file_text(
+    content: bytes,
+    suffix: str,
+    filename: str,
+    mime_type: str | None,
+    billing_context: dict | None = None,
+) -> tuple[str, str, str | None]:
     if suffix in {".txt", ".md"}:
         return decode_text_file(content)
     if suffix == ".pdf":
@@ -466,11 +524,17 @@ def extract_file_text(content: bytes, suffix: str, filename: str, mime_type: str
     if suffix == ".pptx":
         return decode_pptx_file(content, filename)
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
-        return decode_image_file(content, filename, mime_type)
+        return decode_image_file(content, filename, mime_type, billing_context)
     return "", "failed", "Unsupported file type"
 
 
-def extract_stored_file(*, storage_path: str, filename: str, mime_type: str | None) -> tuple[str, str, str | None]:
+def extract_stored_file(
+    *,
+    storage_path: str,
+    filename: str,
+    mime_type: str | None,
+    billing_context: dict | None = None,
+) -> tuple[str, str, str | None]:
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         return "", "failed", "Unsupported file type"
@@ -483,10 +547,17 @@ def extract_stored_file(*, storage_path: str, filename: str, mime_type: str | No
     if not content:
         return "", "failed", "Stored file is empty"
 
-    return extract_file_text(content, suffix, filename, mime_type)
+    return extract_file_text(content, suffix, filename, mime_type, billing_context)
 
 
-async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: str) -> dict:
+async def prepare_uploaded_file(
+    upload: UploadFile,
+    *,
+    user_id: str,
+    file_id: str,
+    notebook_id: str | None = None,
+    node_id: str | None = None,
+) -> dict:
     filename = safe_filename(upload.filename)
     suffix = validate_upload_name(filename)
 
@@ -508,7 +579,13 @@ async def prepare_uploaded_file(upload: UploadFile, *, user_id: str, file_id: st
         extraction_status = "pending"
         error_message = None
     else:
-        extracted_text, extraction_status, error_message = extract_file_text(content, suffix, filename, upload.content_type)
+        extracted_text, extraction_status, error_message = extract_file_text(
+            content,
+            suffix,
+            filename,
+            upload.content_type,
+            {"user_id": user_id, "notebook_id": notebook_id, "node_id": node_id},
+        )
 
     return {
         "filename": filename,

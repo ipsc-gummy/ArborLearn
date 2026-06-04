@@ -287,6 +287,33 @@ def init_db() -> None:
               FOREIGN KEY (step_id) REFERENCES long_task_steps(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS user_wallets (
+              user_id TEXT PRIMARY KEY,
+              balance_cents INTEGER NOT NULL,
+              balance_tokens INTEGER NOT NULL,
+              default_cents_applied INTEGER NOT NULL,
+              default_tokens_applied INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS wallet_ledger (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              entry_type TEXT NOT NULL,
+              delta_cents INTEGER NOT NULL,
+              delta_tokens INTEGER NOT NULL,
+              balance_after_cents INTEGER NOT NULL,
+              balance_after_tokens INTEGER NOT NULL,
+              source TEXT NOT NULL,
+              model_call_log_id TEXT,
+              reason TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY (model_call_log_id) REFERENCES model_call_logs(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_long_tasks_user_node
               ON long_tasks(user_id, node_id);
 
@@ -307,11 +334,25 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_model_logs_task
               ON model_call_logs(task_id, step_id);
+
+            CREATE INDEX IF NOT EXISTS idx_model_logs_user_created
+              ON model_call_logs(user_id, created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_wallet_ledger_user_created
+              ON wallet_ledger(user_id, created_at DESC);
             """
         )
         _ensure_column(conn, "long_tasks", "model_name", "TEXT")
         _ensure_column(conn, "long_tasks", "thinking_mode", "TEXT")
         _ensure_column(conn, "model_call_logs", "thinking_mode", "TEXT")
+        ensure_column(conn, "model_call_logs", "prompt_tokens", "INTEGER")
+        ensure_column(conn, "model_call_logs", "completion_tokens", "INTEGER")
+        ensure_column(conn, "model_call_logs", "total_tokens", "INTEGER")
+        ensure_column(conn, "model_call_logs", "usage_source", "TEXT")
+        ensure_column(conn, "model_call_logs", "cost_cents", "INTEGER")
+        ensure_column(conn, "model_call_logs", "pricing_source", "TEXT")
+        ensure_column(conn, "user_wallets", "default_cents_applied", "INTEGER")
+        ensure_column(conn, "user_wallets", "default_tokens_applied", "INTEGER")
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
@@ -1726,6 +1767,12 @@ def insert_model_call_log(
     output_chars: int | None = None,
     estimated_input_tokens: int | None = None,
     estimated_output_tokens: int | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+    usage_source: str | None = None,
+    cost_cents: int | None = None,
+    pricing_source: str | None = None,
     context_chars: int | None = None,
     web_search_enabled: bool = False,
     search_result_count: int = 0,
@@ -1742,10 +1789,11 @@ def insert_model_call_log(
         INSERT INTO model_call_logs(
           id, user_id, notebook_id, node_id, task_id, step_id, call_type, model_name, thinking_mode,
           input_chars, output_chars, estimated_input_tokens, estimated_output_tokens,
+          prompt_tokens, completion_tokens, total_tokens, usage_source, cost_cents, pricing_source,
           context_chars, web_search_enabled, search_result_count, fetched_page_count,
           source_count, evidence_count, latency_ms, success, error_message, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             log_id,
@@ -1761,6 +1809,12 @@ def insert_model_call_log(
             output_chars,
             estimated_input_tokens,
             estimated_output_tokens,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            usage_source,
+            cost_cents,
+            pricing_source,
             context_chars,
             1 if web_search_enabled else 0,
             search_result_count,
@@ -1775,6 +1829,346 @@ def insert_model_call_log(
     )
     row = conn.execute("SELECT * FROM model_call_logs WHERE id = ?", (log_id,)).fetchone()
     return dict(row)
+
+
+def get_or_create_wallet(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    initial_cents: int,
+    initial_tokens: int,
+) -> dict:
+    row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
+    if row:
+        return sync_wallet_default_quota(conn, user_id, dict(row), initial_cents, initial_tokens)
+
+    ts = now_iso()
+    conn.execute(
+        """
+        INSERT INTO user_wallets(
+          user_id, balance_cents, balance_tokens, default_cents_applied,
+          default_tokens_applied, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, initial_cents, initial_tokens, initial_cents, initial_tokens, ts, ts),
+    )
+    conn.execute(
+        """
+        INSERT INTO wallet_ledger(
+          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
+          balance_after_tokens, source, model_call_log_id, reason, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            uid("ledger"),
+            user_id,
+            "initial_grant",
+            initial_cents,
+            initial_tokens,
+            initial_cents,
+            initial_tokens,
+            "system",
+            None,
+            "default_initial_quota",
+            ts,
+        ),
+    )
+    row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row)
+
+
+def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, int]:
+    row = conn.execute(
+        """
+        SELECT delta_cents, delta_tokens
+        FROM wallet_ledger
+        WHERE user_id = ? AND entry_type = 'initial_grant'
+        ORDER BY created_at ASC
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    if not row:
+        return 0, 0
+    return int(row["delta_cents"] or 0), int(row["delta_tokens"] or 0)
+
+
+def sync_wallet_default_quota(
+    conn: sqlite3.Connection,
+    user_id: str,
+    wallet: dict,
+    initial_cents: int,
+    initial_tokens: int,
+) -> dict:
+    grant_cents, grant_tokens = wallet_initial_grant(conn, user_id)
+    applied_cents = wallet.get("default_cents_applied")
+    applied_tokens = wallet.get("default_tokens_applied")
+    applied_cents = int(applied_cents if applied_cents is not None else grant_cents)
+    applied_tokens = int(applied_tokens if applied_tokens is not None else grant_tokens)
+
+    delta_cents = max(0, initial_cents - applied_cents)
+    delta_tokens = max(0, initial_tokens - applied_tokens)
+    next_applied_cents = max(applied_cents, initial_cents)
+    next_applied_tokens = max(applied_tokens, initial_tokens)
+
+    if delta_cents == 0 and delta_tokens == 0:
+        if wallet.get("default_cents_applied") is None or wallet.get("default_tokens_applied") is None:
+            conn.execute(
+                """
+                UPDATE user_wallets
+                SET default_cents_applied = ?,
+                    default_tokens_applied = ?
+                WHERE user_id = ?
+                """,
+                (next_applied_cents, next_applied_tokens, user_id),
+            )
+            row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
+            return dict(row)
+        return wallet
+
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE user_wallets
+        SET balance_cents = balance_cents + ?,
+            balance_tokens = balance_tokens + ?,
+            default_cents_applied = ?,
+            default_tokens_applied = ?,
+            updated_at = ?
+        WHERE user_id = ?
+        """,
+        (delta_cents, delta_tokens, next_applied_cents, next_applied_tokens, ts, user_id),
+    )
+    row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
+    updated_wallet = dict(row)
+    conn.execute(
+        """
+        INSERT INTO wallet_ledger(
+          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
+          balance_after_tokens, source, model_call_log_id, reason, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            uid("ledger"),
+            user_id,
+            "quota_adjustment",
+            delta_cents,
+            delta_tokens,
+            updated_wallet["balance_cents"],
+            updated_wallet["balance_tokens"],
+            "system",
+            None,
+            "default_quota_increase",
+            ts,
+        ),
+    )
+    return updated_wallet
+
+
+def apply_wallet_usage(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    delta_cents: int,
+    delta_tokens: int,
+    source: str,
+    model_call_log_id: str | None,
+    reason: str,
+    initial_cents: int,
+    initial_tokens: int,
+) -> dict:
+    get_or_create_wallet(conn, user_id, initial_cents=initial_cents, initial_tokens=initial_tokens)
+    ts = now_iso()
+    conn.execute(
+        """
+        UPDATE user_wallets
+        SET balance_cents = balance_cents + ?,
+            balance_tokens = balance_tokens + ?,
+            updated_at = ?
+        WHERE user_id = ?
+        """,
+        (delta_cents, delta_tokens, ts, user_id),
+    )
+    wallet = dict(conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone())
+    conn.execute(
+        """
+        INSERT INTO wallet_ledger(
+          id, user_id, entry_type, delta_cents, delta_tokens, balance_after_cents,
+          balance_after_tokens, source, model_call_log_id, reason, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            uid("ledger"),
+            user_id,
+            "usage",
+            delta_cents,
+            delta_tokens,
+            wallet["balance_cents"],
+            wallet["balance_tokens"],
+            source,
+            model_call_log_id,
+            reason,
+            ts,
+        ),
+    )
+    return wallet
+
+
+def usage_time_filter(from_ts: str | None, to_ts: str | None) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if from_ts:
+        clauses.append("created_at >= ?")
+        params.append(from_ts)
+    if to_ts:
+        clauses.append("created_at <= ?")
+        params.append(to_ts)
+    return (" AND " + " AND ".join(clauses) if clauses else "", params)
+
+
+def get_usage_summary(conn: sqlite3.Connection, user_id: str, from_ts: str | None = None, to_ts: str | None = None) -> dict:
+    time_clause, time_params = usage_time_filter(from_ts, to_ts)
+    params = [user_id, *time_params]
+    total = conn.execute(
+        f"""
+        SELECT
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents,
+          COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0) AS successful_requests,
+          COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed_requests
+        FROM model_call_logs
+        WHERE user_id = ?{time_clause}
+        """,
+        params,
+    ).fetchone()
+    grouped = conn.execute(
+        f"""
+        SELECT
+          COALESCE(model_name, 'unknown') AS model_name,
+          call_type,
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+        FROM model_call_logs
+        WHERE user_id = ?{time_clause}
+        GROUP BY COALESCE(model_name, 'unknown'), call_type
+        ORDER BY cost_cents DESC, total_tokens DESC, request_count DESC
+        """,
+        params,
+    ).fetchall()
+    return {
+        "total": dict(total),
+        "groups": [dict(row) for row in grouped],
+    }
+
+
+def list_usage_events(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> dict:
+    time_clause, time_params = usage_time_filter(from_ts, to_ts)
+    cursor_clause = " AND created_at < ?" if cursor else ""
+    params = [user_id, *time_params]
+    if cursor:
+        params.append(cursor)
+    params.append(limit + 1)
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM model_call_logs
+        WHERE user_id = ?{time_clause}{cursor_clause}
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    items = [dict(row) for row in rows[:limit]]
+    return {
+        "events": items,
+        "nextCursor": rows[limit]["created_at"] if len(rows) > limit else None,
+    }
+
+
+def get_usage_timeseries(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+    bucket: str = "day",
+) -> list[dict]:
+    time_clause, time_params = usage_time_filter(from_ts, to_ts)
+    bucket_expr = "strftime('%Y-%m-%dT%H:00:00Z', created_at)" if bucket == "hour" else "date(created_at)"
+    rows = conn.execute(
+        f"""
+        SELECT
+          {bucket_expr} AS bucket,
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+        FROM model_call_logs
+        WHERE user_id = ?{time_clause}
+        GROUP BY {bucket_expr}
+        ORDER BY bucket ASC
+        """,
+        [user_id, *time_params],
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_usage_tree(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+) -> list[dict]:
+    time_clause, time_params = usage_time_filter(from_ts, to_ts)
+    rows = conn.execute(
+        f"""
+        SELECT
+          COALESCE(model_name, 'unknown') AS model_name,
+          call_type,
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN cost_cents ELSE 0 END), 0) AS cost_cents
+        FROM model_call_logs
+        WHERE user_id = ?{time_clause}
+        GROUP BY COALESCE(model_name, 'unknown'), call_type
+        ORDER BY model_name ASC, cost_cents DESC, total_tokens DESC
+        """,
+        [user_id, *time_params],
+    ).fetchall()
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        model_name = row["model_name"]
+        parent = grouped.setdefault(
+            model_name,
+            {"name": model_name, "requestCount": 0, "totalTokens": 0, "costCents": 0, "children": []},
+        )
+        child = {
+            "name": row["call_type"],
+            "requestCount": row["request_count"],
+            "totalTokens": row["total_tokens"],
+            "costCents": row["cost_cents"],
+        }
+        parent["children"].append(child)
+        parent["requestCount"] += row["request_count"]
+        parent["totalTokens"] += row["total_tokens"]
+        parent["costCents"] += row["cost_cents"]
+    return list(grouped.values())
 
 
 def clear_step_artifacts_from_index(conn: sqlite3.Connection, user_id: str, task_id: str, step_index: int) -> None:

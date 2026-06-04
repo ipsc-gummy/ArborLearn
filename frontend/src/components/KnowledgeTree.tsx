@@ -26,6 +26,7 @@ import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { SettingsMenu, type ThemeMode } from "./AppMenus";
+import { WalletMenu } from "./WalletMenu";
 import {
   DIAGRAM_NODE_HEIGHT,
   DIAGRAM_NODE_WIDTH,
@@ -446,9 +447,21 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
 
       <div className="tl-sidebar-account border-t border-border/60 p-3">
         <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-            {userInitial}
-          </div>
+          <WalletMenu
+            user={user}
+            side="top"
+            align="start"
+            trigger={
+              <button
+                type="button"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background transition hover:underline hover:brightness-110"
+                title="打开钱包"
+                aria-label="打开钱包"
+              >
+                {userInitial}
+              </button>
+            }
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{user?.displayName || "用户"}</p>
             <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>

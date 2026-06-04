@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import { Button } from "./ui/button";
+import { WalletMenu } from "./WalletMenu";
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import {
@@ -278,6 +279,7 @@ export function NotebookDashboard({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <WalletMenu user={user} />
             <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
             <AccountMenu
               user={user}

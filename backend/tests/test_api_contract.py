@@ -29,6 +29,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     (tmp_path / "lancedb-config").mkdir(parents=True, exist_ok=True)
 
     from app.main import app
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1000")
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000000")
 
     with TestClient(app) as test_client:
         yield test_client
@@ -89,6 +91,102 @@ def create_child(client: TestClient, headers: dict[str, str], parent_id: str) ->
     )
     assert response.status_code == 201
     return response.json()
+
+
+def test_wallet_initializes_on_first_read(client: TestClient) -> None:
+    headers = register(client, "wallet-init")
+
+    response = client.get("/api/wallet", headers=headers)
+
+    assert response.status_code == 200
+    wallet = response.json()["wallet"]
+    assert wallet["balanceCents"] == 1000
+    assert wallet["balanceTokens"] == 1_000_000
+    assert wallet["canCallApi"] is True
+
+
+def test_wallet_default_quota_increase_tops_up_existing_wallet(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = register(client, "wallet-quota")
+
+    first = client.get("/api/wallet", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["wallet"]["balanceCents"] == 1000
+    assert first.json()["wallet"]["balanceTokens"] == 1_000_000
+
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1500")
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1500000")
+    increased = client.get("/api/wallet", headers=headers)
+    assert increased.status_code == 200
+    assert increased.json()["wallet"]["balanceCents"] == 1500
+    assert increased.json()["wallet"]["balanceTokens"] == 1_500_000
+
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "300")
+    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "300000")
+    decreased = client.get("/api/wallet", headers=headers)
+    assert decreased.status_code == 200
+    assert decreased.json()["wallet"]["balanceCents"] == 1500
+    assert decreased.json()["wallet"]["balanceTokens"] == 1_500_000
+
+
+def test_chat_usage_deducts_wallet_and_blocks_after_negative_balance(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import main
+    from app.model_client import ModelCallResult, ModelUsage
+
+    monkeypatch.setenv(
+        "MODEL_PRICING_JSON",
+        json.dumps(
+            {
+                "deepseek-v4-pro": {
+                    "input_cents_per_million_tokens": 1_000_000,
+                    "output_cents_per_million_tokens": 1_000_000,
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "call_model_with_usage",
+        lambda messages, model_name=None, thinking_mode=None: ModelCallResult(
+            content="assistant answer",
+            usage=ModelUsage(prompt_tokens=600, completion_tokens=600, total_tokens=1200),
+        ),
+    )
+    monkeypatch.setattr(main, "maybe_generate_root_title", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "maybe_generate_node_summary", lambda *args, **kwargs: None)
+
+    headers = register(client, "wallet-chat")
+    root = create_root(client, headers)
+
+    first = client.post(
+        "/api/chat",
+        headers=headers,
+        json={"nodeId": root["id"], "message": "hello", "modelName": "deepseek-v4-pro"},
+    )
+    assert first.status_code == 200
+
+    wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
+    assert wallet["balanceCents"] == -200
+    assert wallet["balanceTokens"] == 998800
+    assert wallet["canCallApi"] is False
+
+    second = client.post(
+        "/api/chat",
+        headers=headers,
+        json={"nodeId": root["id"], "message": "again", "modelName": "deepseek-v4-pro"},
+    )
+    assert second.status_code == 402
+    assert second.json()["detail"]["code"] == "WALLET_INSUFFICIENT_CREDIT"
+
+    summary = client.get("/api/usage/summary", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["total"]["total_tokens"] == 1200
+    assert summary.json()["total"]["cost_cents"] == 1200
+
+    events = client.get("/api/usage/events", headers=headers)
+    assert events.status_code == 200
+    assert events.json()["events"][0]["usage_source"] == "provider"
 
 
 def tiny_png_bytes() -> bytes:

@@ -127,6 +127,79 @@ export interface ContextDebugResponse {
   final_context_preview: string;
 }
 
+export interface Wallet {
+  userId: string;
+  balanceCents: number;
+  balanceTokens: number;
+  initialCents: number;
+  initialTokens: number;
+  canCallApi: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UsageSummary {
+  total: {
+    request_count: number;
+    total_tokens: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_cents: number;
+    successful_requests: number;
+    failed_requests: number;
+  };
+  groups: Array<{
+    model_name: string;
+    call_type: string;
+    request_count: number;
+    total_tokens: number;
+    cost_cents: number;
+  }>;
+}
+
+export interface UsageEvent {
+  id: string;
+  user_id: string;
+  notebook_id?: string | null;
+  node_id?: string | null;
+  task_id?: string | null;
+  step_id?: string | null;
+  call_type: string;
+  model_name?: string | null;
+  thinking_mode?: string | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  usage_source?: string | null;
+  cost_cents?: number | null;
+  pricing_source?: string | null;
+  latency_ms?: number | null;
+  success: number;
+  error_message?: string | null;
+  created_at: string;
+}
+
+function monthRangeParams() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { from: from.toISOString(), to: now.toISOString() };
+}
+
+function usageParams(params?: { from?: string; to?: string; limit?: number; cursor?: string; scope?: "month" | "all" }) {
+  const defaults = monthRangeParams();
+  const search = new URLSearchParams();
+  if (params?.scope !== "all") {
+    search.set("from", params?.from ?? defaults.from);
+    search.set("to", params?.to ?? defaults.to);
+  } else {
+    if (params.from) search.set("from", params.from);
+    if (params.to) search.set("to", params.to);
+  }
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+  return search.toString();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -201,6 +274,18 @@ export function resumeDemoNotebook(notebookRef: string) {
 
 export function fetchMe() {
   return request<{ user: AuthUser }>("/api/auth/me");
+}
+
+export function getWallet() {
+  return request<{ wallet: Wallet }>("/api/wallet");
+}
+
+export function getUsageSummary(params?: { from?: string; to?: string; scope?: "month" | "all" }) {
+  return request<UsageSummary>(`/api/usage/summary?${usageParams(params)}`);
+}
+
+export function getUsageEvents(params?: { from?: string; to?: string; limit?: number; cursor?: string; scope?: "month" | "all" }) {
+  return request<{ events: UsageEvent[]; nextCursor?: string | null }>(`/api/usage/events?${usageParams(params)}`);
 }
 
 export function fetchTreeState() {
