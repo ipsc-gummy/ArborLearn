@@ -834,7 +834,7 @@ export function AuthDialog({
         ? password.length >= 8 && confirmPassword.length >= 8 && !loading
         : mode === "verify-email"
           ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && normalizedVerificationCode.length === 6 && !loading
-          : mode === "register" && !isDemoUpgrade
+          : mode === "register"
             ? hasRequiredCredentials && normalizedVerificationCode.length === 6 && !loading
             : hasRequiredCredentials && !loading;
 
@@ -900,7 +900,7 @@ export function AuthDialog({
           window.location.href = "/notebooks";
         }, 500);
       } else if (mode === "register") {
-        await onRegister(email, password, displayName || undefined, isDemoUpgrade ? undefined : normalizedVerificationCode);
+        await onRegister(email, password, displayName || undefined, normalizedVerificationCode);
         setPassword("");
         setVerificationCode("");
       } else {
@@ -909,6 +909,10 @@ export function AuthDialog({
     } catch (error) {
       const message = error instanceof Error ? error.message : "操作失败";
       setLocalError(message);
+      if (mode === "login" && message === "EMAIL_VERIFICATION_REQUIRED") {
+        setMode("verify-email");
+        setStatusMessage("请先完成邮箱验证，再继续登录。");
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -1002,7 +1006,7 @@ export function AuthDialog({
               />
             </label>
           )}
-          {mode === "register" && !isDemoUpgrade && (
+          {mode === "register" && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
               <div className="tl-input flex h-12 w-full items-center rounded-xl border px-4 focus-within:ring-2 focus-within:ring-primary/20">

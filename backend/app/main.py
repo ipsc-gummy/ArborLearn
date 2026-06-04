@@ -1713,6 +1713,8 @@ def upgrade_demo_account(payload: DemoUpgradeRequest, background_tasks: Backgrou
     display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
     ts = now_iso()
     with connect() as conn:
+        if is_email_verification_required():
+            consume_pending_registration_code(conn, email, payload.verificationCode)
         try:
             conn.execute(
                 """
@@ -1792,6 +1794,8 @@ def login(payload: AuthRequest) -> dict:
         ).fetchone()
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if is_email_verification_required() and not user["is_temporary"] and not user["email_verified"]:
+        raise HTTPException(status_code=403, detail="EMAIL_VERIFICATION_REQUIRED")
     return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
 
 

@@ -36,7 +36,7 @@ type AppRoute =
   | { kind: "workspace"; notebookId: string };
 
 type WorkspaceView = "chat" | "diagram";
-type AuthDialogInitialMode = AuthDialogMode | "reset-password" | "verify-email";
+type AuthDialogInitialMode = AuthDialogMode | "reset-password";
 
 class AppErrorBoundary extends Component<
   { children: ReactNode; resetKey: string },
@@ -111,7 +111,7 @@ function saveThemeMode(mode: ThemeMode, userId?: string) {
 function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (segments[0] === "guide") return { kind: "guide" };
-  if (segments[0] === "verify-email" || segments[0] === "reset-password") return { kind: "landing" };
+  if (segments[0] === "reset-password") return { kind: "landing" };
   if (segments[0] === "notebooks" && segments[1]) {
     return {
       kind: "workspace",
@@ -268,11 +268,6 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const token = params.get("token");
-    if (location.pathname === "/verify-email" && token) {
-      setAuthDialogMode("verify-email");
-      setAuthDialogToken(token);
-      setAuthDialogOpen(true);
-    }
     if (location.pathname === "/reset-password" && token) {
       setAuthDialogMode("reset-password");
       setAuthDialogToken(token);
@@ -684,7 +679,7 @@ export default function App() {
         user={user}
         onClose={() => {
           setAuthDialogOpen(false);
-          if (location.pathname === "/verify-email" || location.pathname === "/reset-password") {
+          if (location.pathname === "/reset-password") {
             navigate(routeToPath({ kind: "landing" }), { replace: true });
           }
         }}
