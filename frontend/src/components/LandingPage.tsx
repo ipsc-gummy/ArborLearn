@@ -2,6 +2,7 @@ import { ArrowRight, ArrowUpRight, BookOpenText, Check, ChevronDown, ExternalLin
 import type { ComponentType, ReactNode } from "react";
 import { useEffect } from "react";
 import { GithubRepoCard, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import { SiteFiling } from "./SiteFiling";
 import { Button } from "./ui/button";
 
 interface LandingPageProps {
@@ -387,9 +388,7 @@ function LandingFooter() {
             GitHub
             <ArrowUpRight className="h-3.5 w-3.5" />
           </a>
-          <p className="mt-8 text-xs leading-6 text-white/42">
-            Privacy · 我们尊重你的隐私与数据边界。
-          </p>
+          <SiteFiling className="mt-8 text-xs leading-6 text-white/42" linkClassName="transition hover:text-white/70" />
         </div>
 
         <div>

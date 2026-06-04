@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import guideMarkdown from "../content/arborlearn-guide.md?raw";
 import { GithubRepoCard, SettingsMenu, type ThemeMode } from "./AppMenus";
+import { SiteFiling } from "./SiteFiling";
 
 interface ProductGuidePageProps {
   themeMode: ThemeMode;
@@ -119,6 +120,9 @@ export function ProductGuidePage({ themeMode, onThemeChange, onHome }: ProductGu
           </ReactMarkdown>
         </article>
       </div>
+      <footer className="mx-auto max-w-7xl px-5 pb-10">
+        <SiteFiling className="border-t pt-6 text-center text-xs leading-6 text-muted-foreground" linkClassName="transition hover:text-foreground" />
+      </footer>
     </main>
   );
 }
