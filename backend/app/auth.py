@@ -96,7 +96,7 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(secu
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, email, display_name, email_verified, email_verified_at, is_temporary, is_admin, created_at
+            SELECT id, email, display_name, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin, created_at
             FROM users
             WHERE id = ?
             """,

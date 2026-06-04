@@ -11,15 +11,18 @@ import sqlite3
 import smtplib
 import ssl
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import create_token, normalize_email, password_hash, require_user, verify_password
@@ -122,6 +125,12 @@ DEMO_SESSION_TTL_HOURS = 24
 EMAIL_VERIFICATION_TOKEN_TTL_HOURS = 24
 PASSWORD_RESET_TOKEN_TTL_MINUTES = 60
 EMAIL_VERIFICATION_CODE_LENGTH = 6
+OAUTH_STATE_TTL_MINUTES = 10
+OAUTH_PROVIDER_GITHUB = "github"
+GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_API_URL = "https://api.github.com/user"
+GITHUB_EMAILS_API_URL = "https://api.github.com/user/emails"
 APP_SETTING_DEFINITIONS: dict[str, dict[str, int | str]] = {
     "demo_nudge_question_trigger": {
         "label": "温和提示触发提问数",
@@ -325,6 +334,7 @@ def serialize_user(user: dict) -> dict:
         "id": user["id"],
         "email": user["email"],
         "displayName": user["display_name"],
+        "passwordLoginEnabled": bool(user.get("password_login_enabled", 1)),
         "emailVerified": bool(user.get("email_verified", 0)),
         "isTemporary": bool(user.get("is_temporary", 0)),
         "isAdmin": bool(user.get("is_admin", 0)),
@@ -336,12 +346,458 @@ def frontend_base_url() -> str:
     return configured.rstrip("/")
 
 
+def backend_base_url() -> str:
+    configured = os.getenv("BACKEND_BASE_URL") or os.getenv("PUBLIC_API_URL") or "http://127.0.0.1:8000"
+    return configured.rstrip("/")
+
+
+def oauth_callback_url(provider: str) -> str:
+    configured = os.getenv(f"{provider.upper()}_OAUTH_CALLBACK_URL", "").strip()
+    if configured:
+        return configured
+    return f"{backend_base_url()}/api/auth/oauth/{provider}/callback"
+
+
+def normalize_oauth_redirect_path(value: str | None) -> str:
+    if not value:
+        return "/notebooks"
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme or parsed.netloc or not value.startswith("/") or value.startswith("//"):
+        return "/notebooks"
+    return value
+
+
+def frontend_oauth_result_url(
+    token: str | None = None,
+    error: str | None = None,
+    redirect_path: str = "/notebooks",
+    pending_token: str | None = None,
+    pending_email: str | None = None,
+    pending_provider: str | None = None,
+) -> str:
+    params = {"redirect": normalize_oauth_redirect_path(redirect_path)}
+    if token:
+        params["auth_token"] = token
+    if error:
+        params["oauth_error"] = error
+    if pending_token:
+        params["oauth_pending_token"] = pending_token
+    if pending_email:
+        params["oauth_pending_email"] = pending_email
+    if pending_provider:
+        params["oauth_pending_provider"] = pending_provider
+    return f"{frontend_base_url()}/oauth/callback?{urlencode(params)}"
+
+
 def is_email_verification_required() -> bool:
     return os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() not in {"0", "false", "no"}
 
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_oauth_state(
+    conn: sqlite3.Connection,
+    provider: str,
+    redirect_path: str,
+    *,
+    mode: str = "login",
+    user_id: str | None = None,
+) -> str:
+    raw_state = secrets.token_urlsafe(32)
+    ts = now_iso()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OAUTH_STATE_TTL_MINUTES)).isoformat()
+    conn.execute(
+        """
+        INSERT INTO oauth_states(id, provider, state_hash, mode, user_id, redirect_path, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            uid("oauth-state"),
+            provider,
+            token_hash(raw_state),
+            mode,
+            user_id,
+            normalize_oauth_redirect_path(redirect_path),
+            expires_at,
+            ts,
+        ),
+    )
+    return raw_state
+
+
+def consume_oauth_state(conn: sqlite3.Connection, provider: str, raw_state: str) -> dict:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM oauth_states
+        WHERE provider = ? AND state_hash = ?
+        """,
+        (provider, token_hash(raw_state)),
+    ).fetchone()
+    if not row or row["used_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    conn.execute("UPDATE oauth_states SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    return {
+        "mode": row["mode"] or "login",
+        "user_id": row["user_id"],
+        "redirect_path": normalize_oauth_redirect_path(row["redirect_path"]),
+    }
+
+
+def github_authorize_url(state: str, provider: str = OAUTH_PROVIDER_GITHUB) -> str:
+    client_id, _client_secret = github_oauth_config()
+    params = urlencode(
+        {
+            "client_id": client_id,
+            "redirect_uri": oauth_callback_url(provider),
+            "scope": "read:user user:email",
+            "state": state,
+        }
+    )
+    return f"{GITHUB_AUTHORIZE_URL}?{params}"
+
+
+def github_oauth_config() -> tuple[str, str]:
+    client_id = os.getenv("GITHUB_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GITHUB_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=503, detail="GitHub login is not configured")
+    return client_id, client_secret
+
+
+def request_json(url: str, *, method: str = "GET", data: dict[str, Any] | None = None, access_token: str | None = None) -> dict | list:
+    body = json.dumps(data).encode("utf-8") if data is not None else None
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "ArborLearn OAuth",
+    }
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+
+    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=502, detail=f"OAuth provider returned {exc.code}: {detail}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail="Unable to complete OAuth provider request") from exc
+
+
+def exchange_github_code(code: str) -> str:
+    client_id, client_secret = github_oauth_config()
+    response = request_json(
+        GITHUB_TOKEN_URL,
+        method="POST",
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": oauth_callback_url(OAUTH_PROVIDER_GITHUB),
+        },
+    )
+    if not isinstance(response, dict):
+        raise HTTPException(status_code=502, detail="OAuth provider returned an invalid token response")
+    access_token = response.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        error = response.get("error_description") or response.get("error") or "OAuth token exchange failed"
+        raise HTTPException(status_code=400, detail=str(error))
+    return access_token
+
+
+def fetch_github_profile(access_token: str) -> dict:
+    user_response = request_json(GITHUB_USER_API_URL, access_token=access_token)
+    email_response = request_json(GITHUB_EMAILS_API_URL, access_token=access_token)
+    if not isinstance(user_response, dict):
+        raise HTTPException(status_code=502, detail="OAuth provider returned an invalid user profile")
+    emails = email_response if isinstance(email_response, list) else []
+    verified_primary = next(
+        (
+            item
+            for item in emails
+            if isinstance(item, dict)
+            and item.get("primary")
+            and item.get("verified")
+            and isinstance(item.get("email"), str)
+        ),
+        None,
+    )
+    verified_any = next(
+        (
+            item
+            for item in emails
+            if isinstance(item, dict)
+            and item.get("verified")
+            and isinstance(item.get("email"), str)
+        ),
+        None,
+    )
+    email = (verified_primary or verified_any or {}).get("email")
+    if not isinstance(email, str) or not email:
+        raise HTTPException(status_code=400, detail="GITHUB_EMAIL_UNAVAILABLE")
+
+    provider_user_id = user_response.get("id")
+    login = user_response.get("login")
+    if provider_user_id is None or not isinstance(login, str) or not login:
+        raise HTTPException(status_code=502, detail="OAuth provider returned an invalid user profile")
+
+    return {
+        "provider_user_id": str(provider_user_id),
+        "login": login,
+        "email": normalize_email(email),
+        "display_name": str(user_response.get("name") or login).strip()[:64] or "GitHub User",
+        "avatar_url": user_response.get("avatar_url") if isinstance(user_response.get("avatar_url"), str) else None,
+    }
+
+
+def select_public_user(conn: sqlite3.Connection, user_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT id, email, display_name, password_login_enabled, email_verified,
+               email_verified_at, is_temporary, is_admin
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+
+
+def create_pending_oauth_confirmation(conn: sqlite3.Connection, provider: str, profile: dict, existing_user_id: str, redirect_path: str) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    ts = now_iso()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=OAUTH_STATE_TTL_MINUTES)).isoformat()
+    conn.execute(
+        """
+        DELETE FROM pending_oauth_confirmations
+        WHERE provider = ? AND provider_user_id = ?
+        """,
+        (provider, profile["provider_user_id"]),
+    )
+    conn.execute(
+        """
+        INSERT INTO pending_oauth_confirmations(
+          id, provider, token_hash, existing_user_id, provider_user_id,
+          provider_login, provider_email, avatar_url, redirect_path, expires_at, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            uid("oauth-confirm"),
+            provider,
+            token_hash(raw_token),
+            existing_user_id,
+            profile["provider_user_id"],
+            profile["login"],
+            profile["email"],
+            profile["avatar_url"],
+            normalize_oauth_redirect_path(redirect_path),
+            expires_at,
+            ts,
+        ),
+    )
+    return raw_token
+
+
+def consume_pending_oauth_confirmation(conn: sqlite3.Connection, raw_token: str) -> sqlite3.Row:
+    row = conn.execute(
+        """
+        SELECT *
+        FROM pending_oauth_confirmations
+        WHERE token_hash = ?
+        """,
+        (token_hash(raw_token),),
+    ).fetchone()
+    if not row or row["used_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth confirmation")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth confirmation") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth confirmation")
+    conn.execute("UPDATE pending_oauth_confirmations SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    return row
+
+
+def upsert_oauth_account(conn: sqlite3.Connection, *, user_id: str, provider: str, profile: dict) -> None:
+    ts = now_iso()
+    try:
+        conn.execute(
+            """
+            INSERT INTO oauth_accounts(
+              id, user_id, provider, provider_user_id, provider_login,
+              provider_email, avatar_url, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(provider, user_id) DO UPDATE SET
+              provider_user_id = excluded.provider_user_id,
+              provider_login = excluded.provider_login,
+              provider_email = excluded.provider_email,
+              avatar_url = excluded.avatar_url,
+              updated_at = excluded.updated_at
+            """,
+            (
+                uid("oauth-account"),
+                user_id,
+                provider,
+                profile["provider_user_id"],
+                profile["login"],
+                profile["email"],
+                profile["avatar_url"],
+                ts,
+                ts,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="OAuth account is already linked") from exc
+
+
+def login_or_create_oauth_user(conn: sqlite3.Connection, provider: str, profile: dict, redirect_path: str) -> dict:
+    ts = now_iso()
+    account = conn.execute(
+        """
+        SELECT users.id, users.email, users.display_name, users.password_login_enabled, users.email_verified, users.email_verified_at,
+               users.is_temporary, users.is_admin
+        FROM oauth_accounts
+        JOIN users ON users.id = oauth_accounts.user_id
+        WHERE oauth_accounts.provider = ? AND oauth_accounts.provider_user_id = ?
+        """,
+        (provider, profile["provider_user_id"]),
+    ).fetchone()
+    if account:
+        conn.execute(
+            """
+            UPDATE oauth_accounts
+            SET provider_login = ?, provider_email = ?, avatar_url = ?, updated_at = ?
+            WHERE provider = ? AND provider_user_id = ?
+            """,
+            (profile["login"], profile["email"], profile["avatar_url"], ts, provider, profile["provider_user_id"]),
+        )
+        return dict(account)
+
+    existing_user = conn.execute(
+        """
+        SELECT id, email, display_name, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin
+        FROM users
+        WHERE email = ? AND is_temporary = 0
+        """,
+        (profile["email"],),
+    ).fetchone()
+    if existing_user:
+        pending_token = create_pending_oauth_confirmation(conn, provider, profile, existing_user["id"], redirect_path)
+        return {
+            "requires_confirmation": True,
+            "pending_token": pending_token,
+            "pending_email": existing_user["email"],
+            "provider": provider,
+            "redirect_path": normalize_oauth_redirect_path(redirect_path),
+        }
+
+    user_id = uid("user")
+    conn.execute(
+        """
+        INSERT INTO users(
+          id, email, display_name, password_hash, password_login_enabled,
+          email_verified, email_verified_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, 0, 1, ?, ?, ?)
+        """,
+        (
+            user_id,
+            profile["email"],
+            profile["display_name"],
+            password_hash(secrets.token_urlsafe(48)),
+            ts,
+            ts,
+            ts,
+        ),
+    )
+    create_starter_notebook(conn, user_id)
+    user = {
+        "id": user_id,
+        "email": profile["email"],
+        "display_name": profile["display_name"],
+        "password_login_enabled": 0,
+        "email_verified": 1,
+        "email_verified_at": ts,
+        "is_temporary": 0,
+        "is_admin": 0,
+    }
+
+    upsert_oauth_account(conn, user_id=user_id, provider=provider, profile=profile)
+    return user
+
+
+def link_oauth_account(conn: sqlite3.Connection, provider: str, profile: dict, user_id: str) -> dict:
+    existing = conn.execute(
+        """
+        SELECT user_id
+        FROM oauth_accounts
+        WHERE provider = ? AND provider_user_id = ?
+        """,
+        (provider, profile["provider_user_id"]),
+    ).fetchone()
+    if existing and existing["user_id"] != user_id:
+        raise HTTPException(status_code=409, detail="OAuth account is already linked to another user")
+    upsert_oauth_account(conn, user_id=user_id, provider=provider, profile=profile)
+    user = select_public_user(conn, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(user)
+
+
+def upgrade_demo_with_oauth(conn: sqlite3.Connection, provider: str, profile: dict, user_id: str) -> dict:
+    ts = now_iso()
+    user = select_public_user(conn, user_id)
+    if not user or not user["is_temporary"]:
+        raise HTTPException(status_code=400, detail="Current account is already permanent")
+    existing_account = conn.execute(
+        """
+        SELECT user_id
+        FROM oauth_accounts
+        WHERE provider = ? AND provider_user_id = ?
+        """,
+        (provider, profile["provider_user_id"]),
+    ).fetchone()
+    if existing_account and existing_account["user_id"] != user_id:
+        raise HTTPException(status_code=409, detail="OAuth account is already linked to another user")
+    existing_email_user = conn.execute(
+        """
+        SELECT id
+        FROM users
+        WHERE email = ? AND id <> ? AND is_temporary = 0
+        """,
+        (profile["email"], user_id),
+    ).fetchone()
+    if existing_email_user:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+    conn.execute(
+        """
+        UPDATE users
+        SET email = ?, display_name = ?, password_login_enabled = 0,
+            email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?),
+            is_temporary = 0, updated_at = ?
+        WHERE id = ?
+        """,
+        (profile["email"], profile["display_name"], ts, ts, user_id),
+    )
+    upsert_oauth_account(conn, user_id=user_id, provider=provider, profile=profile)
+    updated_user = select_public_user(conn, user_id)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return dict(updated_user)
 
 
 def create_auth_token(conn: sqlite3.Connection, user_id: str, token_type: str, ttl: timedelta) -> str:
@@ -1260,7 +1716,7 @@ def ensure_admin_account() -> None:
             conn.execute(
                 """
                 UPDATE users
-                SET display_name = ?, password_hash = ?, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), is_temporary = 0, is_admin = 1, updated_at = ?
+                SET display_name = ?, password_hash = ?, password_login_enabled = 1, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), is_temporary = 0, is_admin = 1, updated_at = ?
                 WHERE id = ?
                 """,
                 (display_name, password_hash(password), ts, ts, existing["id"]),
@@ -1268,8 +1724,8 @@ def ensure_admin_account() -> None:
             return
         conn.execute(
             """
-            INSERT INTO users(id, email, display_name, password_hash, email_verified, email_verified_at, is_temporary, is_admin, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 1, ?, 0, 1, ?, ?)
+            INSERT INTO users(id, email, display_name, password_hash, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, 1, ?, 0, 1, ?, ?)
             """,
             (uid("user"), email, display_name, password_hash(password), ts, ts, ts),
         )
@@ -1285,8 +1741,8 @@ def create_isolated_demo_user() -> dict:
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO users(id, email, display_name, password_hash, email_verified, is_temporary, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 1, 1, ?, ?)
+            INSERT INTO users(id, email, display_name, password_hash, password_login_enabled, email_verified, is_temporary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, 1, 1, ?, ?)
             """,
             (user_id, email, display_name, password_hash(uid("demo-password")), ts, ts),
         )
@@ -1295,6 +1751,7 @@ def create_isolated_demo_user() -> dict:
         "id": user_id,
         "email": email,
         "display_name": display_name,
+        "password_login_enabled": 0,
         "email_verified": 1,
         "is_temporary": 1,
         "is_admin": 0,
@@ -1667,6 +2124,97 @@ async def long_task_context_debug_endpoint(task_id: str, step_id: str, user: dic
     }
 
 
+@app.get("/api/auth/oauth/{provider}")
+def start_oauth_login(provider: str, redirect: str | None = Query(default="/notebooks")) -> RedirectResponse:
+    if provider != OAUTH_PROVIDER_GITHUB:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+
+    redirect_path = normalize_oauth_redirect_path(redirect)
+    with connect() as conn:
+        state = create_oauth_state(conn, provider, redirect_path)
+    return RedirectResponse(github_authorize_url(state, provider), status_code=302)
+
+
+@app.post("/api/auth/oauth/{provider}/link")
+def start_oauth_link(provider: str, user: dict = Depends(require_user)) -> dict:
+    if provider != OAUTH_PROVIDER_GITHUB:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+    with connect() as conn:
+        state = create_oauth_state(conn, provider, "/notebooks", mode="demo_upgrade" if user.get("is_temporary") else "link", user_id=user["id"])
+    return {"url": github_authorize_url(state, provider)}
+
+
+@app.get("/api/auth/oauth/{provider}/callback")
+def complete_oauth_login(
+    provider: str,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+) -> RedirectResponse:
+    if provider != OAUTH_PROVIDER_GITHUB:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+
+    redirect_path = "/notebooks"
+    try:
+        if not state:
+            raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        with connect() as conn:
+            oauth_state = consume_oauth_state(conn, provider, state)
+            redirect_path = oauth_state["redirect_path"]
+        if error:
+            return RedirectResponse(frontend_oauth_result_url(error=error, redirect_path=redirect_path), status_code=302)
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing OAuth code")
+
+        access_token = exchange_github_code(code)
+        profile = fetch_github_profile(access_token)
+        with connect() as conn:
+            mode = oauth_state["mode"]
+            state_user_id = oauth_state["user_id"]
+            if mode == "link":
+                if not state_user_id:
+                    raise HTTPException(status_code=400, detail="Invalid OAuth link state")
+                user = link_oauth_account(conn, provider, profile, state_user_id)
+            elif mode == "demo_upgrade":
+                if not state_user_id:
+                    raise HTTPException(status_code=400, detail="Invalid OAuth upgrade state")
+                user = upgrade_demo_with_oauth(conn, provider, profile, state_user_id)
+            else:
+                user = login_or_create_oauth_user(conn, provider, profile, redirect_path)
+        if user.get("requires_confirmation"):
+            return RedirectResponse(
+                frontend_oauth_result_url(
+                    pending_token=user["pending_token"],
+                    pending_email=user["pending_email"],
+                    pending_provider=user["provider"],
+                    redirect_path=user["redirect_path"],
+                ),
+                status_code=302,
+            )
+        return RedirectResponse(
+            frontend_oauth_result_url(token=create_token(user["id"]), redirect_path=redirect_path),
+            status_code=302,
+        )
+    except HTTPException as exc:
+        error_code = str(exc.detail or "OAuth login failed")
+        return RedirectResponse(frontend_oauth_result_url(error=error_code, redirect_path=redirect_path), status_code=302)
+
+
+@app.post("/api/auth/oauth/confirm")
+def confirm_oauth_login(payload: TokenRequest) -> dict:
+    with connect() as conn:
+        pending = consume_pending_oauth_confirmation(conn, payload.token)
+        profile = {
+            "provider_user_id": pending["provider_user_id"],
+            "login": pending["provider_login"],
+            "email": pending["provider_email"],
+            "display_name": pending["provider_login"] or pending["provider_email"].split("@", 1)[0],
+            "avatar_url": pending["avatar_url"],
+        }
+        user = link_oauth_account(conn, pending["provider"], profile, pending["existing_user_id"])
+    return {"token": create_token(user["id"]), "user": serialize_user(user), "redirect": pending["redirect_path"]}
+
+
 @app.post("/api/auth/register", status_code=201)
 def register(payload: AuthRequest) -> dict:
     email = normalize_email(payload.email)
@@ -1682,8 +2230,8 @@ def register(payload: AuthRequest) -> dict:
         try:
             conn.execute(
                 """
-                INSERT INTO users(id, email, display_name, password_hash, email_verified, email_verified_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+                INSERT INTO users(id, email, display_name, password_hash, password_login_enabled, email_verified, email_verified_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, 1, ?, ?, ?)
                 """,
                 (user_id, email, display_name, password_hash(payload.password), ts, ts, ts),
             )
@@ -1694,6 +2242,7 @@ def register(payload: AuthRequest) -> dict:
         "id": user_id,
         "email": email,
         "display_name": display_name,
+        "password_login_enabled": 1,
         "email_verified": 1,
         "is_temporary": 0,
         "is_admin": 0,
@@ -1713,21 +2262,23 @@ def upgrade_demo_account(payload: DemoUpgradeRequest, background_tasks: Backgrou
     display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
     ts = now_iso()
     with connect() as conn:
+        if is_email_verification_required():
+            consume_pending_registration_code(conn, email, payload.verificationCode)
         try:
             conn.execute(
                 """
                 UPDATE users
-                SET email = ?, display_name = ?, password_hash = ?, email_verified = 1, email_verified_at = ?, is_temporary = 0, updated_at = ?
+                SET email = ?, display_name = ?, password_hash = ?, password_login_enabled = 1, email_verified = 1, email_verified_at = ?, is_temporary = 0, updated_at = ?
                 WHERE id = ? AND is_temporary = 1
                 """,
-                (email, display_name, password_hash(payload.password), ts, ts, user["id"]),
+            (email, display_name, password_hash(payload.password), ts, ts, user["id"]),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=409, detail="Email is already registered") from exc
 
         upgraded_user = conn.execute(
             """
-            SELECT id, email, display_name, email_verified, email_verified_at, is_temporary, is_admin
+            SELECT id, email, display_name, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin
             FROM users
             WHERE id = ?
             """,
@@ -1750,7 +2301,7 @@ def resume_demo_notebook(notebook_ref: str) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT users.id, users.email, users.display_name, users.email_verified, users.email_verified_at, users.is_temporary, users.is_admin
+            SELECT users.id, users.email, users.display_name, users.password_login_enabled, users.email_verified, users.email_verified_at, users.is_temporary, users.is_admin
             FROM notebooks
             JOIN users ON users.id = notebooks.owner_user_id
             WHERE users.is_temporary = 1
@@ -1784,14 +2335,16 @@ def login(payload: AuthRequest) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT id, email, display_name, password_hash, email_verified, email_verified_at, is_temporary, is_admin
+            SELECT id, email, display_name, password_hash, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin
             FROM users
             WHERE email = ?
             """,
             (email,),
         ).fetchone()
-    if not user or not verify_password(payload.password, user["password_hash"]):
+    if not user or not user["password_login_enabled"] or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if is_email_verification_required() and not user["is_temporary"] and not user["email_verified"]:
+        raise HTTPException(status_code=403, detail="EMAIL_VERIFICATION_REQUIRED")
     return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
 
 
@@ -1880,7 +2433,7 @@ def verify_email(payload: EmailVerificationRequest) -> dict:
         )
         user = conn.execute(
             """
-            SELECT id, email, display_name, email_verified, email_verified_at, is_temporary, is_admin
+            SELECT id, email, display_name, password_login_enabled, email_verified, email_verified_at, is_temporary, is_admin
             FROM users
             WHERE id = ?
             """,
@@ -1922,7 +2475,7 @@ def reset_password(payload: ResetPasswordRequest) -> dict:
         conn.execute(
             """
             UPDATE users
-            SET password_hash = ?, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+            SET password_hash = ?, password_login_enabled = 1, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
             WHERE id = ?
             """,
             (password_hash(payload.newPassword), ts, ts, token["user_id"]),
@@ -1950,7 +2503,7 @@ def change_password(payload: PasswordChangeRequest, user: dict = Depends(require
         conn.execute(
             """
             UPDATE users
-            SET password_hash = ?, updated_at = ?
+            SET password_hash = ?, password_login_enabled = 1, updated_at = ?
             WHERE id = ?
             """,
             (password_hash(payload.newPassword), now_iso(), user["id"]),
@@ -1961,6 +2514,51 @@ def change_password(payload: PasswordChangeRequest, user: dict = Depends(require
 @app.get("/api/auth/me")
 def me(user: dict = Depends(require_user)) -> dict:
     return {"user": serialize_user(user)}
+
+
+@app.get("/api/auth/oauth/accounts/status")
+def oauth_accounts(user: dict = Depends(require_user)) -> dict:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT provider, provider_login, provider_email, avatar_url, updated_at
+            FROM oauth_accounts
+            WHERE user_id = ?
+            ORDER BY provider ASC
+            """,
+            (user["id"],),
+        ).fetchall()
+    return {
+        "accounts": [
+            {
+                "provider": row["provider"],
+                "providerLogin": row["provider_login"],
+                "providerEmail": row["provider_email"],
+                "avatarUrl": row["avatar_url"],
+                "updatedAt": row["updated_at"],
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.delete("/api/auth/oauth/{provider}")
+def unlink_oauth_account(provider: str, user: dict = Depends(require_user)) -> dict:
+    if provider != OAUTH_PROVIDER_GITHUB:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+    if user.get("is_temporary"):
+        raise HTTPException(status_code=400, detail="Demo accounts do not have linked OAuth accounts")
+    if not user.get("password_login_enabled"):
+        raise HTTPException(status_code=400, detail="SET_PASSWORD_BEFORE_UNLINK")
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM oauth_accounts WHERE user_id = ? AND provider = ?",
+            (user["id"], provider),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="OAuth account not linked")
+        conn.execute("DELETE FROM oauth_accounts WHERE id = ?", (row["id"],))
+    return {"ok": True}
 
 
 @app.get("/api/tree")

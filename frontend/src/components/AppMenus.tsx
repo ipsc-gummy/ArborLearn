@@ -29,13 +29,18 @@ import { cn } from "../lib/utils";
 import {
   changePassword,
   fetchAdminSettings,
+  fetchOAuthAccounts,
   forgotPassword,
+  getOAuthLoginUrl,
   resetPassword,
   sendAccountVerificationEmail,
   sendVerificationEmail,
   setAuthToken,
+  startOAuthLink,
+  unlinkOAuthAccount,
   updateAdminSettings,
   verifyEmail,
+  type OAuthAccount,
   type AuthUser,
   type RuntimeSettings,
 } from "../lib/api";
@@ -193,6 +198,9 @@ export function AccountMenu({
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
   const [walletDialogOpen, setWalletDialogOpen] = useState(false);
+  const [oauthAccounts, setOauthAccounts] = useState<OAuthAccount[]>([]);
+  const [oauthStatus, setOauthStatus] = useState<"idle" | "loading" | "saving" | "error">("idle");
+  const [oauthMessage, setOauthMessage] = useState<string | null>(null);
   const displayName = user?.displayName ?? "未登录";
   const displayEmail = user?.email ?? "登录后保存你的学习进度";
   const initials = user ? user.displayName.slice(0, 2).toUpperCase() : null;
@@ -220,6 +228,54 @@ export function AccountMenu({
   const openGithub = () => {
     closeMenu();
     openExternalUrl(GITHUB_REPO_URL);
+  };
+
+  const loadOAuthAccounts = async () => {
+    if (!user || user.isTemporary) {
+      setOauthAccounts([]);
+      return;
+    }
+    setOauthStatus("loading");
+    setOauthMessage(null);
+    try {
+      const response = await fetchOAuthAccounts();
+      setOauthAccounts(response.accounts);
+      setOauthStatus("idle");
+    } catch (error) {
+      setOauthStatus("error");
+      setOauthMessage(error instanceof Error ? error.message : "无法读取第三方账号绑定状态");
+    }
+  };
+
+  useEffect(() => {
+    if (!accountInfoOpen) return;
+    void loadOAuthAccounts();
+  }, [accountInfoOpen, user?.id, user?.isTemporary]);
+
+  const startGithubAccountLink = async () => {
+    setOauthStatus("saving");
+    setOauthMessage(null);
+    try {
+      const response = await startOAuthLink("github");
+      window.location.href = response.url;
+    } catch (error) {
+      setOauthStatus("error");
+      setOauthMessage(error instanceof Error ? error.message : "无法发起 GitHub 授权");
+    }
+  };
+
+  const unlinkGithub = async () => {
+    setOauthStatus("saving");
+    setOauthMessage(null);
+    try {
+      await unlinkOAuthAccount("github");
+      setOauthMessage("GitHub 账号已解绑。");
+      await loadOAuthAccounts();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "解绑 GitHub 失败";
+      setOauthStatus("error");
+      setOauthMessage(message === "SET_PASSWORD_BEFORE_UNLINK" ? "请先设置登录密码，再解绑 GitHub。" : message);
+    }
   };
 
   const selectTheme = (mode: ThemeMode) => {
@@ -339,6 +395,16 @@ export function AccountMenu({
                 }}
               />
             )}
+            {user?.isTemporary && (
+              <MenuButton
+                icon={Github}
+                label="使用 GitHub 绑定"
+                onClick={() => {
+                  closeMenu();
+                  void startGithubAccountLink();
+                }}
+              />
+            )}
             {user?.isAdmin && (
               <MenuButton
                 icon={ShieldCheck}
@@ -429,6 +495,51 @@ export function AccountMenu({
               <AccountInfoRow label="昵称" value={user.displayName} />
               <AccountInfoRow label="邮箱" value={user.email} />
               {!user.isTemporary && <AccountInfoRow label="邮箱验证" value={user.emailVerified ? "已验证" : "未验证"} />}
+              {!user.isTemporary && (
+                <div className="rounded-xl border border-border bg-muted/35 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-muted-foreground">GitHub 登录</p>
+                      <p className="mt-1 break-words font-medium">
+                        {oauthStatus === "loading"
+                          ? "正在读取..."
+                          : oauthAccounts.find((account) => account.provider === "github")?.providerLogin
+                            ? `已绑定 ${oauthAccounts.find((account) => account.provider === "github")?.providerLogin}`
+                            : "未绑定"}
+                      </p>
+                    </div>
+                    {oauthAccounts.some((account) => account.provider === "github") ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full border border-destructive/25 px-3 py-1.5 text-xs font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
+                        onClick={unlinkGithub}
+                        disabled={oauthStatus === "saving"}
+                      >
+                        解绑
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full border border-primary/25 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/8 disabled:opacity-60"
+                        onClick={startGithubAccountLink}
+                        disabled={oauthStatus === "saving"}
+                      >
+                        绑定
+                      </button>
+                    )}
+                  </div>
+                  {oauthMessage && (
+                    <p className={cn("mt-2 text-xs", oauthStatus === "error" ? "text-destructive" : "text-muted-foreground")}>
+                      {oauthMessage}
+                    </p>
+                  )}
+                  {!user.passwordLoginEnabled && oauthAccounts.some((account) => account.provider === "github") && (
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      当前账号还没有登录密码。解绑前请先通过“忘记密码”设置密码。
+                    </p>
+                  )}
+                </div>
+              )}
               <AccountInfoRow label="状态" value="已登录" />
             </div>
           </div>
@@ -834,9 +945,10 @@ export function AuthDialog({
         ? password.length >= 8 && confirmPassword.length >= 8 && !loading
         : mode === "verify-email"
           ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && normalizedVerificationCode.length === 6 && !loading
-          : mode === "register" && !isDemoUpgrade
+          : mode === "register"
             ? hasRequiredCredentials && normalizedVerificationCode.length === 6 && !loading
             : hasRequiredCredentials && !loading;
+  const showOAuthLogin = mode === "login" || mode === "register";
 
   useEffect(() => {
     if (!open) return;
@@ -900,7 +1012,7 @@ export function AuthDialog({
           window.location.href = "/notebooks";
         }, 500);
       } else if (mode === "register") {
-        await onRegister(email, password, displayName || undefined, isDemoUpgrade ? undefined : normalizedVerificationCode);
+        await onRegister(email, password, displayName || undefined, normalizedVerificationCode);
         setPassword("");
         setVerificationCode("");
       } else {
@@ -909,6 +1021,10 @@ export function AuthDialog({
     } catch (error) {
       const message = error instanceof Error ? error.message : "操作失败";
       setLocalError(message);
+      if (mode === "login" && message === "EMAIL_VERIFICATION_REQUIRED") {
+        setMode("verify-email");
+        setStatusMessage("请先完成邮箱验证，再继续登录。");
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -952,6 +1068,24 @@ export function AuthDialog({
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "进入演示失败");
     }
+  };
+
+  const startGithubLogin = () => {
+    setLocalError(null);
+    setStatusMessage(null);
+    if (isDemoUpgrade) {
+      setLocalLoading(true);
+      startOAuthLink("github")
+        .then((response) => {
+          window.location.href = response.url;
+        })
+        .catch((error) => {
+          setLocalLoading(false);
+          setLocalError(error instanceof Error ? error.message : "无法发起 GitHub 授权");
+        });
+      return;
+    }
+    window.location.href = getOAuthLoginUrl("github", "/notebooks");
   };
 
   const displayError = (localError || authError) === "EMAIL_VERIFICATION_REQUIRED" ? null : localError || authError;
@@ -1002,7 +1136,7 @@ export function AuthDialog({
               />
             </label>
           )}
-          {mode === "register" && !isDemoUpgrade && (
+          {mode === "register" && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
               <div className="tl-input flex h-12 w-full items-center rounded-xl border px-4 focus-within:ring-2 focus-within:ring-primary/20">
@@ -1134,6 +1268,25 @@ export function AuthDialog({
                       : "保存新密码"}
           </Button>
         </form>
+
+        {showOAuthLogin && (
+          <div className="mt-4">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              <span>或</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <button
+              type="button"
+              className="tl-hover mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold"
+              onClick={startGithubLogin}
+              disabled={loading}
+            >
+              <Github className="h-5 w-5" />
+              {isDemoUpgrade ? "使用 GitHub 绑定并保留进度" : "使用 GitHub 登录"}
+            </button>
+          </div>
+        )}
 
         {(mode === "login" || mode === "register") && (
           <button

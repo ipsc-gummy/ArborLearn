@@ -405,7 +405,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
     try {
       const state = get();
       const response = state.user?.isTemporary
-        ? await upgradeDemoAccount({ email, password, displayName })
+        ? await upgradeDemoAccount({ email, password, displayName, verificationCode })
         : await registerRequest({ email, password, displayName, verificationCode });
       if (response.token) {
         setAuthToken(response.token);

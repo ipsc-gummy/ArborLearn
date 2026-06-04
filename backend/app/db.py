@@ -54,6 +54,7 @@ def init_db() -> None:
               email TEXT NOT NULL UNIQUE,
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
+              password_login_enabled INTEGER NOT NULL DEFAULT 1,
               email_verified INTEGER NOT NULL DEFAULT 0,
               email_verified_at TEXT,
               is_temporary INTEGER NOT NULL DEFAULT 0,
@@ -88,6 +89,60 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_pending_email_verifications_email_purpose
               ON pending_email_verifications(email, purpose, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS oauth_states (
+              id TEXT PRIMARY KEY,
+              provider TEXT NOT NULL,
+              state_hash TEXT NOT NULL UNIQUE,
+              mode TEXT NOT NULL DEFAULT 'login' CHECK(mode IN ('login', 'link', 'demo_upgrade')),
+              user_id TEXT,
+              redirect_path TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_oauth_states_provider_created
+              ON oauth_states(provider, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS pending_oauth_confirmations (
+              id TEXT PRIMARY KEY,
+              provider TEXT NOT NULL,
+              token_hash TEXT NOT NULL UNIQUE,
+              existing_user_id TEXT NOT NULL,
+              provider_user_id TEXT NOT NULL,
+              provider_login TEXT,
+              provider_email TEXT NOT NULL,
+              avatar_url TEXT,
+              redirect_path TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE,
+              UNIQUE(provider, provider_user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pending_oauth_confirmations_user
+              ON pending_oauth_confirmations(existing_user_id, provider, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS oauth_accounts (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              provider_user_id TEXT NOT NULL,
+              provider_login TEXT,
+              provider_email TEXT,
+              avatar_url TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+              UNIQUE(provider, provider_user_id),
+              UNIQUE(provider, user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_provider
+              ON oauth_accounts(user_id, provider);
 
             CREATE TABLE IF NOT EXISTS app_settings (
               key TEXT PRIMARY KEY,
@@ -424,6 +479,9 @@ def init_db() -> None:
         ensure_column(conn, "users", "email_verified_at", "TEXT")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "password_login_enabled", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(conn, "oauth_states", "mode", "TEXT NOT NULL DEFAULT 'login'")
+        ensure_column(conn, "oauth_states", "user_id", "TEXT")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:

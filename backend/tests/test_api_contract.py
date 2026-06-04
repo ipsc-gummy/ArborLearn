@@ -325,6 +325,79 @@ def test_demo_sessions_are_temporary_and_isolated(client: TestClient) -> None:
     assert "Pytest Notebook" not in second_titles
 
 
+def test_email_verification_required_for_registration_and_demo_upgrade(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "email-verification.sqlite3"))
+    monkeypatch.setenv("AUTH_SECRET", "test-secret")
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    monkeypatch.setenv("ENABLE_RAG", "false")
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("LANCEDB_CONFIG_DIR", str(tmp_path / "lancedb-config"))
+    (tmp_path / "appdata").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "lancedb-config").mkdir(parents=True, exist_ok=True)
+
+    from app import main
+
+    sent_codes: dict[str, str] = {}
+    monkeypatch.setattr(main, "send_verification_email", lambda email, display_name, code: sent_codes.setdefault(email, code))
+
+    with TestClient(main.app) as test_client:
+        demo = test_client.post("/api/auth/demo", json={})
+        assert demo.status_code == 201
+        demo_headers = {"Authorization": f"Bearer {demo.json()['token']}"}
+
+        upgrade_email = "demo-upgrade@example.com"
+        blocked_upgrade = test_client.post(
+            "/api/auth/upgrade-demo",
+            headers=demo_headers,
+            json={"email": upgrade_email, "password": "ArborLearnTest2026!", "displayName": "Demo Upgrade"},
+        )
+        assert blocked_upgrade.status_code == 400
+
+        send_upgrade_code = test_client.post("/api/auth/send-verification-email", json={"email": upgrade_email})
+        assert send_upgrade_code.status_code == 200
+        upgraded = test_client.post(
+            "/api/auth/upgrade-demo",
+            headers=demo_headers,
+            json={
+                "email": upgrade_email,
+                "password": "ArborLearnTest2026!",
+                "displayName": "Demo Upgrade",
+                "verificationCode": sent_codes[upgrade_email],
+            },
+        )
+        assert upgraded.status_code == 200
+        assert upgraded.json()["user"]["emailVerified"] is True
+        assert upgraded.json()["user"]["isTemporary"] is False
+
+        register_email = "verified-register@example.com"
+        blocked_register = test_client.post(
+            "/api/auth/register",
+            json={"email": register_email, "password": "ArborLearnTest2026!", "displayName": "Verified Register"},
+        )
+        assert blocked_register.status_code == 400
+
+        send_register_code = test_client.post("/api/auth/send-verification-email", json={"email": register_email})
+        assert send_register_code.status_code == 200
+        registered = test_client.post(
+            "/api/auth/register",
+            json={
+                "email": register_email,
+                "password": "ArborLearnTest2026!",
+                "displayName": "Verified Register",
+                "verificationCode": sent_codes[register_email],
+            },
+        )
+        assert registered.status_code == 201
+        assert registered.json()["user"]["emailVerified"] is True
+
+        with main.connect() as conn:
+            conn.execute("UPDATE users SET email_verified = 0, email_verified_at = NULL WHERE email = ?", (register_email,))
+        login = test_client.post("/api/auth/login", json={"email": register_email, "password": "ArborLearnTest2026!"})
+        assert login.status_code == 403
+        assert login.json()["detail"] == "EMAIL_VERIFICATION_REQUIRED"
+
+
 def test_node_crud_contract(client: TestClient) -> None:
     user = register(client, "node-crud")
     root = create_root(client, user)

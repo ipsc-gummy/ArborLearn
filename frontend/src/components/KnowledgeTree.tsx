@@ -78,6 +78,25 @@ function countSubtreeNodes(nodes: ArborNodes, nodeId: string): number {
   return 1 + node.children.reduce((total, childId) => total + countSubtreeNodes(nodes, childId), 0);
 }
 
+function copyTextWithSelection(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange }: TreeItemProps) {
   const node = useArborLearnStore((state) => state.nodes[nodeId]);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
@@ -88,13 +107,30 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   const { attributes, listeners, setNodeRef: setDragRef, transform } = useDraggable({ id: nodeId });
   const [isRenaming, setIsRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
+  const [shareDialogUrl, setShareDialogUrl] = useState<string | null>(null);
+  const [shareFeedback, setShareFeedback] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const shareInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isRenaming) return;
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [isRenaming]);
+
+  useEffect(() => {
+    if (!shareDialogUrl) return;
+    window.setTimeout(() => {
+      shareInputRef.current?.focus();
+      shareInputRef.current?.select();
+    }, 0);
+  }, [shareDialogUrl]);
+
+  useEffect(() => {
+    if (!shareFeedback) return;
+    const timer = window.setTimeout(() => setShareFeedback(""), 1600);
+    return () => window.clearTimeout(timer);
+  }, [shareFeedback]);
 
   if (!node) return null;
   const hasChildren = node.children.length > 0;
@@ -121,10 +157,28 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
     const shareUrl = window.location.href;
     const shareData = { title: node.title, text: node.summary || node.title, url: shareUrl };
     if (navigator.share) {
-      await navigator.share(shareData);
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareFeedback("链接已复制");
+        return;
+      } catch {
+        // Fall through to the HTTP-friendly copy path.
+      }
+    }
+    if (copyTextWithSelection(shareUrl)) {
+      setShareFeedback("链接已复制");
       return;
     }
-    await navigator.clipboard?.writeText(shareUrl);
+    onOpenMenuChange(node.id, false);
+    setShareDialogUrl(shareUrl);
   };
 
   return (
@@ -187,7 +241,8 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
               </button>
               <button className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left" onClick={() => void shareNode()}>
                 <Share2 className="h-4 w-4" />
-                分享
+                <span>分享</span>
+                {shareFeedback && <span className="ml-auto text-[11px] text-primary">{shareFeedback}</span>}
               </button>
               <button
                 className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
@@ -227,6 +282,41 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
           ))}
         </div>
       )}
+
+      {shareDialogUrl && typeof document !== "undefined" &&
+        createPortal(
+          <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+            <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-lg font-semibold">分享链接</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    当前浏览器不支持自动复制，请手动复制下面的链接。
+                  </p>
+                </div>
+                <button className="tl-hover rounded-full p-2" onClick={() => setShareDialogUrl(null)} aria-label="关闭分享链接">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <input
+                ref={shareInputRef}
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={shareDialogUrl}
+                readOnly
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => shareInputRef.current?.select()}>
+                  选中链接
+                </Button>
+                <Button size="sm" onClick={() => setShareDialogUrl(null)}>
+                  完成
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

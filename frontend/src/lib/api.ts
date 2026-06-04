@@ -12,9 +12,18 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  passwordLoginEnabled?: boolean;
   emailVerified?: boolean;
   isTemporary?: boolean;
   isAdmin?: boolean;
+}
+
+export interface OAuthAccount {
+  provider: "github" | string;
+  providerLogin?: string | null;
+  providerEmail?: string | null;
+  avatarUrl?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface RuntimeSetting {
@@ -260,6 +269,35 @@ export function setAuthToken(token: string, options?: { persist?: boolean }) {
 export function clearAuthToken() {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
+}
+
+export function getOAuthLoginUrl(provider: "github", redirectPath = "/notebooks") {
+  const search = new URLSearchParams({ redirect: redirectPath });
+  return `${API_BASE_URL}/api/auth/oauth/${provider}?${search.toString()}`;
+}
+
+export function startOAuthLink(provider: "github") {
+  return request<{ url: string }>(`/api/auth/oauth/${provider}/link`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function confirmOAuthLogin(payload: { token: string }) {
+  return request<AuthResponse & { redirect?: string }>("/api/auth/oauth/confirm", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchOAuthAccounts() {
+  return request<{ accounts: OAuthAccount[] }>("/api/auth/oauth/accounts/status");
+}
+
+export function unlinkOAuthAccount(provider: "github") {
+  return request<{ ok: true }>(`/api/auth/oauth/${provider}`, {
+    method: "DELETE",
+  });
 }
 
 export function register(payload: { email: string; password: string; displayName?: string; verificationCode?: string }) {
