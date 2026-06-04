@@ -450,34 +450,48 @@ export function AccountMenu({
 }
 
 function ChangePasswordDialog({ user, onClose }: { user: AuthUser; onClose: () => void }) {
-  const [step, setStep] = useState<"verify" | "change">("verify");
+  const [step, setStep] = useState<"method" | "verify" | "change">("method");
   const [verificationCode, setVerificationCode] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const normalizedVerificationCode = verificationCode.replace(/\D/g, "");
   const isBusy = status === "sending" || status === "verifying" || status === "saving";
   const canVerify = normalizedVerificationCode.length === 6 && !isBusy;
   const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && confirmPassword.length >= 8 && !isBusy;
+  const resendDisabled = isBusy || resendCooldown > 0;
 
-  const sendIdentityCode = async () => {
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResendCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const sendIdentityCode = async (options?: { advance?: boolean }) => {
     setMessage(null);
     setStatus("sending");
     try {
       await sendAccountVerificationEmail();
       setStatus("idle");
       setMessage("验证码已发送到你的登录邮箱。");
+      setResendCooldown(60);
+      if (options?.advance) {
+        setStep("verify");
+      }
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "发送验证码失败");
+      const errorMessage = error instanceof Error ? error.message : "发送验证码失败";
+      if (errorMessage.includes("Please wait before requesting another email")) {
+        setResendCooldown(60);
+        setMessage("验证码刚刚发送过，请稍后再试。");
+      } else {
+        setMessage(errorMessage);
+      }
     }
   };
-
-  useEffect(() => {
-    void sendIdentityCode();
-  }, []);
 
   const verifyIdentity = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -530,9 +544,13 @@ function ChangePasswordDialog({ user, onClose }: { user: AuthUser; onClose: () =
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">{step === "verify" ? "验证身份" : "修改密码"}</p>
+            <p className="text-lg font-semibold">{step === "method" || step === "verify" ? "身份验证" : "修改密码"}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {step === "verify" ? `输入发送到 ${user.email} 的 6 位验证码。` : "输入当前密码后设置新密码。新密码至少 8 位。"}
+              {step === "method"
+                ? "为了保护你的账号安全，请先验证身份。"
+                : step === "verify"
+                  ? `输入发送到 ${user.email} 的 6 位验证码。`
+                  : "输入当前密码后设置新密码。新密码至少 8 位。"}
             </p>
           </div>
           <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭修改密码窗口">
@@ -540,7 +558,42 @@ function ChangePasswordDialog({ user, onClose }: { user: AuthUser; onClose: () =
           </button>
         </div>
 
-        {step === "verify" ? (
+        {step === "method" ? (
+          <div className="space-y-5">
+            <div className="flex justify-center">
+              <div className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-primary/12 text-primary">
+                <ShieldCheck className="h-14 w-14" />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="tl-panel-soft flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition hover:border-primary/30 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              onClick={() => void sendIdentityCode({ advance: true })}
+              disabled={isBusy}
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <MailCheck className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-semibold">邮箱验证</span>
+                <span className="mt-1 block truncate text-sm text-muted-foreground">
+                  通过 {user.email} 接收验证码
+                </span>
+              </span>
+              <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+            </button>
+            {message && (
+              <p className={cn("rounded-lg px-3 py-2 text-xs", status === "error" ? "bg-destructive/10 text-destructive" : "bg-primary/8 text-primary")}>
+                {message}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={onClose}>
+                关闭
+              </Button>
+            </div>
+          </div>
+        ) : step === "verify" ? (
           <form className="space-y-3" onSubmit={verifyIdentity}>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
@@ -558,10 +611,10 @@ function ChangePasswordDialog({ user, onClose }: { user: AuthUser; onClose: () =
                 <button
                   type="button"
                   className="shrink-0 px-2 text-sm font-medium text-primary transition hover:text-primary/80 disabled:text-muted-foreground"
-                  onClick={sendIdentityCode}
-                  disabled={isBusy}
+                  onClick={() => void sendIdentityCode()}
+                  disabled={resendDisabled}
                 >
-                  重新发送
+                  {resendCooldown > 0 ? `重新发送（${resendCooldown}）` : "重新发送"}
                 </button>
               </div>
             </label>
@@ -764,12 +817,16 @@ export function AuthDialog({
   const [localError, setLocalError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
+  const [verificationCooldown, setVerificationCooldown] = useState(0);
+  const [verificationCodeSent, setVerificationCodeSent] = useState(false);
   const loading = authStatus === "checking" || localLoading;
   const normalizedEmail = email.trim();
   const normalizedVerificationCode = verificationCode.replace(/\D/g, "");
   const hasRequiredCredentials = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && password.length >= 8;
   const isDemoUpgrade = Boolean(user?.isTemporary && mode === "register");
   const isOpeningDemoUpgrade = Boolean(user?.isTemporary && initialMode === "register");
+  const canRequestVerificationCode =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && !loading && verificationCooldown <= 0;
   const canSubmit =
     mode === "forgot-password"
       ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && !loading
@@ -788,7 +845,15 @@ export function AuthDialog({
     setStatusMessage(null);
     setConfirmPassword("");
     setVerificationCode("");
+    setVerificationCooldown(0);
+    setVerificationCodeSent(false);
   }, [initialMode, initialToken, open]);
+
+  useEffect(() => {
+    if (verificationCooldown <= 0) return;
+    const timer = window.setTimeout(() => setVerificationCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [verificationCooldown]);
 
   useEffect(() => {
     if (open && authStatus === "authenticated" && !isDemoUpgrade && !isOpeningDemoUpgrade) {
@@ -863,8 +928,17 @@ export function AuthDialog({
       setLocalLoading(true);
       await sendVerificationEmail({ email: normalizedEmail });
       setStatusMessage("验证码已发送，请查收邮箱。");
+      setVerificationCodeSent(true);
+      setVerificationCooldown(60);
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "发送验证邮件失败");
+      const message = error instanceof Error ? error.message : "发送验证邮件失败";
+      if (message.includes("Please wait before requesting another email")) {
+        setVerificationCodeSent(true);
+        setVerificationCooldown(60);
+        setLocalError("验证码刚刚发送过，请稍后再试。");
+      } else {
+        setLocalError(message);
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -946,9 +1020,13 @@ export function AuthDialog({
                   type="button"
                   className="shrink-0 px-2 text-sm font-medium text-primary transition hover:text-primary/80 disabled:text-muted-foreground"
                   onClick={resendVerification}
-                  disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || loading}
+                  disabled={!canRequestVerificationCode}
                 >
-                  发送验证码
+                  {verificationCodeSent
+                    ? verificationCooldown > 0
+                      ? `重新发送（${verificationCooldown}）`
+                      : "重新发送"
+                    : "发送验证码"}
                 </button>
               </div>
             </label>
@@ -1026,10 +1104,10 @@ export function AuthDialog({
               type="button"
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/8 px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/12"
               onClick={resendVerification}
-              disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || loading}
+              disabled={!canRequestVerificationCode}
             >
               <MailCheck className="h-4 w-4" />
-              重新发送验证码
+              {verificationCooldown > 0 ? `重新发送（${verificationCooldown}）` : "重新发送"}
             </button>
           )}
 
