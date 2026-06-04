@@ -1,4 +1,4 @@
-import * as Popover from "@radix-ui/react-popover";
+﻿import * as Popover from "@radix-ui/react-popover";
 import { createPortal } from "react-dom";
 import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -19,9 +19,11 @@ import {
   Star,
   Sun,
   UserPlus,
+  Wallet as WalletIcon,
   X,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { WalletMenu } from "./WalletMenu";
 import { cn } from "../lib/utils";
 import { changePassword, fetchAdminSettings, updateAdminSettings, type AuthUser, type RuntimeSettings } from "../lib/api";
 
@@ -175,6 +177,7 @@ export function AccountMenu({
   const [accountInfoOpen, setAccountInfoOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
+  const [walletDialogOpen, setWalletDialogOpen] = useState(false);
   const displayName = user?.displayName ?? "未登录";
   const displayEmail = user?.email ?? "登录后保存你的学习进度";
   const initials = user ? user.displayName.slice(0, 2).toUpperCase() : null;
@@ -301,6 +304,16 @@ export function AccountMenu({
               </div>
             )}
 
+            {user && (
+              <MenuButton
+                icon={WalletIcon}
+                label="钱包"
+                onClick={() => {
+                  closeMenu();
+                  setWalletDialogOpen(true);
+                }}
+              />
+            )}
             {user?.isTemporary && (
               <MenuButton
                 icon={UserPlus}
@@ -376,6 +389,8 @@ export function AccountMenu({
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+
+      <WalletMenu user={user} open={walletDialogOpen} onOpenChange={setWalletDialogOpen} hideTrigger />
 
       {user && accountInfoOpen && typeof document !== "undefined" &&
         createPortal(

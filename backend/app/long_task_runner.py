@@ -9,6 +9,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 
+from .billing import ensure_wallet_can_charge_model, record_successful_model_usage
 from .db import (
     add_step_output,
     add_task_evidence,
@@ -27,7 +28,7 @@ from .db import (
     update_task_current_step,
 )
 from .long_task_context import build_step_context
-from .model_client import DEFAULT_MODEL_NAME, ModelConfigurationError, ModelProviderError, call_model
+from .model_client import DEFAULT_MODEL_NAME, ModelConfigurationError, ModelProviderError, call_model_with_usage
 from .web_search import SearchResult, WebPageContent, WebSearchConfigurationError, WebSearchProviderError, fetch_url, search_web
 
 
@@ -345,9 +346,13 @@ class LongTaskRunner:
         ]
         started = time.time()
         raw = ""
+        result = None
         error_message = None
         try:
-            raw = await asyncio.to_thread(call_model, messages, task_model_name(task), task_thinking_mode(task))
+            with connect() as conn:
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
+            result = await asyncio.to_thread(call_model_with_usage, messages, task_model_name(task), task_thinking_mode(task))
+            raw = result.content
             raw_steps = extract_json_array(raw)
             if raw_steps is None:
                 error_message = "Planner returned invalid JSON"
@@ -359,23 +364,39 @@ class LongTaskRunner:
             steps = fallback_plan(task["original_question"])
         latency_ms = int((time.time() - started) * 1000)
         with connect() as conn:
-            insert_model_call_log(
-                conn,
-                user_id=user_id,
-                notebook_id=task.get("notebook_id"),
-                node_id=task.get("node_id"),
-                task_id=task["id"],
-                call_type="plan",
-                model_name=task_model_name(task),
-                thinking_mode=task_thinking_mode(task),
-                input_chars=sum(len(message["content"]) for message in messages),
-                output_chars=len(raw),
-                estimated_input_tokens=estimate_tokens(prompt),
-                estimated_output_tokens=estimate_tokens(raw) if raw else 0,
-                success=error_message is None,
-                latency_ms=latency_ms,
-                error_message=error_message,
-            )
+            if error_message is None:
+                record_successful_model_usage(
+                    conn,
+                    user_id=user_id,
+                    notebook_id=task.get("notebook_id"),
+                    node_id=task.get("node_id"),
+                    task_id=task["id"],
+                    call_type="plan",
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
+                    messages=messages,
+                    output_text=raw,
+                    usage=result.usage if result else None,
+                    latency_ms=latency_ms,
+                )
+            else:
+                insert_model_call_log(
+                    conn,
+                    user_id=user_id,
+                    notebook_id=task.get("notebook_id"),
+                    node_id=task.get("node_id"),
+                    task_id=task["id"],
+                    call_type="plan",
+                    model_name=task_model_name(task),
+                    thinking_mode=task_thinking_mode(task),
+                    input_chars=sum(len(message["content"]) for message in messages),
+                    output_chars=len(raw),
+                    estimated_input_tokens=estimate_tokens(prompt),
+                    estimated_output_tokens=estimate_tokens(raw) if raw else 0,
+                    success=False,
+                    latency_ms=latency_ms,
+                    error_message=error_message,
+                )
         return steps
 
     async def run_step(self, user_id: str, task_id: str, step_id: str) -> None:
@@ -401,8 +422,12 @@ class LongTaskRunner:
         step_context = await build_step_context(user_id, task_id, step_id)
         started = time.time()
         model_output = ""
+        result = None
         try:
-            model_output = await asyncio.to_thread(call_model, step_context.messages, task_model_name(task), task_thinking_mode(task))
+            with connect() as conn:
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
+            result = await asyncio.to_thread(call_model_with_usage, step_context.messages, task_model_name(task), task_thinking_mode(task))
+            model_output = result.content
             with connect() as conn:
                 fresh_task = get_long_task_for_user(conn, user_id, task_id)
                 if not fresh_task or fresh_task["status"] == "CANCELLED":
@@ -429,7 +454,7 @@ class LongTaskRunner:
                     unresolved_questions=unresolved_json,
                 )
                 update_long_task_step_status(conn, user_id, step_id, "DONE", output_summary=parsed["summary"])
-                insert_model_call_log(
+                record_successful_model_usage(
                     conn,
                     user_id=user_id,
                     notebook_id=task.get("notebook_id"),
@@ -439,10 +464,9 @@ class LongTaskRunner:
                     call_type="step_retrieve" if step["need_retrieval"] else "step_analyze",
                     model_name=task_model_name(task),
                     thinking_mode=task_thinking_mode(task),
-                    input_chars=step_context.context_chars,
-                    output_chars=len(model_output),
-                    estimated_input_tokens=step_context.estimated_tokens,
-                    estimated_output_tokens=estimate_tokens(model_output),
+                    messages=step_context.messages,
+                    output_text=model_output,
+                    usage=result.usage if result else None,
                     context_chars=step_context.context_chars,
                     web_search_enabled=step["need_retrieval"],
                     search_result_count=retrieval.search_result_count,
@@ -450,7 +474,6 @@ class LongTaskRunner:
                     source_count=retrieval.source_count,
                     evidence_count=len(retrieval.evidence),
                     latency_ms=int((time.time() - started) * 1000),
-                    success=True,
                     error_message=retrieval.error_message,
                 )
         except Exception as exc:
@@ -601,10 +624,14 @@ class LongTaskRunner:
         ]
         started = time.time()
         raw = ""
+        result = None
         try:
-            raw = await asyncio.to_thread(call_model, messages, task_model_name(task), task_thinking_mode(task))
             with connect() as conn:
-                insert_model_call_log(
+                ensure_wallet_can_charge_model(conn, user_id, task_model_name(task))
+            result = await asyncio.to_thread(call_model_with_usage, messages, task_model_name(task), task_thinking_mode(task))
+            raw = result.content
+            with connect() as conn:
+                record_successful_model_usage(
                     conn,
                     user_id=user_id,
                     notebook_id=task.get("notebook_id"),
@@ -613,13 +640,11 @@ class LongTaskRunner:
                     call_type="final_summary",
                     model_name=task_model_name(task),
                     thinking_mode=task_thinking_mode(task),
-                    input_chars=len(prompt),
-                    output_chars=len(raw),
-                    estimated_input_tokens=estimate_tokens(prompt),
-                    estimated_output_tokens=estimate_tokens(raw),
+                    messages=messages,
+                    output_text=raw,
+                    usage=result.usage if result else None,
                     context_chars=len(prompt),
                     evidence_count=len(evidence),
-                    success=True,
                     latency_ms=int((time.time() - started) * 1000),
                 )
             return raw
