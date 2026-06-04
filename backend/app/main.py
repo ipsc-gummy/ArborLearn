@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import sqlite3
+import smtplib
+import ssl
 import time
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlencode
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,6 +119,9 @@ app.add_middleware(
 
 LEGACY_DEMO_ACCOUNT_EMAIL = "demo@arborlearn.local"
 DEMO_SESSION_TTL_HOURS = 24
+EMAIL_VERIFICATION_TOKEN_TTL_HOURS = 24
+PASSWORD_RESET_TOKEN_TTL_MINUTES = 60
+EMAIL_VERIFICATION_CODE_LENGTH = 6
 APP_SETTING_DEFINITIONS: dict[str, dict[str, int | str]] = {
     "demo_nudge_question_trigger": {
         "label": "温和提示触发提问数",
@@ -199,6 +208,7 @@ class AuthRequest(BaseModel):
     email: str
     password: str = Field(min_length=8)
     displayName: str | None = None
+    verificationCode: str | None = Field(default=None, min_length=4, max_length=12)
 
 
 class DemoUpgradeRequest(AuthRequest):
@@ -207,6 +217,23 @@ class DemoUpgradeRequest(AuthRequest):
 
 class PasswordChangeRequest(BaseModel):
     currentPassword: str = Field(min_length=1)
+    newPassword: str = Field(min_length=8)
+
+
+class EmailRequest(BaseModel):
+    email: str
+
+
+class TokenRequest(BaseModel):
+    token: str = Field(min_length=16)
+
+
+class EmailVerificationRequest(BaseModel):
+    email: str
+    code: str = Field(min_length=4, max_length=12)
+
+
+class ResetPasswordRequest(TokenRequest):
     newPassword: str = Field(min_length=8)
 
 
@@ -298,9 +325,219 @@ def serialize_user(user: dict) -> dict:
         "id": user["id"],
         "email": user["email"],
         "displayName": user["display_name"],
+        "emailVerified": bool(user.get("email_verified", 0)),
         "isTemporary": bool(user.get("is_temporary", 0)),
         "isAdmin": bool(user.get("is_admin", 0)),
     }
+
+
+def frontend_base_url() -> str:
+    configured = os.getenv("FRONTEND_BASE_URL") or os.getenv("PUBLIC_APP_URL") or "http://127.0.0.1:5173"
+    return configured.rstrip("/")
+
+
+def is_email_verification_required() -> bool:
+    return os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() not in {"0", "false", "no"}
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_auth_token(conn: sqlite3.Connection, user_id: str, token_type: str, ttl: timedelta) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    ts = now_iso()
+    expires_at = (datetime.now(timezone.utc) + ttl).isoformat()
+    conn.execute(
+        """
+        INSERT INTO auth_tokens(id, user_id, token_type, token_hash, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (uid("auth-token"), user_id, token_type, token_hash(raw_token), expires_at, ts),
+    )
+    return raw_token
+
+
+def create_email_verification_code(conn: sqlite3.Connection, user_id: str, ttl: timedelta) -> str:
+    code = "".join(str(secrets.randbelow(10)) for _ in range(EMAIL_VERIFICATION_CODE_LENGTH))
+    ts = now_iso()
+    expires_at = (datetime.now(timezone.utc) + ttl).isoformat()
+    conn.execute(
+        """
+        UPDATE auth_tokens
+        SET used_at = ?
+        WHERE user_id = ? AND token_type = 'email_verification' AND used_at IS NULL
+        """,
+        (ts, user_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO auth_tokens(id, user_id, token_type, token_hash, expires_at, created_at)
+        VALUES (?, ?, 'email_verification', ?, ?, ?)
+        """,
+        (uid("auth-token"), user_id, token_hash(code), expires_at, ts),
+    )
+    return code
+
+
+def create_pending_registration_code(conn: sqlite3.Connection, email: str, ttl: timedelta) -> str:
+    code = "".join(str(secrets.randbelow(10)) for _ in range(EMAIL_VERIFICATION_CODE_LENGTH))
+    ts = now_iso()
+    expires_at = (datetime.now(timezone.utc) + ttl).isoformat()
+    conn.execute(
+        """
+        UPDATE pending_email_verifications
+        SET used_at = ?
+        WHERE email = ? AND purpose = 'registration' AND used_at IS NULL
+        """,
+        (ts, email),
+    )
+    conn.execute(
+        """
+        INSERT INTO pending_email_verifications(id, email, purpose, code_hash, expires_at, created_at)
+        VALUES (?, ?, 'registration', ?, ?, ?)
+        """,
+        (uid("pending-email"), email, token_hash(code), expires_at, ts),
+    )
+    return code
+
+
+def consume_auth_token(conn: sqlite3.Connection, raw_token: str, token_type: str) -> sqlite3.Row:
+    row = conn.execute(
+        """
+        SELECT auth_tokens.*, users.email, users.display_name
+        FROM auth_tokens
+        JOIN users ON users.id = auth_tokens.user_id
+        WHERE auth_tokens.token_hash = ? AND auth_tokens.token_type = ?
+        """,
+        (token_hash(raw_token), token_type),
+    ).fetchone()
+    if not row or row["used_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired token") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    conn.execute("UPDATE auth_tokens SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    return row
+
+
+def consume_pending_registration_code(conn: sqlite3.Connection, email: str, code: str | None) -> None:
+    normalized_code = re.sub(r"\D", "", code or "")
+    if len(normalized_code) != EMAIL_VERIFICATION_CODE_LENGTH:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    row = conn.execute(
+        """
+        SELECT *
+        FROM pending_email_verifications
+        WHERE email = ?
+          AND purpose = 'registration'
+          AND code_hash = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (email, token_hash(normalized_code)),
+    ).fetchone()
+    if not row or row["used_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    conn.execute("UPDATE pending_email_verifications SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+
+
+def consume_email_verification_code(conn: sqlite3.Connection, email: str, code: str) -> sqlite3.Row:
+    normalized_code = re.sub(r"\D", "", code)
+    if len(normalized_code) != EMAIL_VERIFICATION_CODE_LENGTH:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    row = conn.execute(
+        """
+        SELECT auth_tokens.*, users.email, users.display_name
+        FROM auth_tokens
+        JOIN users ON users.id = auth_tokens.user_id
+        WHERE users.email = ?
+          AND auth_tokens.token_hash = ?
+          AND auth_tokens.token_type = 'email_verification'
+        ORDER BY auth_tokens.created_at DESC
+        LIMIT 1
+        """,
+        (email, token_hash(normalized_code)),
+    ).fetchone()
+    if not row or row["used_at"]:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    try:
+        expires_at = datetime.fromisoformat(row["expires_at"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code") from exc
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    conn.execute("UPDATE auth_tokens SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    return row
+
+
+def build_auth_link(path: str, token: str) -> str:
+    return f"{frontend_base_url()}{path}?{urlencode({'token': token})}"
+
+
+def send_email(to_email: str, subject: str, body: str) -> None:
+    host = os.getenv("SMTP_HOST", "").strip()
+    from_email = (os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "no-reply@arborlearn.local").strip()
+    if not host:
+        print(f"[email disabled] To: {to_email} | {subject}\n{body}")
+        return
+
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USER", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_ssl = os.getenv("SMTP_USE_SSL", "").lower() in {"1", "true", "yes"}
+
+    message = EmailMessage()
+    message["From"] = from_email
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+
+    context = ssl.create_default_context()
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as smtp:
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+        return
+
+    with smtplib.SMTP(host, port, timeout=20) as smtp:
+        smtp.starttls(context=context)
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(message)
+
+
+def send_verification_email(email: str, display_name: str, code: str) -> None:
+    try:
+        send_email(
+            email,
+            "Your ArborLearn verification code",
+            f"Hi {display_name},\n\nYour ArborLearn verification code is:\n\n{code}\n\nEnter this code on the registration or login page. This code expires in 24 hours.",
+        )
+    except Exception as exc:
+        print(f"[email error] Unable to send verification email to {email}: {exc}")
+
+
+def send_password_reset_email(email: str, display_name: str, token: str) -> None:
+    link = build_auth_link("/reset-password", token)
+    try:
+        send_email(
+            email,
+            "Reset your ArborLearn password",
+            f"Hi {display_name},\n\nOpen this link to reset your ArborLearn password:\n{link}\n\nThis link expires in 60 minutes. If you did not request it, you can ignore this email.",
+        )
+    except Exception as exc:
+        print(f"[email error] Unable to send password reset email to {email}: {exc}")
 
 
 def _setting_default(key: str) -> int:
@@ -1012,18 +1249,18 @@ def ensure_admin_account() -> None:
             conn.execute(
                 """
                 UPDATE users
-                SET display_name = ?, password_hash = ?, is_temporary = 0, is_admin = 1, updated_at = ?
+                SET display_name = ?, password_hash = ?, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), is_temporary = 0, is_admin = 1, updated_at = ?
                 WHERE id = ?
                 """,
-                (display_name, password_hash(password), ts, existing["id"]),
+                (display_name, password_hash(password), ts, ts, existing["id"]),
             )
             return
         conn.execute(
             """
-            INSERT INTO users(id, email, display_name, password_hash, is_temporary, is_admin, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 0, 1, ?, ?)
+            INSERT INTO users(id, email, display_name, password_hash, email_verified, email_verified_at, is_temporary, is_admin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, 0, 1, ?, ?)
             """,
-            (uid("user"), email, display_name, password_hash(password), ts, ts),
+            (uid("user"), email, display_name, password_hash(password), ts, ts, ts),
         )
 
 
@@ -1037,8 +1274,8 @@ def create_isolated_demo_user() -> dict:
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO users(id, email, display_name, password_hash, is_temporary, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 1, ?, ?)
+            INSERT INTO users(id, email, display_name, password_hash, email_verified, is_temporary, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, 1, ?, ?)
             """,
             (user_id, email, display_name, password_hash(uid("demo-password")), ts, ts),
         )
@@ -1047,6 +1284,7 @@ def create_isolated_demo_user() -> dict:
         "id": user_id,
         "email": email,
         "display_name": display_name,
+        "email_verified": 1,
         "is_temporary": 1,
         "is_admin": 0,
     }
@@ -1428,24 +1666,32 @@ def register(payload: AuthRequest) -> dict:
     user_id = uid("user")
     ts = now_iso()
     with connect() as conn:
+        if is_email_verification_required():
+            consume_pending_registration_code(conn, email, payload.verificationCode)
         try:
             conn.execute(
                 """
-                INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users(id, email, display_name, password_hash, email_verified, email_verified_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
                 """,
-                (user_id, email, display_name, password_hash(payload.password), ts, ts),
+                (user_id, email, display_name, password_hash(payload.password), ts, ts, ts),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=409, detail="Email is already registered") from exc
         create_starter_notebook(conn, user_id)
-
-    user = {"id": user_id, "email": email, "display_name": display_name, "is_temporary": 0, "is_admin": 0}
+    user = {
+        "id": user_id,
+        "email": email,
+        "display_name": display_name,
+        "email_verified": 1,
+        "is_temporary": 0,
+        "is_admin": 0,
+    }
     return {"token": create_token(user_id), "user": serialize_user(user)}
 
 
 @app.post("/api/auth/upgrade-demo")
-def upgrade_demo_account(payload: DemoUpgradeRequest, user: dict = Depends(require_user)) -> dict:
+def upgrade_demo_account(payload: DemoUpgradeRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_user)) -> dict:
     if not user.get("is_temporary"):
         raise HTTPException(status_code=400, detail="Current account is already permanent")
 
@@ -1460,17 +1706,17 @@ def upgrade_demo_account(payload: DemoUpgradeRequest, user: dict = Depends(requi
             conn.execute(
                 """
                 UPDATE users
-                SET email = ?, display_name = ?, password_hash = ?, is_temporary = 0, updated_at = ?
+                SET email = ?, display_name = ?, password_hash = ?, email_verified = 1, email_verified_at = ?, is_temporary = 0, updated_at = ?
                 WHERE id = ? AND is_temporary = 1
                 """,
-                (email, display_name, password_hash(payload.password), ts, user["id"]),
+                (email, display_name, password_hash(payload.password), ts, ts, user["id"]),
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=409, detail="Email is already registered") from exc
 
         upgraded_user = conn.execute(
             """
-            SELECT id, email, display_name, is_temporary, is_admin
+            SELECT id, email, display_name, email_verified, email_verified_at, is_temporary, is_admin
             FROM users
             WHERE id = ?
             """,
@@ -1493,7 +1739,7 @@ def resume_demo_notebook(notebook_ref: str) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT users.id, users.email, users.display_name, users.is_temporary, users.is_admin
+            SELECT users.id, users.email, users.display_name, users.email_verified, users.email_verified_at, users.is_temporary, users.is_admin
             FROM notebooks
             JOIN users ON users.id = notebooks.owner_user_id
             WHERE users.is_temporary = 1
@@ -1527,7 +1773,7 @@ def login(payload: AuthRequest) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT id, email, display_name, password_hash, is_temporary, is_admin
+            SELECT id, email, display_name, password_hash, email_verified, email_verified_at, is_temporary, is_admin
             FROM users
             WHERE email = ?
             """,
@@ -1536,6 +1782,141 @@ def login(payload: AuthRequest) -> dict:
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
+
+
+@app.post("/api/auth/send-verification-email")
+def resend_verification_email(payload: EmailRequest, background_tasks: BackgroundTasks) -> dict:
+    email = normalize_email(payload.email)
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    with connect() as conn:
+        existing_user = conn.execute(
+            """
+            SELECT id
+            FROM users
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+        if existing_user:
+            raise HTTPException(status_code=409, detail="Email is already registered")
+        recent = conn.execute(
+            """
+            SELECT created_at
+            FROM pending_email_verifications
+            WHERE email = ? AND purpose = 'registration'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (email,),
+        ).fetchone()
+        if recent:
+            created_at = datetime.fromisoformat(recent["created_at"])
+            if created_at > datetime.now(timezone.utc) - timedelta(seconds=60):
+                raise HTTPException(status_code=429, detail="Please wait before requesting another email")
+        verification_code = create_pending_registration_code(
+            conn,
+            email,
+            timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS),
+        )
+        display_name = email.split("@", 1)[0]
+        background_tasks.add_task(send_verification_email, email, display_name, verification_code)
+    return {"ok": True}
+
+
+@app.post("/api/auth/send-account-verification-email")
+def send_account_verification_email(background_tasks: BackgroundTasks, user: dict = Depends(require_user)) -> dict:
+    if user.get("is_temporary"):
+        raise HTTPException(status_code=400, detail="Demo accounts do not require password changes")
+
+    with connect() as conn:
+        recent = conn.execute(
+            """
+            SELECT created_at
+            FROM auth_tokens
+            WHERE user_id = ? AND token_type = 'email_verification'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (user["id"],),
+        ).fetchone()
+        if recent:
+            created_at = datetime.fromisoformat(recent["created_at"])
+            if created_at > datetime.now(timezone.utc) - timedelta(seconds=60):
+                raise HTTPException(status_code=429, detail="Please wait before requesting another email")
+        verification_code = create_email_verification_code(
+            conn,
+            user["id"],
+            timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS),
+        )
+    background_tasks.add_task(send_verification_email, user["email"], user["display_name"], verification_code)
+    return {"ok": True}
+
+
+@app.post("/api/auth/verify-email")
+def verify_email(payload: EmailVerificationRequest) -> dict:
+    ts = now_iso()
+    email = normalize_email(payload.email)
+    with connect() as conn:
+        token = consume_email_verification_code(conn, email, payload.code)
+        conn.execute(
+            """
+            UPDATE users
+            SET email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+            WHERE id = ?
+            """,
+            (ts, ts, token["user_id"]),
+        )
+        user = conn.execute(
+            """
+            SELECT id, email, display_name, email_verified, email_verified_at, is_temporary, is_admin
+            FROM users
+            WHERE id = ?
+            """,
+            (token["user_id"],),
+        ).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(payload: EmailRequest, background_tasks: BackgroundTasks) -> dict:
+    email = normalize_email(payload.email)
+    with connect() as conn:
+        user = conn.execute(
+            """
+            SELECT id, email, display_name, is_temporary
+            FROM users
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+        if user and not user["is_temporary"]:
+            reset_token = create_auth_token(
+                conn,
+                user["id"],
+                "password_reset",
+                timedelta(minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES),
+            )
+            background_tasks.add_task(send_password_reset_email, user["email"], user["display_name"], reset_token)
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest) -> dict:
+    ts = now_iso()
+    with connect() as conn:
+        token = consume_auth_token(conn, payload.token, "password_reset")
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, email_verified = 1, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ?
+            WHERE id = ?
+            """,
+            (password_hash(payload.newPassword), ts, ts, token["user_id"]),
+        )
+    return {"ok": True}
 
 
 @app.post("/api/auth/change-password")

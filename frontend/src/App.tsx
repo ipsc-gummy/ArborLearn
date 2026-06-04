@@ -36,6 +36,7 @@ type AppRoute =
   | { kind: "workspace"; notebookId: string };
 
 type WorkspaceView = "chat" | "diagram";
+type AuthDialogInitialMode = AuthDialogMode | "reset-password" | "verify-email";
 
 class AppErrorBoundary extends Component<
   { children: ReactNode; resetKey: string },
@@ -110,6 +111,7 @@ function saveThemeMode(mode: ThemeMode, userId?: string) {
 function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (segments[0] === "guide") return { kind: "guide" };
+  if (segments[0] === "verify-email" || segments[0] === "reset-password") return { kind: "landing" };
   if (segments[0] === "notebooks" && segments[1]) {
     return {
       kind: "workspace",
@@ -224,7 +226,8 @@ export default function App() {
   const routeNotebookId = route.kind === "workspace" ? route.notebookId : null;
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredThemeMode());
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode>("login");
+  const [authDialogMode, setAuthDialogMode] = useState<AuthDialogInitialMode>("login");
+  const [authDialogToken, setAuthDialogToken] = useState<string | null>(null);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
   const [onboardingChoiceOpen, setOnboardingChoiceOpen] = useState(false);
   const [newlyRegisteredUserId, setNewlyRegisteredUserId] = useState<string | null>(null);
@@ -261,6 +264,21 @@ export default function App() {
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token");
+    if (location.pathname === "/verify-email" && token) {
+      setAuthDialogMode("verify-email");
+      setAuthDialogToken(token);
+      setAuthDialogOpen(true);
+    }
+    if (location.pathname === "/reset-password" && token) {
+      setAuthDialogMode("reset-password");
+      setAuthDialogToken(token);
+      setAuthDialogOpen(true);
+    }
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     void fetchAppSettings()
@@ -437,8 +455,8 @@ export default function App() {
     saveThemeMode(mode, user?.id);
   };
 
-  const registerWithDefaultTheme = async (email: string, password: string, displayName?: string) => {
-    await register(email, password, displayName);
+  const registerWithDefaultTheme = async (email: string, password: string, displayName?: string, verificationCode?: string) => {
+    await register(email, password, displayName, verificationCode);
     const createdUser = useArborLearnStore.getState().user;
     setThemeModeState("light");
     saveThemeMode("light", createdUser?.id);
@@ -449,6 +467,7 @@ export default function App() {
 
   const requestAuth = (mode: AuthDialogMode = "login") => {
     setAuthDialogMode(mode);
+    setAuthDialogToken(null);
     setAuthDialogOpen(true);
   };
 
@@ -659,10 +678,16 @@ export default function App() {
       <AuthDialog
         open={authDialogOpen}
         initialMode={authDialogMode}
+        initialToken={authDialogToken}
         authStatus={authStatus}
         authError={authError}
         user={user}
-        onClose={() => setAuthDialogOpen(false)}
+        onClose={() => {
+          setAuthDialogOpen(false);
+          if (location.pathname === "/verify-email" || location.pathname === "/reset-password") {
+            navigate(routeToPath({ kind: "landing" }), { replace: true });
+          }
+        }}
         onLogin={login}
         onRegister={registerWithDefaultTheme}
         onCreateDemoSession={createDemoSession}

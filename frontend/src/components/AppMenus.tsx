@@ -11,6 +11,7 @@ import {
   KeyRound,
   LogIn,
   LogOut,
+  MailCheck,
   MessageSquareWarning,
   Monitor,
   Moon,
@@ -25,10 +26,23 @@ import {
 import { Button } from "./ui/button";
 import { WalletMenu } from "./WalletMenu";
 import { cn } from "../lib/utils";
-import { changePassword, fetchAdminSettings, updateAdminSettings, type AuthUser, type RuntimeSettings } from "../lib/api";
+import {
+  changePassword,
+  fetchAdminSettings,
+  forgotPassword,
+  resetPassword,
+  sendAccountVerificationEmail,
+  sendVerificationEmail,
+  setAuthToken,
+  updateAdminSettings,
+  verifyEmail,
+  type AuthUser,
+  type RuntimeSettings,
+} from "../lib/api";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type AuthDialogMode = "login" | "register";
+type AuthDialogView = AuthDialogMode | "forgot-password" | "reset-password" | "verify-email";
 
 interface SettingsMenuProps {
   themeMode: ThemeMode;
@@ -48,13 +62,14 @@ interface AccountMenuProps {
 
 interface AuthDialogProps {
   open: boolean;
-  initialMode?: AuthDialogMode;
+  initialMode?: AuthDialogView;
+  initialToken?: string | null;
   authStatus: "checking" | "authenticated" | "anonymous" | "error";
   authError: string | null;
   user: AuthUser | null;
   onClose: () => void;
   onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
+  onRegister: (email: string, password: string, displayName?: string, verificationCode?: string) => Promise<void>;
   onCreateDemoSession: () => Promise<void>;
 }
 
@@ -413,15 +428,16 @@ export function AccountMenu({
             <div className="space-y-3 text-sm">
               <AccountInfoRow label="昵称" value={user.displayName} />
               <AccountInfoRow label="邮箱" value={user.email} />
+              {!user.isTemporary && <AccountInfoRow label="邮箱验证" value={user.emailVerified ? "已验证" : "未验证"} />}
               <AccountInfoRow label="状态" value="已登录" />
             </div>
           </div>
         </div>,
         document.body,
       )}
-      {passwordDialogOpen && typeof document !== "undefined" &&
+      {user && passwordDialogOpen && typeof document !== "undefined" &&
         createPortal(
-          <ChangePasswordDialog onClose={() => setPasswordDialogOpen(false)} />,
+          <ChangePasswordDialog user={user} onClose={() => setPasswordDialogOpen(false)} />,
           document.body,
         )}
       {adminSettingsOpen && typeof document !== "undefined" &&
@@ -433,13 +449,54 @@ export function AccountMenu({
   );
 }
 
-function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
+function ChangePasswordDialog({ user, onClose }: { user: AuthUser; onClose: () => void }) {
+  const [step, setStep] = useState<"verify" | "change">("verify");
+  const [verificationCode, setVerificationCode] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "saving" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && confirmPassword.length >= 8 && status !== "saving";
+  const normalizedVerificationCode = verificationCode.replace(/\D/g, "");
+  const isBusy = status === "sending" || status === "verifying" || status === "saving";
+  const canVerify = normalizedVerificationCode.length === 6 && !isBusy;
+  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && confirmPassword.length >= 8 && !isBusy;
+
+  const sendIdentityCode = async () => {
+    setMessage(null);
+    setStatus("sending");
+    try {
+      await sendAccountVerificationEmail();
+      setStatus("idle");
+      setMessage("验证码已发送到你的登录邮箱。");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "发送验证码失败");
+    }
+  };
+
+  useEffect(() => {
+    void sendIdentityCode();
+  }, []);
+
+  const verifyIdentity = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage(null);
+    setStatus("verifying");
+    try {
+      const response = await verifyEmail({ email: user.email, code: normalizedVerificationCode });
+      if (response.token) {
+        setAuthToken(response.token);
+      }
+      setVerificationCode("");
+      setStep("change");
+      setStatus("idle");
+      setMessage(null);
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "身份验证失败");
+    }
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -473,9 +530,9 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">修改密码</p>
+            <p className="text-lg font-semibold">{step === "verify" ? "验证身份" : "修改密码"}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              输入当前密码后设置新密码。新密码至少 8 位。
+              {step === "verify" ? `输入发送到 ${user.email} 的 6 位验证码。` : "输入当前密码后设置新密码。新密码至少 8 位。"}
             </p>
           </div>
           <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭修改密码窗口">
@@ -483,58 +540,101 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <form className="space-y-3" onSubmit={submit}>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">当前密码</span>
-            <input
-              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">新密码</span>
-            <input
-              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
-            <input
-              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </label>
+        {step === "verify" ? (
+          <form className="space-y-3" onSubmit={verifyIdentity}>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
+              <div className="tl-input flex h-12 w-full items-center rounded-xl border px-4 focus-within:ring-2 focus-within:ring-primary/20">
+                <input
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="输入验证码"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  className="shrink-0 px-2 text-sm font-medium text-primary transition hover:text-primary/80 disabled:text-muted-foreground"
+                  onClick={sendIdentityCode}
+                  disabled={isBusy}
+                >
+                  重新发送
+                </button>
+              </div>
+            </label>
 
-          {message && (
-            <p className={cn("rounded-lg px-3 py-2 text-xs", status === "success" ? "bg-primary/8 text-primary" : "bg-destructive/10 text-destructive")}>
-              {message}
-            </p>
-          )}
+            {message && (
+              <p className={cn("rounded-lg px-3 py-2 text-xs", status === "error" ? "bg-destructive/10 text-destructive" : "bg-primary/8 text-primary")}>
+                {message}
+              </p>
+            )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              关闭
-            </Button>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {status === "saving" ? "保存中..." : "保存新密码"}
-            </Button>
-          </div>
-        </form>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                关闭
+              </Button>
+              <Button type="submit" variant="primary" disabled={!canVerify}>
+                {status === "verifying" ? "验证中..." : "验证身份"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <form className="space-y-3" onSubmit={submit}>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">当前密码</span>
+              <input
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">新密码</span>
+              <input
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
+              <input
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+
+            {message && (
+              <p className={cn("rounded-lg px-3 py-2 text-xs", status === "success" ? "bg-primary/8 text-primary" : "bg-destructive/10 text-destructive")}>
+                {message}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                关闭
+              </Button>
+              <Button type="submit" variant="primary" disabled={!canSubmit}>
+                {status === "saving" ? "保存中..." : "保存新密码"}
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -646,6 +746,7 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
 export function AuthDialog({
   open,
   initialMode = "login",
+  initialToken = null,
   authStatus,
   authError,
   user,
@@ -654,23 +755,40 @@ export function AuthDialog({
   onRegister,
   onCreateDemoSession,
 }: AuthDialogProps) {
-  const [mode, setMode] = useState<AuthDialogMode>(initialMode);
+  const [mode, setMode] = useState<AuthDialogView>(initialMode);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const loading = authStatus === "checking";
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const loading = authStatus === "checking" || localLoading;
   const normalizedEmail = email.trim();
+  const normalizedVerificationCode = verificationCode.replace(/\D/g, "");
   const hasRequiredCredentials = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && password.length >= 8;
-  const canSubmit = hasRequiredCredentials && !loading;
   const isDemoUpgrade = Boolean(user?.isTemporary && mode === "register");
   const isOpeningDemoUpgrade = Boolean(user?.isTemporary && initialMode === "register");
+  const canSubmit =
+    mode === "forgot-password"
+      ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && !loading
+      : mode === "reset-password"
+        ? password.length >= 8 && confirmPassword.length >= 8 && !loading
+        : mode === "verify-email"
+          ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && normalizedVerificationCode.length === 6 && !loading
+          : mode === "register" && !isDemoUpgrade
+            ? hasRequiredCredentials && normalizedVerificationCode.length === 6 && !loading
+            : hasRequiredCredentials && !loading;
 
   useEffect(() => {
     if (!open) return;
     setMode(initialMode);
     setLocalError(null);
-  }, [initialMode, open]);
+    setStatusMessage(null);
+    setConfirmPassword("");
+    setVerificationCode("");
+  }, [initialMode, initialToken, open]);
 
   useEffect(() => {
     if (open && authStatus === "authenticated" && !isDemoUpgrade && !isOpeningDemoUpgrade) {
@@ -684,20 +802,72 @@ export function AuthDialog({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLocalError(null);
+    setStatusMessage(null);
     try {
-      if (mode === "register") {
-        await onRegister(email, password, displayName || undefined);
+      if (mode === "forgot-password") {
+        setLocalLoading(true);
+        await forgotPassword({ email: normalizedEmail });
+        setStatusMessage("如果该邮箱已注册，我们已发送重置密码邮件。");
+      } else if (mode === "reset-password") {
+        if (password !== confirmPassword) {
+          setLocalError("两次输入的新密码不一致。");
+          return;
+        }
+        if (!initialToken) {
+          setLocalError("重置链接缺少 token，请重新申请。");
+          return;
+        }
+        setLocalLoading(true);
+        await resetPassword({ token: initialToken, newPassword: password });
+        setPassword("");
+        setConfirmPassword("");
+        setStatusMessage("密码已重置，请使用新密码登录。");
+        setMode("login");
+      } else if (mode === "verify-email") {
+        setLocalLoading(true);
+        const response = await verifyEmail({ email: normalizedEmail, code: normalizedVerificationCode });
+        if (response.token) {
+          setAuthToken(response.token);
+        }
+        setVerificationCode("");
+        setStatusMessage("邮箱已验证，正在进入 ArborLearn。");
+        window.setTimeout(() => {
+          window.location.href = "/notebooks";
+        }, 500);
+      } else if (mode === "register") {
+        await onRegister(email, password, displayName || undefined, isDemoUpgrade ? undefined : normalizedVerificationCode);
+        setPassword("");
+        setVerificationCode("");
       } else {
         await onLogin(email, password);
       }
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "操作失败");
+      const message = error instanceof Error ? error.message : "操作失败";
+      setLocalError(message);
+    } finally {
+      setLocalLoading(false);
     }
   };
 
   const switchMode = () => {
     setLocalError(null);
+    setStatusMessage(null);
+    setVerificationCode("");
     setMode(mode === "login" ? "register" : "login");
+  };
+
+  const resendVerification = async () => {
+    setLocalError(null);
+    setStatusMessage(null);
+    try {
+      setLocalLoading(true);
+      await sendVerificationEmail({ email: normalizedEmail });
+      setStatusMessage("验证码已发送，请查收邮箱。");
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "发送验证邮件失败");
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const startDemoSession = async () => {
@@ -710,14 +880,32 @@ export function AuthDialog({
     }
   };
 
+  const displayError = (localError || authError) === "EMAIL_VERIFICATION_REQUIRED" ? null : localError || authError;
+
   return (
     <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
+            <p className="text-lg font-semibold">
+              {mode === "login"
+                ? "登录 ArborLearn"
+                : mode === "register"
+                  ? "创建 ArborLearn 账号"
+                  : mode === "forgot-password"
+                    ? "找回密码"
+                    : mode === "reset-password"
+                      ? "重置密码"
+                      : "验证邮箱"}
+            </p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              登录后，笔记本、节点和聊天记录会保存在你的账号下。
+              {mode === "forgot-password"
+                ? "输入注册邮箱，我们会发送重置密码链接。"
+                : mode === "reset-password"
+                  ? "为你的账号设置一个新密码。"
+                  : mode === "verify-email"
+                    ? "输入邮箱收到的 6 位验证码即可完成登录。"
+                    : "登录后，笔记本、节点和聊天记录会保存在你的账号下。"}
             </p>
           </div>
           <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭登录窗口">
@@ -726,70 +914,181 @@ export function AuthDialog({
         </div>
 
         <form className="space-y-3" onSubmit={submit}>
+          {(mode === "login" || mode === "register" || mode === "forgot-password" || mode === "verify-email") && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</span>
+              <input
+                className="tl-input h-12 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                autoComplete="email"
+                required
+              />
+            </label>
+          )}
+          {mode === "register" && !isDemoUpgrade && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
+              <div className="tl-input flex h-12 w-full items-center rounded-xl border px-4 focus-within:ring-2 focus-within:ring-primary/20">
+                <input
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="输入验证码"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  className="shrink-0 px-2 text-sm font-medium text-primary transition hover:text-primary/80 disabled:text-muted-foreground"
+                  onClick={resendVerification}
+                  disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || loading}
+                >
+                  发送验证码
+                </button>
+              </div>
+            </label>
+          )}
           {mode === "register" && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">昵称</span>
               <input
-                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                className="tl-input h-12 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="可选"
+                placeholder="输入昵称"
                 autoComplete="name"
               />
             </label>
           )}
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</span>
-            <input
-              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              type="email"
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">密码</span>
-            <input
-              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="至少 8 位"
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              minLength={8}
-              required
-            />
-          </label>
+          {mode === "verify-email" && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">验证码</span>
+              <input
+                className="tl-input h-12 w-full rounded-xl border px-4 text-center text-lg font-semibold outline-none focus:ring-2 focus:ring-primary/20"
+                value={verificationCode}
+                onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="6 位数字"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+              />
+            </label>
+          )}
+          {(mode === "login" || mode === "register" || mode === "reset-password") && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">{mode === "reset-password" ? "新密码" : "密码"}</span>
+              <input
+                className="tl-input h-12 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="至少 8 位"
+                type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                minLength={8}
+                required
+              />
+            </label>
+          )}
+          {mode === "reset-password" && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
+              <input
+                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="再次输入新密码"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+          )}
 
-          {(localError || authError) && (
+          {displayError && (
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {localError || authError}
+              {displayError}
             </p>
+          )}
+          {statusMessage && (
+            <p className="rounded-lg bg-primary/8 px-3 py-2 text-xs text-primary">
+              {statusMessage}
+            </p>
+          )}
+          {mode === "verify-email" && (
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/8 px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/12"
+              onClick={resendVerification}
+              disabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || loading}
+            >
+              <MailCheck className="h-4 w-4" />
+              重新发送验证码
+            </button>
           )}
 
           <Button
             className={cn(
-              "h-11 w-full",
-              !hasRequiredCredentials &&
+              "h-12 w-full rounded-xl",
+              !canSubmit &&
                 "border-white/55 bg-background/35 text-muted-foreground shadow-[0_10px_30px_rgba(25,45,64,0.08),inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-md hover:translate-y-0 hover:bg-background/45 hover:brightness-100 hover:shadow-[0_10px_30px_rgba(25,45,64,0.08),inset_0_1px_0_rgba(255,255,255,0.5)] disabled:border-white/55 disabled:bg-background/35 disabled:text-muted-foreground disabled:opacity-100 dark:border-white/15 dark:bg-white/10 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-white/12 dark:disabled:bg-white/10",
             )}
             type="submit"
             disabled={!canSubmit}
           >
-            {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-            {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
+            {mode === "login" ? <LogIn className="h-4 w-4" /> : mode === "register" ? <UserPlus className="h-4 w-4" /> : mode === "verify-email" ? <MailCheck className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
+            {loading
+              ? "处理中..."
+              : mode === "login"
+                ? "登录"
+                : mode === "register"
+                  ? "立即注册"
+                  : mode === "forgot-password"
+                    ? "发送重置邮件"
+                    : mode === "verify-email"
+                      ? "验证并登录"
+                      : "保存新密码"}
           </Button>
         </form>
 
-        <button
-          className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          onClick={switchMode}
-        >
-          {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
-        </button>
+        {(mode === "login" || mode === "register") && (
+          <button
+            className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            onClick={switchMode}
+          >
+            {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
+          </button>
+        )}
+        {mode === "login" && (
+          <button
+            className="mt-1 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-muted-foreground transition hover:bg-muted/60 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            onClick={() => {
+              setLocalError(null);
+              setStatusMessage(null);
+              setMode("forgot-password");
+            }}
+          >
+            忘记密码？
+          </button>
+        )}
+        {(mode === "forgot-password" || mode === "reset-password" || mode === "verify-email") && (
+          <button
+            className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            onClick={() => {
+              setLocalError(null);
+              setStatusMessage(null);
+              setMode("login");
+            }}
+          >
+            返回登录
+          </button>
+        )}
 
         {mode === "register" && (
           <button

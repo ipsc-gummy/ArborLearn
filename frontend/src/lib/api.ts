@@ -12,6 +12,7 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  emailVerified?: boolean;
   isTemporary?: boolean;
   isAdmin?: boolean;
 }
@@ -27,8 +28,9 @@ export interface RuntimeSetting {
 export type RuntimeSettings = Record<string, RuntimeSetting>;
 
 interface AuthResponse {
-  token: string;
+  token?: string;
   user: AuthUser;
+  requiresEmailVerification?: boolean;
 }
 
 interface TreeStateResponse {
@@ -260,14 +262,14 @@ export function clearAuthToken() {
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
-export function register(payload: { email: string; password: string; displayName?: string }) {
+export function register(payload: { email: string; password: string; displayName?: string; verificationCode?: string }) {
   return request<AuthResponse>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-export function upgradeDemoAccount(payload: { email: string; password: string; displayName?: string }) {
+export function upgradeDemoAccount(payload: { email: string; password: string; displayName?: string; verificationCode?: string }) {
   return request<AuthResponse>("/api/auth/upgrade-demo", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -276,6 +278,41 @@ export function upgradeDemoAccount(payload: { email: string; password: string; d
 
 export function login(payload: { email: string; password: string }) {
   return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendVerificationEmail(payload: { email: string }) {
+  return request<{ ok: true }>("/api/auth/send-verification-email", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendAccountVerificationEmail() {
+  return request<{ ok: true }>("/api/auth/send-account-verification-email", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function verifyEmail(payload: { email: string; code: string }) {
+  return request<AuthResponse>("/api/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function forgotPassword(payload: { email: string }) {
+  return request<{ ok: true }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resetPassword(payload: { token: string; newPassword: string }) {
+  return request<{ ok: true }>("/api/auth/reset-password", {
     method: "POST",
     body: JSON.stringify(payload),
   });

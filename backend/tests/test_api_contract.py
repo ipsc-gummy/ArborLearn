@@ -23,6 +23,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("AUTH_SECRET", "test-secret")
     monkeypatch.setenv("MODEL_API_KEY", "test-key")
     monkeypatch.setenv("ENABLE_RAG", "false")
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "false")
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setenv("LANCEDB_CONFIG_DIR", str(tmp_path / "lancedb-config"))
     (tmp_path / "appdata").mkdir(parents=True, exist_ok=True)
