@@ -23,7 +23,7 @@ import {
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import { AccountMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import type { AuthUser } from "../lib/api";
 import {
   DIAGRAM_NODE_HEIGHT,
@@ -451,14 +451,16 @@ export function KnowledgeTree({
         <MiniKnowledgeMap nodes={nodes} rootId={notebookRootId} activeNodeId={activeNodeId} compareNodeId={compareNodeId} />
 
         <div className="tl-sidebar-account border-t border-border/60 p-3">
-          <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">
-            <AccountMenu user={user} onLogout={onLogout} onRequestAuth={onRequestAuth} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{user?.displayName || "用户"}</p>
-              <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>
-            </div>
-            <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
-          </div>
+          <AccountMenu
+            user={user}
+            themeMode={themeMode}
+            onThemeChange={onThemeChange}
+            onLogout={onLogout}
+            onRequestAuth={onRequestAuth}
+            triggerVariant="row"
+            contentAlign="start"
+            submenuSide="right"
+          />
         </div>
       </aside>
 

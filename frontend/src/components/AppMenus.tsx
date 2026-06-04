@@ -1,9 +1,10 @@
-import * as Popover from "@radix-ui/react-popover";
+﻿import * as Popover from "@radix-ui/react-popover";
 import { createPortal } from "react-dom";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Check,
+  ChevronRight,
   CircleUserRound,
   Github,
   HelpCircle,
@@ -36,8 +37,13 @@ interface SettingsMenuProps {
 
 interface AccountMenuProps {
   user: AuthUser | null;
+  themeMode: ThemeMode;
+  onThemeChange: (mode: ThemeMode) => void;
   onLogout: () => void;
   onRequestAuth: (mode?: AuthDialogMode) => void;
+  triggerVariant?: "avatar" | "row";
+  contentAlign?: "start" | "center" | "end";
+  submenuSide?: "left" | "right";
 }
 
 interface AuthDialogProps {
@@ -136,127 +142,265 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <Button variant="ghost" size="icon" aria-label="打开设置">
+        <Button variant="ghost" size="icon" aria-label="鎵撳紑璁剧疆">
           <Settings className="h-4 w-4" />
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-          <MenuButton icon={HelpCircle} label="ArborLearn 帮助" onClick={() => navigate(PRODUCT_GUIDE_PATH)} />
-          <MenuButton icon={MessageSquareWarning} label="发送反馈" onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
+          <MenuButton icon={HelpCircle} label="ArborLearn 甯姪" onClick={() => navigate(PRODUCT_GUIDE_PATH)} />
+          <MenuButton icon={MessageSquareWarning} label="鍙戦€佸弽棣? onClick={() => openExternalUrl(GITHUB_ISSUES_NEW_URL)} />
           <div className="tl-border-soft my-2 border-t" />
-          <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">外观</p>
-          <ThemeOption mode="light" current={themeMode} icon={Sun} label="浅色" onSelect={onThemeChange} />
-          <ThemeOption mode="dark" current={themeMode} icon={Moon} label="深色" onSelect={onThemeChange} />
-          <ThemeOption mode="system" current={themeMode} icon={Monitor} label="跟随系统" onSelect={onThemeChange} />
+          <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">澶栬</p>
+          <ThemeOption mode="light" current={themeMode} icon={Sun} label="娴呰壊" onSelect={onThemeChange} />
+          <ThemeOption mode="dark" current={themeMode} icon={Moon} label="娣辫壊" onSelect={onThemeChange} />
+          <ThemeOption mode="system" current={themeMode} icon={Monitor} label="璺熼殢绯荤粺" onSelect={onThemeChange} />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
   );
 }
 
-export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps) {
+export function AccountMenu({
+  user,
+  themeMode,
+  onThemeChange,
+  onLogout,
+  onRequestAuth,
+  triggerVariant = "avatar",
+  contentAlign = "end",
+  submenuSide = "left",
+}: AccountMenuProps) {
+  const navigate = useNavigate();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<"appearance" | "help" | null>(null);
   const [accountInfoOpen, setAccountInfoOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
-  const avatar = (
+  const [walletDialogOpen, setWalletDialogOpen] = useState(false);
+  const displayName = user?.displayName ?? "鏈櫥褰?;
+  const displayEmail = user?.email ?? "鐧诲綍鍚庝繚瀛樹綘鐨勫涔犺繘搴?;
+  const initials = user ? user.displayName.slice(0, 2).toUpperCase() : null;
+
+  const openChange = (open: boolean) => {
+    setAccountMenuOpen(open);
+    if (!open) setActiveSubmenu(null);
+  };
+
+  const closeMenu = () => {
+    setAccountMenuOpen(false);
+    setActiveSubmenu(null);
+  };
+
+  const openGuide = () => {
+    closeMenu();
+    navigate(PRODUCT_GUIDE_PATH);
+  };
+
+  const openFeedback = () => {
+    closeMenu();
+    openExternalUrl(GITHUB_ISSUES_NEW_URL);
+  };
+
+  const openGithub = () => {
+    closeMenu();
+    openExternalUrl(GITHUB_REPO_URL);
+  };
+
+  const selectTheme = (mode: ThemeMode) => {
+    onThemeChange(mode);
+    closeMenu();
+  };
+
+  const avatarMark = (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124]">
+      {initials ?? <CircleUserRound className="h-5 w-5" />}
+    </span>
+  );
+
+  const avatarTrigger = (
     <button
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
-      aria-label={user ? "打开账号菜单" : "登录或注册"}
-      onClick={user ? undefined : () => onRequestAuth("login")}
+      type="button"
+      className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-muted/70"
+      aria-label={user ? "鎵撳紑璐﹀彿涓庤缃彍鍗? : "鎵撳紑鐧诲綍涓庤缃彍鍗?}
     >
-      {user ? user.displayName.slice(0, 2).toUpperCase() : <CircleUserRound className="h-5 w-5" />}
+      {avatarMark}
     </button>
   );
 
-  if (!user) return avatar;
+  const rowTrigger = (
+    <button
+      type="button"
+      className="tl-hover flex w-full min-w-0 items-center gap-3 rounded-lg px-2 py-2 text-left"
+      aria-label={user ? "鎵撳紑璐﹀彿涓庤缃彍鍗? : "鎵撳紑鐧诲綍涓庤缃彍鍗?}
+    >
+      {avatarMark}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{displayName}</span>
+        <span className="block truncate text-xs text-muted-foreground">{displayEmail}</span>
+      </span>
+    </button>
+  );
 
   return (
     <>
-      <Popover.Root open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
-        <Popover.Trigger asChild>{avatar}</Popover.Trigger>
+      <Popover.Root open={accountMenuOpen} onOpenChange={openChange}>
+        <Popover.Trigger asChild>{triggerVariant === "row" ? rowTrigger : avatarTrigger}</Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content side="bottom" align="end" className="tl-panel z-50 w-72 rounded-xl border p-2 text-sm shadow-panel">
-            <div className="tl-panel-soft rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold">{user.displayName}</p>
-                {user.isTemporary && (
-                  <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
-                    临时体验
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
-            </div>
-            <MenuButton
-              icon={CircleUserRound}
-              label="账号信息"
-              onClick={() => {
-                setAccountMenuOpen(false);
-                setAccountInfoOpen(true);
-              }}
-            />
-            <WalletMenu
-              user={user}
-              trigger={
-                <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left">
-                  <WalletIcon className="h-4 w-4" />
-                  <span>钱包</span>
-                </button>
-              }
-            />
-            {user.isTemporary && (
-              <MenuButton
-                icon={UserPlus}
-                label="绑定正式账号"
+          <Popover.Content
+            side="bottom"
+            align={contentAlign}
+            className="tl-panel z-50 w-80 overflow-visible rounded-xl border p-2 text-sm shadow-panel"
+            onMouseLeave={() => setActiveSubmenu(null)}
+          >
+            {user ? (
+              <button
+                type="button"
+                className="tl-panel-soft mb-2 flex w-full items-center gap-3 rounded-lg border p-3 text-left transition hover:border-primary/25 hover:bg-primary/5"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
+                  setAccountInfoOpen(true);
+                }}
+              >
+                {avatarMark}
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-semibold">{user.displayName}</span>
+                    {user.isTemporary && (
+                      <span className="shrink-0 rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[11px] font-medium text-primary">
+                        涓存椂浣撻獙
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{user.email}</span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            ) : (
+              <div className="tl-panel-soft mb-2 rounded-lg border p-3">
+                <p className="font-semibold">ArborLearn 璐﹀彿</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">鐧诲綍鍚庯紝绗旇鏈拰瀛︿範璺緞浼氫繚瀛樺湪浣犵殑璐﹀彿涓嬨€?/p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      closeMenu();
+                      onRequestAuth("login");
+                    }}
+                  >
+                    鐧诲綍
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      closeMenu();
+                      onRequestAuth("register");
+                    }}
+                  >
+                    娉ㄥ唽
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {user && (
+              <MenuButton
+                icon={WalletIcon}
+                label="钱包"
+                onClick={() => {
+                  closeMenu();
+                  setWalletDialogOpen(true);
+                }}
+              />
+            )}
+            {user?.isTemporary && (<MenuButton
+                icon={UserPlus}
+                label="缁戝畾姝ｅ紡璐﹀彿"
+                onClick={() => {
+                  closeMenu();
                   onRequestAuth("register");
                 }}
               />
             )}
-            {user.isAdmin && (
+            {user?.isAdmin && (
               <MenuButton
                 icon={ShieldCheck}
-                label="后台设置"
+                label="鍚庡彴璁剧疆"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
                   setAdminSettingsOpen(true);
                 }}
               />
             )}
-            {!user.isTemporary && (
+            {user && !user.isTemporary && (
               <MenuButton
                 icon={KeyRound}
-                label="修改密码"
+                label="淇敼瀵嗙爜"
                 onClick={() => {
-                  setAccountMenuOpen(false);
+                  closeMenu();
                   setPasswordDialogOpen(true);
                 }}
               />
             )}
-            <button
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
-              onClick={onLogout}
+
+            <div className="tl-border-soft my-2 border-t" />
+            <SubmenuRow
+              icon={Settings}
+              label="澶栬"
+              active={activeSubmenu === "appearance"}
+              submenuSide={submenuSide}
+              onActivate={() => setActiveSubmenu("appearance")}
             >
-              <LogOut className="h-4 w-4" />
-              退出账号
-            </button>
+              <ThemeOption mode="light" current={themeMode} icon={Sun} label="娴呰壊" onSelect={selectTheme} />
+              <ThemeOption mode="dark" current={themeMode} icon={Moon} label="娣辫壊" onSelect={selectTheme} />
+              <ThemeOption mode="system" current={themeMode} icon={Monitor} label="璺熼殢绯荤粺" onSelect={selectTheme} />
+            </SubmenuRow>
+            <SubmenuRow
+              icon={HelpCircle}
+              label="甯姪"
+              active={activeSubmenu === "help"}
+              submenuSide={submenuSide}
+              onActivate={() => setActiveSubmenu("help")}
+            >
+              <MenuButton icon={HelpCircle} label="ArborLearn 甯姪" onClick={openGuide} />
+              <MenuButton icon={MessageSquareWarning} label="鍙戦€佸弽棣? onClick={openFeedback} />
+              <MenuButton icon={Github} label="GitHub" onClick={openGithub} />
+            </SubmenuRow>
+
+            {user && (
+              <>
+                <div className="tl-border-soft my-2 border-t" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    closeMenu();
+                    setAccountInfoOpen(false);
+                    onLogout();
+                  }}
+                >
+                  <LogOut className="h-4 w-4" />
+                  閫€鍑鸿处鍙?
+                </button>
+              </>
+            )}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
 
-      {accountInfoOpen && typeof document !== "undefined" &&
+      <WalletMenu user={user} open={walletDialogOpen} onOpenChange={setWalletDialogOpen} hideTrigger />
+
+      {user && accountInfoOpen && typeof document !== "undefined" &&
         createPortal(
         <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
           <div className="tl-modal-panel tl-panel w-full max-w-sm rounded-2xl border p-5 shadow-panel">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <p className="text-lg font-semibold">账号信息</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">当前登录账号的基础信息。</p>
+                <p className="text-lg font-semibold">璐﹀彿淇℃伅</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">褰撳墠鐧诲綍璐﹀彿鐨勫熀纭€淇℃伅銆?/p>
               </div>
-              <button className="tl-hover rounded-full p-2" onClick={() => setAccountInfoOpen(false)} aria-label="关闭账号信息">
+              <button className="tl-hover rounded-full p-2" onClick={() => setAccountInfoOpen(false)} aria-label="鍏抽棴璐﹀彿淇℃伅">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -266,9 +410,9 @@ export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps)
               </div>
             </div>
             <div className="space-y-3 text-sm">
-              <AccountInfoRow label="昵称" value={user.displayName} />
-              <AccountInfoRow label="邮箱" value={user.email} />
-              <AccountInfoRow label="状态" value="已登录" />
+              <AccountInfoRow label="鏄电О" value={user.displayName} />
+              <AccountInfoRow label="閭" value={user.email} />
+              <AccountInfoRow label="鐘舵€? value="宸茬櫥褰? />
             </div>
           </div>
         </div>,
@@ -301,12 +445,12 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     setMessage(null);
     if (newPassword !== confirmPassword) {
       setStatus("error");
-      setMessage("两次输入的新密码不一致。");
+      setMessage("涓ゆ杈撳叆鐨勬柊瀵嗙爜涓嶄竴鑷淬€?);
       return;
     }
     if (currentPassword === newPassword) {
       setStatus("error");
-      setMessage("新密码不能和当前密码相同。");
+      setMessage("鏂板瘑鐮佷笉鑳藉拰褰撳墠瀵嗙爜鐩稿悓銆?);
       return;
     }
     setStatus("saving");
@@ -316,10 +460,10 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setMessage("密码已更新，下次登录请使用新密码。");
+      setMessage("瀵嗙爜宸叉洿鏂帮紝涓嬫鐧诲綍璇蜂娇鐢ㄦ柊瀵嗙爜銆?);
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "修改密码失败");
+      setMessage(error instanceof Error ? error.message : "淇敼瀵嗙爜澶辫触");
     }
   };
 
@@ -328,19 +472,19 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">修改密码</p>
+            <p className="text-lg font-semibold">淇敼瀵嗙爜</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              输入当前密码后设置新密码。新密码至少 8 位。
+              杈撳叆褰撳墠瀵嗙爜鍚庤缃柊瀵嗙爜銆傛柊瀵嗙爜鑷冲皯 8 浣嶃€?
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭修改密码窗口">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴淇敼瀵嗙爜绐楀彛">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <form className="space-y-3" onSubmit={submit}>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">当前密码</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">褰撳墠瀵嗙爜</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={currentPassword}
@@ -351,7 +495,7 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">新密码</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">鏂板瘑鐮?/span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={newPassword}
@@ -363,7 +507,7 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">纭鏂板瘑鐮?/span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={confirmPassword}
@@ -383,10 +527,10 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>
-              关闭
+              鍏抽棴
             </Button>
             <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {status === "saving" ? "保存中..." : "保存新密码"}
+              {status === "saving" ? "淇濆瓨涓?.." : "淇濆瓨鏂板瘑鐮?}
             </Button>
           </div>
         </form>
@@ -414,7 +558,7 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       .catch((error) => {
         if (cancelled) return;
         setStatus("error");
-        setMessage(error instanceof Error ? error.message : "无法加载后台设置");
+        setMessage(error instanceof Error ? error.message : "鏃犳硶鍔犺浇鍚庡彴璁剧疆");
       });
     return () => {
       cancelled = true;
@@ -429,10 +573,10 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       setSettings(response.settings);
       setDraft(Object.fromEntries(Object.entries(response.settings).map(([key, setting]) => [key, setting.value])));
       setStatus("ready");
-      setMessage("设置已保存，用户刷新页面后生效。");
+      setMessage("璁剧疆宸蹭繚瀛橈紝鐢ㄦ埛鍒锋柊椤甸潰鍚庣敓鏁堛€?);
     } catch (error) {
       setStatus("error");
-      setMessage(error instanceof Error ? error.message : "保存失败");
+      setMessage(error instanceof Error ? error.message : "淇濆瓨澶辫触");
     }
   };
 
@@ -441,24 +585,24 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
       <div className="tl-modal-panel tl-panel max-h-[86vh] w-full max-w-2xl overflow-auto rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">后台设置</p>
+            <p className="text-lg font-semibold">鍚庡彴璁剧疆</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              调整演示账号提示阈值和保留策略。建议小步修改，观察转化和使用体验后再继续调。
+              璋冩暣婕旂ず璐﹀彿鎻愮ず闃堝€煎拰淇濈暀绛栫暐銆傚缓璁皬姝ヤ慨鏀癸紝瑙傚療杞寲鍜屼娇鐢ㄤ綋楠屽悗鍐嶇户缁皟銆?
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭后台设置">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴鍚庡彴璁剧疆">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {status === "loading" && <p className="text-sm text-muted-foreground">正在加载设置...</p>}
+        {status === "loading" && <p className="text-sm text-muted-foreground">姝ｅ湪鍔犺浇璁剧疆...</p>}
         {settings && (
           <div className="grid gap-3">
             {Object.entries(settings).map(([key, setting]) => (
               <label key={key} className="rounded-xl border border-border bg-muted/25 p-3">
                 <span className="block text-sm font-semibold">{setting.label}</span>
                 <span className="mt-1 block text-xs text-muted-foreground">
-                  范围 {setting.min} - {setting.max}，默认 {setting.default}
+                  鑼冨洿 {setting.min} - {setting.max}锛岄粯璁?{setting.default}
                 </span>
                 <input
                   type="number"
@@ -487,10 +631,10 @@ function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
 
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
-            关闭
+            鍏抽棴
           </Button>
           <Button variant="primary" onClick={save} disabled={!settings || status === "saving" || status === "loading"}>
-            {status === "saving" ? "保存中..." : "保存设置"}
+            {status === "saving" ? "淇濆瓨涓?.." : "淇濆瓨璁剧疆"}
           </Button>
         </div>
       </div>
@@ -546,7 +690,7 @@ export function AuthDialog({
         await onLogin(email, password);
       }
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "操作失败");
+      setLocalError(error instanceof Error ? error.message : "鎿嶄綔澶辫触");
     }
   };
 
@@ -561,7 +705,7 @@ export function AuthDialog({
       await onCreateDemoSession();
       onClose();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "进入演示失败");
+      setLocalError(error instanceof Error ? error.message : "杩涘叆婕旂ず澶辫触");
     }
   };
 
@@ -570,12 +714,12 @@ export function AuthDialog({
       <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-lg font-semibold">{mode === "login" ? "登录 ArborLearn" : "创建 ArborLearn 账号"}</p>
+            <p className="text-lg font-semibold">{mode === "login" ? "鐧诲綍 ArborLearn" : "鍒涘缓 ArborLearn 璐﹀彿"}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              登录后，笔记本、节点和聊天记录会保存在你的账号下。
+              鐧诲綍鍚庯紝绗旇鏈€佽妭鐐瑰拰鑱婂ぉ璁板綍浼氫繚瀛樺湪浣犵殑璐﹀彿涓嬨€?
             </p>
           </div>
-          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭登录窗口">
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="鍏抽棴鐧诲綍绐楀彛">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -583,18 +727,18 @@ export function AuthDialog({
         <form className="space-y-3" onSubmit={submit}>
           {mode === "register" && (
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">昵称</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">鏄电О</span>
               <input
                 className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="可选"
+                placeholder="鍙€?
                 autoComplete="name"
               />
             </label>
           )}
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">閭</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={email}
@@ -606,12 +750,12 @@ export function AuthDialog({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">密码</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">瀵嗙爜</span>
             <input
               className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="至少 8 位"
+              placeholder="鑷冲皯 8 浣?
               type="password"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               minLength={8}
@@ -635,7 +779,7 @@ export function AuthDialog({
             disabled={!canSubmit}
           >
             {mode === "login" ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-            {loading ? "处理中..." : mode === "login" ? "登录" : "注册并登录"}
+            {loading ? "澶勭悊涓?.." : mode === "login" ? "鐧诲綍" : "娉ㄥ唽骞剁櫥褰?}
           </Button>
         </form>
 
@@ -643,7 +787,7 @@ export function AuthDialog({
           className="mt-3 flex w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-2 py-2 text-sm font-medium text-primary transition hover:bg-primary/8 focus:outline-none focus:ring-2 focus:ring-primary/20"
           onClick={switchMode}
         >
-          {mode === "login" ? "没有账号？注册" : "已有账号？登录"}
+          {mode === "login" ? "娌℃湁璐﹀彿锛熸敞鍐? : "宸叉湁璐﹀彿锛熺櫥褰?}
         </button>
 
         {mode === "register" && (
@@ -652,17 +796,17 @@ export function AuthDialog({
             className="tl-panel-soft group mt-4 w-full rounded-xl border p-3 text-left text-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
             onClick={startDemoSession}
             disabled={loading}
-            aria-label="进入独立演示体验"
+            aria-label="杩涘叆鐙珛婕旂ず浣撻獙"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">独立演示体验</p>
+                <p className="font-semibold">鐙珛婕旂ず浣撻獙</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  自动打开 Transformer 示例，不写入长期账号，也不和其他访问者共享记录。
+                  鑷姩鎵撳紑 Transformer 绀轰緥锛屼笉鍐欏叆闀挎湡璐﹀彿锛屼篃涓嶅拰鍏朵粬璁块棶鑰呭叡浜褰曘€?
                 </p>
               </div>
               <span className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-background/70 px-3 text-xs font-medium text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                体验示例
+                浣撻獙绀轰緥
                 <LogIn className="h-3.5 w-3.5" />
               </span>
             </div>
@@ -682,19 +826,59 @@ function AccountInfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SubmenuRow({
+  icon: Icon,
+  label,
+  active,
+  submenuSide,
+  onActivate,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  active: boolean;
+  submenuSide: "left" | "right";
+  onActivate: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative" onMouseEnter={onActivate} onFocus={onActivate}>
+      <button
+        type="button"
+        className={cn("tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left", active && "tl-accent-soft")}
+        onClick={onActivate}
+      >
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+        <ChevronRight className="ml-auto h-4 w-4 text-muted-foreground" />
+      </button>
+      {active && (
+        <div
+          className={cn(
+            "absolute top-0 z-[70] w-52 text-sm",
+            submenuSide === "right" ? "left-full pl-2" : "right-full pr-2",
+          )}
+        >
+          <div className="tl-panel rounded-xl border p-2 shadow-panel">{children}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MenuButton({
   icon: Icon,
   label,
   trailing,
   onClick,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   trailing?: string;
   onClick?: () => void;
 }) {
   return (
-    <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onClick}>
+    <button type="button" className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left" onClick={onClick}>
       <Icon className="h-4 w-4" />
       <span>{label}</span>
       {trailing && <span className="ml-auto text-xs text-muted-foreground">{trailing}</span>}
@@ -711,13 +895,14 @@ function ThemeOption({
 }: {
   mode: ThemeMode;
   current: ThemeMode;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   onSelect: (mode: ThemeMode) => void;
 }) {
   const active = mode === current;
   return (
     <button
+      type="button"
       className={cn("tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left", active && "tl-accent-soft")}
       onClick={() => onSelect(mode)}
     >

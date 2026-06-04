@@ -11,6 +11,21 @@ interface LandingPageProps {
   onRequestAuth: (mode?: AuthDialogMode) => void;
 }
 
+interface FooterLink {
+  href: string;
+  label: string;
+  external?: boolean;
+}
+
+interface FooterBrandLink extends FooterLink {
+  icon?: ComponentType<{ className?: string }>;
+}
+
+interface FooterSection {
+  title: string;
+  links: FooterLink[];
+}
+
 const proofItems = ["层级知识结构", "主对话与子对话分离", "Diagram 可视化复盘"];
 
 const faqItems = [
@@ -361,53 +376,104 @@ function FaqSection() {
   );
 }
 
-const footerGuideLinks = [
-  { href: "/guide#why", label: "Why ArborLearn", description: "了解线性问答之外的学习方式" },
-  { href: "/guide#technology", label: "技术", description: "看看树状上下文如何保持清晰" },
-  { href: "/guide#features", label: "功能", description: "浏览围绕长期学习设计的能力" },
-  { href: "/guide", label: "完整文档", description: "从头阅读 ArborLearn 产品说明", highlighted: true },
+const footerBrandLinks: FooterBrandLink[] = [
+  { href: "https://github.com/ipsc-gummy/ArborLearn", label: "GitHub", icon: Github },
+];
+
+const footerSiteMapSections: FooterSection[] = [
+  {
+    title: "产品",
+    links: [
+      { href: "/guide#intro", label: "介绍" },
+      { href: "/guide#why", label: "Why ArborLearn" },
+      { href: "/guide#technology", label: "方法与技术" },
+      { href: "/guide#features", label: "核心功能" },
+      { href: "/guide#workflow", label: "使用流程" },
+    ],
+  },
+  {
+    title: "文档",
+    links: [
+      { href: "/guide", label: "完整文档" },
+      { href: "https://github.com/ipsc-gummy/ArborLearn/blob/main/docs/API.md", label: "API 文档", external: true },
+      { href: "https://github.com/ipsc-gummy/ArborLearn/blob/main/docs/ARCHITECTURE.md", label: "系统架构", external: true },
+      { href: "https://github.com/ipsc-gummy/ArborLearn/blob/main/docs/FEATURE_MATRIX.md", label: "功能矩阵", external: true },
+      { href: "https://github.com/ipsc-gummy/ArborLearn/blob/main/docs/PROJECT_MATURITY_ROADMAP.md", label: "Roadmap", external: true },
+    ],
+  },
+  {
+    title: "支持",
+    links: [
+      { href: "https://github.com/ipsc-gummy/ArborLearn/issues/new", label: "GitHub Issues", external: true },
+      { href: "/guide", label: "FAQ" },
+      { href: "https://github.com/ipsc-gummy/ArborLearn/issues/new", label: "项目反馈", external: true },
+    ],
+  },
+  {
+    title: "法律",
+    links: [
+      { href: "https://github.com/ipsc-gummy/ArborLearn/blob/main/LICENSE", label: "MIT License", external: true },
+      { href: "https://beian.miit.gov.cn/", label: "备案信息", external: true },
+    ],
+  },
 ];
 
 function LandingFooter() {
   return (
     <footer className="tl-landing-footer relative z-10 overflow-hidden border-t">
       <div className="tl-landing-footer-glow" aria-hidden="true" />
-      <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-14 md:py-16 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,1.15fr)]">
-        <div>
-          <p className="tl-landing-footer-wordmark text-4xl font-semibold">ArborLearn</p>
-          <p className="mt-4 max-w-md text-sm leading-7 text-white/62">
-            让每一次探索，都沉淀为可继续生长的知识结构。
-          </p>
-          <a
-            className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-white/82 transition hover:text-white"
-            href="https://github.com/ipsc-gummy/ArborLearn"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Github className="h-4 w-4" />
-            GitHub
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </a>
-          <SiteFiling className="mt-8 text-xs leading-6 text-white/42" linkClassName="transition hover:text-white/70" />
-        </div>
+      <div className="relative mx-auto max-w-7xl px-5 py-14 md:py-16">
+        <div className="grid gap-12 lg:grid-cols-[minmax(260px,1.1fr)_minmax(0,1.9fr)] lg:gap-16">
+          <div className="max-w-md">
+            <p className="tl-landing-footer-wordmark text-4xl font-semibold">ArborLearn</p>
+            <p className="tl-landing-footer-tagline mt-4 max-w-sm text-sm leading-7">
+              让每一次追问，都沉淀为可继续生长的知识结构。
+            </p>
+            <div className="mt-7 grid gap-2">
+              {footerBrandLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <a
+                    key={item.href}
+                    className="tl-landing-footer-brand-link inline-flex w-fit items-center gap-2 text-sm font-semibold transition"
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {Icon && <Icon className="h-4 w-4" />}
+                    {item.label}
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </a>
+                );
+              })}
+            </div>
+          </div>
 
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/42">Explore ArborLearn</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {footerGuideLinks.map((item) => (
-              <a
-                key={item.href}
-                className={`tl-landing-footer-link group rounded-2xl border px-4 py-4${item.highlighted ? " is-highlighted" : ""}`}
-                href={item.href}
-              >
-                <span className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-white/90">{item.label}</span>
-                  <ArrowRight className="h-4 w-4 text-white/42 transition group-hover:translate-x-0.5 group-hover:text-white/82" />
-                </span>
-                <span className="mt-2 block text-xs leading-5 text-white/48">{item.description}</span>
-              </a>
+          <div className="tl-landing-footer-sitemap grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {footerSiteMapSections.map((section) => (
+              <nav key={section.title} aria-label={section.title}>
+                <p className="tl-landing-footer-heading text-sm font-semibold">{section.title}</p>
+                <div className="mt-4 grid gap-3">
+                  {section.links.map((item) => (
+                    <a
+                      key={`${section.title}-${item.label}`}
+                      className="tl-landing-footer-sitemap-link text-sm leading-6 transition"
+                      href={item.href}
+                      data-external={item.external ? "true" : undefined}
+                      target={item.external ? "_blank" : undefined}
+                      rel={item.external ? "noreferrer" : undefined}
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              </nav>
             ))}
           </div>
+        </div>
+
+        <div className="tl-landing-footer-bottom mt-12 border-t pt-6">
+          <SiteFiling className="tl-landing-footer-filing text-xs leading-6" linkClassName="transition hover:underline" />
         </div>
       </div>
     </footer>

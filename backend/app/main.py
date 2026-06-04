@@ -239,6 +239,7 @@ class NodePatch(BaseModel):
     selectedText: str | None = None
     contextWeight: Literal["isolated", "mainline"] | None = None
     parentId: str | None = None
+    pinned: bool | None = None
 
 
 class BackfillPatchCreate(BaseModel):
@@ -2083,6 +2084,14 @@ def patch_node(node_id: str, payload: NodePatch, user: dict = Depends(require_us
 
         if "title" in updates and node["parent_id"] is None:
             conn.execute("UPDATE notebooks SET title = ?, updated_at = ? WHERE id = ?", (updates["title"], now_iso(), node["notebook_id"]))
+
+        if "pinned" in updates:
+            if node["parent_id"] is not None:
+                raise HTTPException(status_code=400, detail="Only notebook roots can be pinned")
+            conn.execute(
+                "UPDATE notebooks SET pinned = ?, updated_at = ? WHERE id = ?",
+                (1 if updates["pinned"] else 0, now_iso(), node["notebook_id"]),
+            )
 
         touch_node(conn, node_id)
         return {"ok": True}

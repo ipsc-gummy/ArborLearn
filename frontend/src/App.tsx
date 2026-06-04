@@ -477,7 +477,12 @@ export default function App() {
     onCreateDemoSession: createDemoSession,
     onLogout: () => {
       logout();
-      goHome();
+      setAuthDialogOpen(false);
+      setOnboardingChoiceOpen(false);
+      setMissingNotebookRef(null);
+      attemptedDemoResumeRef.current = null;
+      localStorage.removeItem(LAST_LOCATION_KEY);
+      navigate(routeToPath({ kind: "landing" }), { replace: true });
     },
     onRequestAuth: requestAuth,
     demoUpgradeLocked: demoUpgradeProgress.locked,

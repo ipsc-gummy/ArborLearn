@@ -380,3 +380,25 @@ docs/DEPLOYMENT.md
 ```
 
 In production, do not expose backend port `8000` directly. Proxy `/api` through Nginx instead.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
+
+Unless otherwise noted, ArborLearn source code and project documentation are licensed under the MIT License.
+
+## Attribution and Project Name
+
+The source code of ArborLearn is licensed under the MIT License. You may use, modify, and distribute the source code under the terms of the MIT License.
+
+The ArborLearn project name, logo, official domain, and other brand assets are reserved for the original project. You may refer to ArborLearn to describe the origin of your work, but you may not use the ArborLearn brand to imply official endorsement, official affiliation, or an official distribution without permission.
+
+## Credits
+
+ArborLearn was initiated by [@ipsc-gummy](https://github.com/ipsc-gummy) and is maintained by the ArborLearn team.
+
+Project direction, product concept, tree-structured learning workflow, repository coordination, deployment readiness, and open-source governance were led by [@ipsc-gummy](https://github.com/ipsc-gummy).
+
+The ArborLearn team has contributed across frontend implementation, backend services, model integration, upload and parsing workflows, UI interaction, testing, documentation, deployment, and operations.
+
+For the latest contribution history, see the [GitHub contributors graph](https://github.com/ipsc-gummy/ArborLearn/graphs/contributors).
