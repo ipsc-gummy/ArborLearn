@@ -12,9 +12,17 @@ interface NodePanelProps {
   node: KnowledgeNode;
   compact?: boolean;
   showCloseChild?: boolean;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
-export function NodePanel({ node, compact = false, showCloseChild = false }: NodePanelProps) {
+export function NodePanel({
+  node,
+  compact = false,
+  showCloseChild = false,
+  demoUpgradeLocked = false,
+  onRequireDemoUpgrade,
+}: NodePanelProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
   const closeChildConversation = useArborLearnStore((state) => state.closeChildConversation);
@@ -193,7 +201,14 @@ export function NodePanel({ node, compact = false, showCloseChild = false }: Nod
         </div>
       </div>
 
-      <Composer nodeId={node.id} notebookId={notebookId} threadId={node.id} panelId={panelId} />
+      <Composer
+        nodeId={node.id}
+        notebookId={notebookId}
+        threadId={node.id}
+        panelId={panelId}
+        demoUpgradeLocked={demoUpgradeLocked}
+        onRequireDemoUpgrade={onRequireDemoUpgrade}
+      />
     </section>
   );
 }

@@ -1,21 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import * as Popover from "@radix-ui/react-popover";
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Circle,
-  ArrowLeft,
   Download,
   GitBranch,
   GripVertical,
-  LogOut,
   MessageSquareText,
-  PanelLeftClose,
   MoreHorizontal,
+  PanelLeftClose,
   Pencil,
   Plus,
   Share2,
@@ -25,7 +23,8 @@ import {
 import { useArborLearnStore } from "../store/arborlearnStore";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { SettingsMenu, type ThemeMode } from "./AppMenus";
+import { AccountMenu, SettingsMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
+import type { AuthUser } from "../lib/api";
 import {
   DIAGRAM_NODE_HEIGHT,
   DIAGRAM_NODE_WIDTH,
@@ -33,6 +32,9 @@ import {
   buildDiagram,
   linkPath,
 } from "../lib/diagramLayout";
+
+type WorkspaceView = "chat" | "diagram";
+type ArborNodes = ReturnType<typeof useArborLearnStore.getState>["nodes"];
 
 interface TreeItemProps {
   nodeId: string;
@@ -51,30 +53,31 @@ interface KnowledgeTreeProps {
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
   onHome: () => void;
+  user: AuthUser | null;
+  onLogout: () => void;
+  onRequestAuth: (mode?: AuthDialogMode) => void;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
   view: WorkspaceView;
   onViewChange: (view: WorkspaceView) => void;
 }
 
-type WorkspaceView = "chat" | "diagram";
-type ArborNodes = ReturnType<typeof useArborLearnStore.getState>["nodes"];
-
-// 给任意节点向上追溯到根节点，确保左侧只展示当前笔记本内的树。
-function getNotebookRootId(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string) {
+function getNotebookRootId(nodes: ArborNodes, nodeId: string) {
   let current = nodes[nodeId];
-  while (current?.parentId) {
+  const seen = new Set<string>();
+  while (current?.parentId && !seen.has(current.id)) {
+    seen.add(current.id);
     current = nodes[current.parentId];
   }
   return current?.id ?? nodeId;
 }
 
-// 统计当前笔记本内节点数量，用于左侧标题区域展示。
-function countSubtreeNodes(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"], nodeId: string): number {
+function countSubtreeNodes(nodes: ArborNodes, nodeId: string): number {
   const node = nodes[nodeId];
   if (!node) return 0;
   return 1 + node.children.reduce((total, childId) => total + countSubtreeNodes(nodes, childId), 0);
 }
 
-// 树中的单个节点行：负责展开折叠、选中、重命名、置顶、删除和拖拽入口。
 function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange }: TreeItemProps) {
   const node = useArborLearnStore((state) => state.nodes[nodeId]);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
@@ -88,7 +91,6 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    // 进入重命名状态后自动聚焦并全选标题，减少用户编辑成本。
     if (!isRenaming) return;
     inputRef.current?.focus();
     inputRef.current?.select();
@@ -102,22 +104,7 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
     setIsRenaming(true);
   };
 
-  const shareNode = async () => {
-    const shareUrl = window.location.href;
-    const shareData = {
-      title: node.title,
-      text: node.summary || node.title,
-      url: shareUrl,
-    };
-    if (navigator.share) {
-      await navigator.share(shareData);
-      return;
-    }
-    await navigator.clipboard?.writeText(shareUrl);
-  };
-
   const commitRename = () => {
-    // 空标题不提交，标题没变化也不触发 store 更新。
     const nextTitle = draftTitle.trim();
     if (nextTitle && nextTitle !== node.title) {
       renameNode(node.id, nextTitle);
@@ -128,6 +115,16 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
   const cancelRename = () => {
     setDraftTitle(node.title);
     setIsRenaming(false);
+  };
+
+  const shareNode = async () => {
+    const shareUrl = window.location.href;
+    const shareData = { title: node.title, text: node.summary || node.title, url: shareUrl };
+    if (navigator.share) {
+      await navigator.share(shareData);
+      return;
+    }
+    await navigator.clipboard?.writeText(shareUrl);
   };
 
   return (
@@ -266,55 +263,55 @@ function MiniKnowledgeMap({
       <svg viewBox={`0 0 ${previewWidth} ${previewHeight}`} role="img" aria-hidden="true">
         <g transform={`translate(${offsetX} ${offsetY}) scale(${scale})`}>
           <g className="tl-mini-map-links">
-          {diagram.links.map((link) => {
-            const hot = Array.from(highlightedIds).some((fromId) =>
-              Array.from(highlightedIds).some((toId) => link.id === `${fromId}-${toId}` || link.id === `${toId}-${fromId}`),
-            );
-            return (
-              <path
-                key={link.id}
-                d={linkPath({
-                  ...link,
-                  fromX: link.fromX + DIAGRAM_PADDING,
-                  fromY: link.fromY + DIAGRAM_PADDING,
-                  toX: link.toX + DIAGRAM_PADDING,
-                  toY: link.toY + DIAGRAM_PADDING,
-                })}
-                fill="none"
-                className={hot ? "is-active" : undefined}
-              />
-            );
-          })}
+            {diagram.links.map((link) => {
+              const hot = Array.from(highlightedIds).some((fromId) =>
+                Array.from(highlightedIds).some((toId) => link.id === `${fromId}-${toId}` || link.id === `${toId}-${fromId}`),
+              );
+              return (
+                <path
+                  key={link.id}
+                  d={linkPath({
+                    ...link,
+                    fromX: link.fromX + DIAGRAM_PADDING,
+                    fromY: link.fromY + DIAGRAM_PADDING,
+                    toX: link.toX + DIAGRAM_PADDING,
+                    toY: link.toY + DIAGRAM_PADDING,
+                  })}
+                  fill="none"
+                  className={hot ? "is-active" : undefined}
+                />
+              );
+            })}
           </g>
           <g>
-          {diagram.nodes.map((diagramNode, index) => {
-            const active = diagramNode.id === activeNodeId;
-            const compared = compareNodeId === diagramNode.id;
-            const highlighted = active || compared;
-            const x = DIAGRAM_PADDING + diagramNode.x + DIAGRAM_NODE_WIDTH / 2;
-            const y = DIAGRAM_PADDING + diagramNode.y + DIAGRAM_NODE_HEIGHT / 2;
-            return (
-              <g key={diagramNode.id}>
-                {highlighted && (
+            {diagram.nodes.map((diagramNode) => {
+              const active = diagramNode.id === activeNodeId;
+              const compared = compareNodeId === diagramNode.id;
+              const highlighted = active || compared;
+              const x = DIAGRAM_PADDING + diagramNode.x + DIAGRAM_NODE_WIDTH / 2;
+              const y = DIAGRAM_PADDING + diagramNode.y + DIAGRAM_NODE_HEIGHT / 2;
+              return (
+                <g key={diagramNode.id}>
+                  {highlighted && (
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={active ? activeRingRadius : comparedRingRadius}
+                      className={cn("tl-mini-map-highlight-ring", active && "is-active")}
+                      vectorEffect={denseMap ? "non-scaling-stroke" : undefined}
+                    />
+                  )}
                   <circle
                     cx={x}
                     cy={y}
-                    r={active ? activeRingRadius : comparedRingRadius}
-                    className={cn("tl-mini-map-highlight-ring", active && "is-active")}
-                    vectorEffect={denseMap ? "non-scaling-stroke" : undefined}
+                    r={active ? activePointRadius : compared ? comparedPointRadius : 12}
+                    fill="var(--tl-mini-map-node)"
+                    className={cn("tl-mini-map-point", highlighted && "is-highlighted", active && "is-active")}
+                    vectorEffect={highlighted && denseMap ? "non-scaling-stroke" : undefined}
                   />
-                )}
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={active ? activePointRadius : compared ? comparedPointRadius : 12}
-                  fill="var(--tl-mini-map-node)"
-                  className={cn("tl-mini-map-point", highlighted && "is-highlighted", active && "is-active")}
-                  vectorEffect={highlighted && denseMap ? "non-scaling-stroke" : undefined}
-                />
-              </g>
-            );
-          })}
+                </g>
+              );
+            })}
           </g>
         </g>
       </svg>
@@ -322,7 +319,18 @@ function MiniKnowledgeMap({
   );
 }
 
-export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewChange }: KnowledgeTreeProps) {
+export function KnowledgeTree({
+  themeMode,
+  onThemeChange,
+  onHome,
+  user,
+  onLogout,
+  onRequestAuth,
+  demoUpgradeLocked = false,
+  onRequireDemoUpgrade,
+  view,
+  onViewChange,
+}: KnowledgeTreeProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
   const compareNodeId = useArborLearnStore((state) => state.compareNodeId);
@@ -330,8 +338,6 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
   const createChildNodeUnderActive = useArborLearnStore((state) => state.createChildNodeUnderActive);
   const deleteNode = useArborLearnStore((state) => state.deleteNode);
   const toggleSidebar = useArborLearnStore((state) => state.toggleSidebar);
-  const user = useArborLearnStore((state) => state.user);
-  const logout = useArborLearnStore((state) => state.logout);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [exportHintVisible, setExportHintVisible] = useState(false);
@@ -339,7 +345,6 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
   const notebookRootId = getNotebookRootId(nodes, activeNodeId);
   const nodeCount = countSubtreeNodes(nodes, notebookRootId);
   const notebookTitle = nodes[notebookRootId]?.title ?? "ArborLearn";
-  const userInitial = (user?.displayName || user?.email || "U").slice(0, 1).toUpperCase();
 
   const showExportHint = () => {
     setExportHintVisible(true);
@@ -347,148 +352,143 @@ export function KnowledgeTree({ themeMode, onThemeChange, onHome, view, onViewCh
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    // dnd-kit 的 over 是拖拽释放时命中的节点，把 active 节点移动到 over 节点下面。
     if (!event.over || event.active.id === event.over.id) return;
     moveNode(String(event.active.id), String(event.over.id));
   };
 
   const confirmDelete = () => {
-    // 真正删除前先经过确认弹窗，避免误删整棵子树。
     if (!deleteTarget) return;
     deleteNode(deleteTarget.id);
     setDeleteTarget(null);
   };
 
+  const handleCreateChildNode = () => {
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
+      return;
+    }
+    createChildNodeUnderActive();
+  };
+
   return (
     <>
-    <aside className="tl-knowledge-tree tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
-      <div className="tl-knowledge-tree-header tl-border-soft border-b bg-background/30 p-3 backdrop-blur-xl">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              className="tl-gpt-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-              onClick={onHome}
-              title="返回笔记本列表"
-              aria-label="返回笔记本列表"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-0">
-              <p className="truncate text-lg font-semibold">{notebookTitle}</p>
-              <p className="text-xs text-muted-foreground">{nodeCount} 个对话节点</p>
+      <aside className="tl-knowledge-tree tl-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.25rem] border">
+        <div className="tl-knowledge-tree-header tl-border-soft border-b bg-background/30 p-3 backdrop-blur-xl">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                className="tl-gpt-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                onClick={onHome}
+                title="返回笔记本列表"
+                aria-label="返回笔记本列表"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold">{notebookTitle}</p>
+                <p className="text-xs text-muted-foreground">{nodeCount} 个对话节点</p>
+              </div>
             </div>
+            <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="收起节点栏">
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
           </div>
-          <Button variant="ghost" size="icon" onClick={toggleSidebar} aria-label="收起 Nodes">
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="space-y-2">
-          <div className="tl-sidebar-view-switch">
-            <button
-              type="button"
-              data-tour-view-switch="chat"
-              className={cn("tl-sidebar-action", view === "chat" && "is-active")}
-              onClick={() => onViewChange("chat")}
-            >
-              <MessageSquareText className="h-4 w-4" />
-              对话
-            </button>
-            <button
-              type="button"
-              data-tour-view-switch="diagram"
-              className={cn("tl-sidebar-action", view === "diagram" && "is-active")}
-              onClick={() => onViewChange("diagram")}
-            >
-              <GitBranch className="h-4 w-4" />
-              思维导图
-            </button>
-          </div>
-          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" title="导出 .tree" onClick={showExportHint}>
-            <Download className="h-4 w-4" />
-            导出
-          </Button>
-          {exportHintVisible && (
-            <p className="rounded-lg border border-primary/20 bg-primary/8 px-3 py-2 text-xs leading-5 text-primary">
-              此功能正在开发中，敬请期待！
-            </p>
-          )}
-          <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" onClick={createChildNodeUnderActive}>
-            <Plus className="h-4 w-4" />
-            添加对话节点
-          </Button>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <div className="relative space-y-1 before:absolute before:bottom-2 before:left-3 before:top-2 before:w-px before:bg-border/70">
-            {nodes[notebookRootId] && (
-              <TreeItem
-                key={notebookRootId}
-                nodeId={notebookRootId}
-                depth={0}
-                onRequestDelete={(nodeId, title) => setDeleteTarget({ id: nodeId, title })}
-                openMenuId={openMenuId}
-                onOpenMenuChange={(nodeId, open) => setOpenMenuId(open ? nodeId : null)}
-              />
+          <div className="space-y-2">
+            <div className="tl-sidebar-view-switch">
+              <button
+                type="button"
+                data-tour-view-switch="chat"
+                className={cn("tl-sidebar-action", view === "chat" && "is-active")}
+                onClick={() => onViewChange("chat")}
+              >
+                <MessageSquareText className="h-4 w-4" />
+                对话
+              </button>
+              <button
+                type="button"
+                data-tour-view-switch="diagram"
+                className={cn("tl-sidebar-action", view === "diagram" && "is-active")}
+                onClick={() => onViewChange("diagram")}
+              >
+                <GitBranch className="h-4 w-4" />
+                思维导图
+              </button>
+            </div>
+            <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" title="导出 .tree" onClick={showExportHint}>
+              <Download className="h-4 w-4" />
+              导出
+            </Button>
+            {exportHintVisible && (
+              <p className="rounded-lg border border-primary/20 bg-primary/8 px-3 py-2 text-xs leading-5 text-primary">
+                此功能正在开发中，敬请期待！
+              </p>
             )}
+            <Button className="tl-sidebar-action w-full justify-start" variant="ghost" size="sm" onClick={handleCreateChildNode}>
+              <Plus className="h-4 w-4" />
+              添加对话节点
+            </Button>
           </div>
-        </DndContext>
-      </div>
-
-      <MiniKnowledgeMap
-        nodes={nodes}
-        rootId={notebookRootId}
-        activeNodeId={activeNodeId}
-        compareNodeId={compareNodeId}
-      />
-
-      <div className="tl-sidebar-account border-t border-border/60 p-3">
-        <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-            {userInitial}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{user?.displayName || "用户"}</p>
-            <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>
-          </div>
-          <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
-          <button className="tl-gpt-icon-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full" onClick={logout} title="退出账号" aria-label="退出账号">
-            <LogOut className="h-4 w-4" />
-          </button>
         </div>
-      </div>
 
-    </aside>
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+            <div className="relative space-y-1 before:absolute before:bottom-2 before:left-3 before:top-2 before:w-px before:bg-border/70">
+              {nodes[notebookRootId] && (
+                <TreeItem
+                  key={notebookRootId}
+                  nodeId={notebookRootId}
+                  depth={0}
+                  onRequestDelete={(nodeId, title) => setDeleteTarget({ id: nodeId, title })}
+                  openMenuId={openMenuId}
+                  onOpenMenuChange={(nodeId, open) => setOpenMenuId(open ? nodeId : null)}
+                />
+              )}
+            </div>
+          </DndContext>
+        </div>
+
+        <MiniKnowledgeMap nodes={nodes} rootId={notebookRootId} activeNodeId={activeNodeId} compareNodeId={compareNodeId} />
+
+        <div className="tl-sidebar-account border-t border-border/60 p-3">
+          <div className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-2">
+            <AccountMenu user={user} onLogout={onLogout} onRequestAuth={onRequestAuth} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{user?.displayName || "用户"}</p>
+              <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>
+            </div>
+            <SettingsMenu themeMode={themeMode} onThemeChange={onThemeChange} />
+          </div>
+        </div>
+      </aside>
 
       {deleteTarget && typeof document !== "undefined" &&
         createPortal(
-        <div className="tl-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-          <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold">删除对话节点？</h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  “{deleteTarget.title}”及其所有子对话都会被删除。此操作当前无法撤销。
-                </p>
+          <div className="tl-modal-backdrop fixed inset-0 z-[80] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
+            <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold">删除对话节点？</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    “{deleteTarget.title}”及其所有子对话都会被删除。此操作当前无法撤销。
+                  </p>
+                </div>
+                <button className="rounded-full p-1 hover:bg-muted" onClick={() => setDeleteTarget(null)} aria-label="关闭">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button className="rounded-full p-1 hover:bg-muted" onClick={() => setDeleteTarget(null)} aria-label="关闭">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                  取消
+                </Button>
+                <Button variant="danger" onClick={confirmDelete}>
+                  删除
+                </Button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-                取消
-              </Button>
-              <Button variant="danger" onClick={confirmDelete}>
-                删除
-              </Button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

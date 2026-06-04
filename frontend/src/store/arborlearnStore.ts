@@ -20,6 +20,7 @@ import {
   resumeDemoNotebook as resumeDemoNotebookRequest,
   setAuthToken,
   type AuthUser,
+  upgradeDemoAccount,
   uploadNodeFile,
 } from "../lib/api";
 import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate, UploadedFile } from "../types/arborlearn";
@@ -401,7 +402,10 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
   register: async (email, password, displayName) => {
     set({ authStatus: "checking", authError: null });
     try {
-      const response = await registerRequest({ email, password, displayName });
+      const state = get();
+      const response = state.user?.isTemporary
+        ? await upgradeDemoAccount({ email, password, displayName })
+        : await registerRequest({ email, password, displayName });
       setAuthToken(response.token);
       set({ user: response.user, authStatus: "authenticated", authError: null });
       await get().hydrateFromBackend();
