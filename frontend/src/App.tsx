@@ -10,11 +10,24 @@ import { ProductGuidePage } from "./components/ProductGuidePage";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { Workspace } from "./components/Workspace";
 import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
+import { fetchAppSettings, type RuntimeSettings } from "./lib/api";
 import { useArborLearnStore } from "./store/arborlearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
 const THEME_MODE_KEY = "arborlearn.themeMode";
 const THEME_TRANSITION_CLASS = "tl-theme-transitioning";
+const DEMO_UPGRADE_NUDGE_BASELINE_KEY = "arborlearn.demoUpgradeNudgeBaseline";
+const DEMO_UPGRADE_NUDGE_NOTEBOOK_BASELINE_KEY = "arborlearn.demoUpgradeNudgeNotebookBaseline";
+const DEMO_UPGRADE_NUDGE_DISMISSED_KEY = "arborlearn.demoUpgradeNudgeDismissed";
+const DEMO_UPGRADE_NUDGE_TRIGGER_QUESTIONS = 5;
+const DEMO_UPGRADE_NUDGE_TRIGGER_NEW_NOTEBOOKS = 1;
+const DEMO_UPGRADE_NUDGE_AUTO_HIDE_MS = 13000;
+const DEMO_UPGRADE_LOCK_TRIGGER_QUESTIONS = 10;
+const DEMO_UPGRADE_LOCK_TRIGGER_NEW_NOTEBOOKS = 3;
+
+function settingValue(settings: RuntimeSettings | null, key: string, fallback: number) {
+  return settings?.[key]?.value ?? fallback;
+}
 
 type AppRoute =
   | { kind: "landing" }
@@ -159,6 +172,13 @@ function getNodeInNotebook(nodes: ReturnType<typeof useArborLearnStore.getState>
   return getNotebookRootId(nodes, nodeId) === notebookId ? nodeId : null;
 }
 
+function getUserQuestionCount(nodes: ReturnType<typeof useArborLearnStore.getState>["nodes"]) {
+  return Object.values(nodes).reduce(
+    (count, node) => count + node.messages.filter((message) => message.role === "user").length,
+    0,
+  );
+}
+
 function WorkspaceUnavailable({ onHome }: { onHome: () => void }) {
   return (
     <div className="tl-app-bg flex min-h-screen items-center justify-center px-4 text-foreground">
@@ -188,6 +208,7 @@ export default function App() {
   const setActiveNode = useArborLearnStore((state) => state.setActiveNode);
   const initializeAuth = useArborLearnStore((state) => state.initializeAuth);
   const nodes = useArborLearnStore((state) => state.nodes);
+  const rootIds = useArborLearnStore((state) => state.rootIds);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
   const apiStatus = useArborLearnStore((state) => state.apiStatus);
   const user = useArborLearnStore((state) => state.user);
@@ -208,11 +229,46 @@ export default function App() {
   const [onboardingChoiceOpen, setOnboardingChoiceOpen] = useState(false);
   const [newlyRegisteredUserId, setNewlyRegisteredUserId] = useState<string | null>(null);
   const [missingNotebookRef, setMissingNotebookRef] = useState<string | null>(null);
+  const [demoUpgradeNudgeVisible, setDemoUpgradeNudgeVisible] = useState(false);
+  const [demoUpgradeGateOpen, setDemoUpgradeGateOpen] = useState(false);
+  const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettings | null>(null);
   const attemptedDemoResumeRef = useRef<string | null>(null);
+  const demoUserQuestionCount = getUserQuestionCount(nodes);
+  const demoNudgeQuestionTrigger = settingValue(runtimeSettings, "demo_nudge_question_trigger", DEMO_UPGRADE_NUDGE_TRIGGER_QUESTIONS);
+  const demoNudgeNotebookTrigger = settingValue(runtimeSettings, "demo_nudge_notebook_trigger", DEMO_UPGRADE_NUDGE_TRIGGER_NEW_NOTEBOOKS);
+  const demoNudgeAutoHideMs = settingValue(runtimeSettings, "demo_nudge_auto_hide_ms", DEMO_UPGRADE_NUDGE_AUTO_HIDE_MS);
+  const demoLockQuestionTrigger = settingValue(runtimeSettings, "demo_lock_question_trigger", DEMO_UPGRADE_LOCK_TRIGGER_QUESTIONS);
+  const demoLockNotebookTrigger = settingValue(runtimeSettings, "demo_lock_notebook_trigger", DEMO_UPGRADE_LOCK_TRIGGER_NEW_NOTEBOOKS);
+  const demoUpgradeProgress = (() => {
+    if (!user?.isTemporary || apiStatus !== "ready") {
+      return { newQuestions: 0, newNotebooks: 0, locked: false };
+    }
+    const storedBaseline = sessionStorage.getItem(`${DEMO_UPGRADE_NUDGE_BASELINE_KEY}.${user.id}`);
+    const storedNotebookBaseline = sessionStorage.getItem(`${DEMO_UPGRADE_NUDGE_NOTEBOOK_BASELINE_KEY}.${user.id}`);
+    const baseline = storedBaseline === null ? demoUserQuestionCount : Number(storedBaseline);
+    const notebookBaseline = storedNotebookBaseline === null ? rootIds.length : Number(storedNotebookBaseline);
+    const newQuestions = demoUserQuestionCount - (Number.isFinite(baseline) ? baseline : demoUserQuestionCount);
+    const newNotebooks = rootIds.length - (Number.isFinite(notebookBaseline) ? notebookBaseline : rootIds.length);
+    return {
+      newQuestions,
+      newNotebooks,
+      locked:
+        newQuestions >= demoLockQuestionTrigger ||
+        newNotebooks >= demoLockNotebookTrigger,
+    };
+  })();
 
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    void fetchAppSettings()
+      .then((response) => setRuntimeSettings(response.settings))
+      .catch(() => {
+        setRuntimeSettings(null);
+      });
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -315,6 +371,63 @@ export default function App() {
     );
   }, [activeNodeId, routeKind]);
 
+  useEffect(() => {
+    if (!user?.isTemporary) {
+      setDemoUpgradeNudgeVisible(false);
+      setDemoUpgradeGateOpen(false);
+      return;
+    }
+    if (apiStatus !== "ready") return;
+
+    const baselineKey = `${DEMO_UPGRADE_NUDGE_BASELINE_KEY}.${user.id}`;
+    const notebookBaselineKey = `${DEMO_UPGRADE_NUDGE_NOTEBOOK_BASELINE_KEY}.${user.id}`;
+    const dismissedKey = `${DEMO_UPGRADE_NUDGE_DISMISSED_KEY}.${user.id}`;
+    if (sessionStorage.getItem(dismissedKey) === "1") return;
+
+    const storedBaseline = sessionStorage.getItem(baselineKey);
+    const storedNotebookBaseline = sessionStorage.getItem(notebookBaselineKey);
+    if (storedBaseline === null) {
+      sessionStorage.setItem(baselineKey, String(demoUserQuestionCount));
+    }
+    if (storedNotebookBaseline === null) {
+      sessionStorage.setItem(notebookBaselineKey, String(rootIds.length));
+    }
+    if (storedBaseline === null || storedNotebookBaseline === null) {
+      return;
+    }
+
+    const baseline = Number(storedBaseline);
+    const notebookBaseline = Number(storedNotebookBaseline);
+    const newQuestionCount = demoUserQuestionCount - (Number.isFinite(baseline) ? baseline : demoUserQuestionCount);
+    const newNotebookCount = rootIds.length - (Number.isFinite(notebookBaseline) ? notebookBaseline : rootIds.length);
+    if (
+      newQuestionCount >= demoNudgeQuestionTrigger ||
+      newNotebookCount >= demoNudgeNotebookTrigger
+    ) {
+      setDemoUpgradeNudgeVisible(true);
+    }
+  }, [apiStatus, demoNudgeNotebookTrigger, demoNudgeQuestionTrigger, demoUserQuestionCount, rootIds.length, user]);
+
+  useEffect(() => {
+    if (!demoUpgradeNudgeVisible || !user?.isTemporary) return;
+    const timer = window.setTimeout(() => {
+      setDemoUpgradeNudgeVisible(false);
+    }, demoNudgeAutoHideMs);
+    return () => window.clearTimeout(timer);
+  }, [demoNudgeAutoHideMs, demoUpgradeNudgeVisible, user]);
+
+  const dismissDemoUpgradeNudge = () => {
+    if (user?.id) {
+      sessionStorage.setItem(`${DEMO_UPGRADE_NUDGE_DISMISSED_KEY}.${user.id}`, "1");
+    }
+    setDemoUpgradeNudgeVisible(false);
+  };
+
+  const requestDemoUpgradeGate = () => {
+    setDemoUpgradeNudgeVisible(false);
+    setDemoUpgradeGateOpen(true);
+  };
+
   const setThemeMode = (mode: ThemeMode) => {
     document.documentElement.classList.add(THEME_TRANSITION_CLASS);
     window.setTimeout(() => {
@@ -367,6 +480,8 @@ export default function App() {
       goHome();
     },
     onRequestAuth: requestAuth,
+    demoUpgradeLocked: demoUpgradeProgress.locked,
+    onRequireDemoUpgrade: requestDemoUpgradeGate,
   };
 
   const isRestoring = authStatus === "checking" || (authStatus === "authenticated" && apiStatus === "loading");
@@ -414,6 +529,11 @@ export default function App() {
                 themeMode={themeMode}
                 onThemeChange={setThemeMode}
                 onHome={goHome}
+                user={user}
+                onLogout={menuProps.onLogout}
+                onRequestAuth={requestAuth}
+                demoUpgradeLocked={demoUpgradeProgress.locked}
+                onRequireDemoUpgrade={requestDemoUpgradeGate}
                 view={workspaceView}
                 onViewChange={setWorkspaceView}
               />
@@ -429,7 +549,12 @@ export default function App() {
             </aside>
           )}
           <div className="tl-workspace-stagger tl-workspace-stagger-main min-h-0 overflow-hidden">
-            <Workspace view={workspaceView} onViewChange={setWorkspaceView} />
+            <Workspace
+              view={workspaceView}
+              onViewChange={setWorkspaceView}
+              demoUpgradeLocked={demoUpgradeProgress.locked}
+              onRequireDemoUpgrade={requestDemoUpgradeGate}
+            />
           </div>
         </div>
       </main>
@@ -453,11 +578,85 @@ export default function App() {
           workspaceView={workspaceView}
         />
       )}
+      {demoUpgradeNudgeVisible && user?.isTemporary && (
+        <div className="pointer-events-none fixed inset-x-0 top-5 z-[80] flex justify-center px-4">
+          <div className="tl-demo-upgrade-nudge tl-panel pointer-events-auto flex w-[min(54rem,calc(100vw-2rem))] items-start gap-4 rounded-2xl border px-5 py-4 shadow-panel backdrop-blur-xl">
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-semibold">觉得还不错？想把这次学习进度留下来吗？</p>
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+                绑定一个正式账号后，这些笔记、对话和上传内容会保留到云端，异地登录也能接着用~
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 pt-1">
+              <button
+                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
+                onClick={() => {
+                  dismissDemoUpgradeNudge();
+                  requestAuth("register");
+                }}
+              >
+                绑定账号
+              </button>
+              <button
+                className="tl-hover rounded-full px-3 py-2 text-sm font-medium text-muted-foreground"
+                onClick={dismissDemoUpgradeNudge}
+              >
+                稍后
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {demoUpgradeGateOpen && user?.isTemporary && (
+        <div className="tl-demo-upgrade-backdrop fixed inset-0 z-[90] flex items-center justify-center px-4">
+          <section className="tl-demo-upgrade-gate w-full max-w-lg rounded-3xl border p-6 shadow-panel">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Demo limit</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-normal">继续使用前，先绑定一个正式账号吧</h2>
+              </div>
+              <button
+                className="tl-hover flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+                onClick={() => setDemoUpgradeGateOpen(false)}
+                aria-label="关闭"
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <p className="mt-4 text-sm leading-7 text-muted-foreground">
+              演示体验已经足够了解核心功能啦。绑定账号后，可以继续向 Agent 提问、上传资料、新建笔记本和对话节点，
+              当前这些笔记、对话和上传内容也会保留到云端。
+            </p>
+            <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/8 px-4 py-3 text-sm leading-6 text-foreground">
+              你仍然可以关闭这个提示继续查看已有内容；但新的提问和创建操作，需要注册后才能继续。
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="tl-hover rounded-full px-4 py-2 text-sm font-medium text-muted-foreground"
+                onClick={() => setDemoUpgradeGateOpen(false)}
+              >
+                先查看
+              </button>
+              <button
+                className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
+                onClick={() => {
+                  setDemoUpgradeGateOpen(false);
+                  requestAuth("register");
+                }}
+              >
+                绑定账号继续
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <AuthDialog
         open={authDialogOpen}
         initialMode={authDialogMode}
         authStatus={authStatus}
         authError={authError}
+        user={user}
         onClose={() => setAuthDialogOpen(false)}
         onLogin={login}
         onRegister={registerWithDefaultTheme}

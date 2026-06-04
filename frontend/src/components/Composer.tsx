@@ -31,6 +31,8 @@ interface ComposerProps {
   notebookId?: string;
   panelId?: string;
   threadId?: string;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
 const branchQuickPrompts = [
@@ -60,7 +62,7 @@ const CLIPBOARD_IMAGE_EXTENSIONS: Record<string, string> = {
   "image/bmp": ".bmp",
 };
 
-export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProps) {
+export function Composer({ nodeId, notebookId, panelId, threadId, demoUpgradeLocked = false, onRequireDemoUpgrade }: ComposerProps) {
   const [value, setValue] = useState("");
   const [lastSubmittedAt, setLastSubmittedAt] = useState<string>("");
   const node = useArborLearnStore((state) => state.nodes[nodeId]);
@@ -165,6 +167,10 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
 
   const send = (content: string) => {
     if (!content.trim()) return;
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
+      return;
+    }
     appendMessage(
       nodeId,
       content.trim(),
@@ -194,6 +200,10 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
 
   const uploadFiles = async (selectedFiles: File[]) => {
     if (isUploading || selectedFiles.length === 0) return;
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
+      return;
+    }
     for (const selectedFile of selectedFiles) {
       try {
         await uploadFile(nodeId, selectedFile);
@@ -340,7 +350,13 @@ export function Composer({ nodeId, notebookId, panelId, threadId }: ComposerProp
               data-tour-composer-tool-node-id={nodeId}
               title="上传文件"
               disabled={isUploading}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (demoUpgradeLocked) {
+                  onRequireDemoUpgrade?.();
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
               className="h-9 w-9 border-transparent text-muted-foreground shadow-none focus:ring-0 focus:ring-offset-0 hover:border-transparent hover:bg-foreground/5 hover:text-foreground"
             >
               <Paperclip className="h-4 w-4" />

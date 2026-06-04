@@ -8,9 +8,11 @@ export type WorkspaceView = "chat" | "diagram";
 interface WorkspaceProps {
   view: WorkspaceView;
   onViewChange: (view: WorkspaceView) => void;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
-export function Workspace({ view, onViewChange }: WorkspaceProps) {
+export function Workspace({ view, onViewChange, demoUpgradeLocked = false, onRequireDemoUpgrade }: WorkspaceProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const activeNodeId = useArborLearnStore((state) => state.activeNodeId);
   const compareNodeId = useArborLearnStore((state) => state.compareNodeId);
@@ -33,7 +35,12 @@ export function Workspace({ view, onViewChange }: WorkspaceProps) {
           >
             <Panel defaultSize={40} minSize={22}>
               <div className="tl-child-parent-panel tl-border-soft h-full min-h-0 overflow-hidden border-r">
-                <NodePanel node={parentNode} compact />
+                <NodePanel
+                  node={parentNode}
+                  compact
+                  demoUpgradeLocked={demoUpgradeLocked}
+                  onRequireDemoUpgrade={onRequireDemoUpgrade}
+                />
               </div>
             </Panel>
             <PanelResizeHandle
@@ -42,12 +49,21 @@ export function Workspace({ view, onViewChange }: WorkspaceProps) {
             />
             <Panel defaultSize={60} minSize={38}>
               <div className="tl-child-active-panel h-full min-h-0 overflow-hidden">
-                <NodePanel node={activeNode} showCloseChild />
+                <NodePanel
+                  node={activeNode}
+                  showCloseChild
+                  demoUpgradeLocked={demoUpgradeLocked}
+                  onRequireDemoUpgrade={onRequireDemoUpgrade}
+                />
               </div>
             </Panel>
           </PanelGroup>
         ) : (
-          <NodePanel node={activeNode} />
+          <NodePanel
+            node={activeNode}
+            demoUpgradeLocked={demoUpgradeLocked}
+            onRequireDemoUpgrade={onRequireDemoUpgrade}
+          />
         )}
       </div>
     </section>

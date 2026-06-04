@@ -112,6 +112,44 @@ app.add_middleware(
 
 LEGACY_DEMO_ACCOUNT_EMAIL = "demo@arborlearn.local"
 DEMO_SESSION_TTL_HOURS = 24
+APP_SETTING_DEFINITIONS: dict[str, dict[str, int | str]] = {
+    "demo_nudge_question_trigger": {
+        "label": "温和提示触发提问数",
+        "default": 5,
+        "min": 1,
+        "max": 100,
+    },
+    "demo_nudge_notebook_trigger": {
+        "label": "温和提示触发新增笔记本数",
+        "default": 1,
+        "min": 1,
+        "max": 20,
+    },
+    "demo_nudge_auto_hide_ms": {
+        "label": "温和提示停留时间（毫秒）",
+        "default": 13000,
+        "min": 3000,
+        "max": 60000,
+    },
+    "demo_lock_question_trigger": {
+        "label": "强制绑定触发提问数",
+        "default": 10,
+        "min": 1,
+        "max": 200,
+    },
+    "demo_lock_notebook_trigger": {
+        "label": "强制绑定触发新增笔记本数",
+        "default": 3,
+        "min": 1,
+        "max": 50,
+    },
+    "demo_session_ttl_hours": {
+        "label": "演示账号保留时长（小时）",
+        "default": DEMO_SESSION_TTL_HOURS,
+        "min": 1,
+        "max": 168,
+    },
+}
 
 
 class ChatRequest(BaseModel):
@@ -160,6 +198,19 @@ class AuthRequest(BaseModel):
     email: str
     password: str = Field(min_length=8)
     displayName: str | None = None
+
+
+class DemoUpgradeRequest(AuthRequest):
+    pass
+
+
+class PasswordChangeRequest(BaseModel):
+    currentPassword: str = Field(min_length=1)
+    newPassword: str = Field(min_length=8)
+
+
+class AdminSettingsUpdate(BaseModel):
+    settings: dict[str, int]
 
 
 class MessagePayload(BaseModel):
@@ -245,7 +296,71 @@ def serialize_user(user: dict) -> dict:
         "email": user["email"],
         "displayName": user["display_name"],
         "isTemporary": bool(user.get("is_temporary", 0)),
+        "isAdmin": bool(user.get("is_admin", 0)),
     }
+
+
+def _setting_default(key: str) -> int:
+    return int(APP_SETTING_DEFINITIONS[key]["default"])
+
+
+def serialize_app_settings(settings: dict[str, int]) -> dict:
+    return {
+        key: {
+            "value": settings[key],
+            "label": definition["label"],
+            "default": int(definition["default"]),
+            "min": int(definition["min"]),
+            "max": int(definition["max"]),
+        }
+        for key, definition in APP_SETTING_DEFINITIONS.items()
+    }
+
+
+def get_app_settings() -> dict[str, int]:
+    with connect() as conn:
+        rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+    raw_values = {row["key"]: row["value"] for row in rows}
+    settings: dict[str, int] = {}
+    for key, definition in APP_SETTING_DEFINITIONS.items():
+        default = int(definition["default"])
+        minimum = int(definition["min"])
+        maximum = int(definition["max"])
+        try:
+            value = int(raw_values.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        settings[key] = max(minimum, min(maximum, value))
+    return settings
+
+
+def set_app_settings(values: dict[str, int]) -> dict[str, int]:
+    settings = get_app_settings()
+    ts = now_iso()
+    with connect() as conn:
+        for key, value in values.items():
+            if key not in APP_SETTING_DEFINITIONS:
+                raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+            definition = APP_SETTING_DEFINITIONS[key]
+            minimum = int(definition["min"])
+            maximum = int(definition["max"])
+            normalized = max(minimum, min(maximum, int(value)))
+            conn.execute(
+                """
+                INSERT INTO app_settings(key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (key, str(normalized), ts),
+            )
+            settings[key] = normalized
+    return settings
+
+
+def require_admin(user: dict = Depends(require_user)) -> dict:
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin account required")
+    return user
 
 
 def sse_event(payload: dict, event: str | None = None) -> str:
@@ -869,15 +984,44 @@ def maybe_generate_node_summary(
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    ensure_admin_account()
     cleanup_demo_sessions()
 
 
 def cleanup_demo_sessions() -> None:
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=DEMO_SESSION_TTL_HOURS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=get_app_settings()["demo_session_ttl_hours"])).isoformat()
     legacy_email = normalize_email(LEGACY_DEMO_ACCOUNT_EMAIL)
     with connect() as conn:
         conn.execute("DELETE FROM users WHERE is_temporary = 1 AND created_at < ?", (cutoff,))
         conn.execute("DELETE FROM users WHERE email = ?", (legacy_email,))
+
+
+def ensure_admin_account() -> None:
+    email = normalize_email(os.getenv("ADMIN_EMAIL", "admin@arborlearn.local"))
+    password = os.getenv("ADMIN_PASSWORD", "")
+    display_name = (os.getenv("ADMIN_DISPLAY_NAME", "ArborLearn Admin").strip() or "ArborLearn Admin")[:64]
+    if not password:
+        return
+    ts = now_iso()
+    with connect() as conn:
+        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE users
+                SET display_name = ?, password_hash = ?, is_temporary = 0, is_admin = 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (display_name, password_hash(password), ts, existing["id"]),
+            )
+            return
+        conn.execute(
+            """
+            INSERT INTO users(id, email, display_name, password_hash, is_temporary, is_admin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 0, 1, ?, ?)
+            """,
+            (uid("user"), email, display_name, password_hash(password), ts, ts),
+        )
 
 
 def create_isolated_demo_user() -> dict:
@@ -901,6 +1045,7 @@ def create_isolated_demo_user() -> dict:
         "email": email,
         "display_name": display_name,
         "is_temporary": 1,
+        "is_admin": 0,
     }
 
 
@@ -965,6 +1110,21 @@ def usage_tree(
         raise HTTPException(status_code=400, detail="Only groupBy=model,callType is supported.")
     with connect() as conn:
         return {"tree": get_usage_tree(conn, user["id"], from_ts=from_, to_ts=to)}
+
+
+@app.get("/api/app-settings")
+def app_settings() -> dict:
+    return {"settings": serialize_app_settings(get_app_settings())}
+
+
+@app.get("/api/admin/settings")
+def admin_settings(user: dict = Depends(require_admin)) -> dict:
+    return {"settings": serialize_app_settings(get_app_settings())}
+
+
+@app.patch("/api/admin/settings")
+def update_admin_settings(payload: AdminSettingsUpdate, user: dict = Depends(require_admin)) -> dict:
+    return {"settings": serialize_app_settings(set_app_settings(payload.settings))}
 
 
 @app.post("/api/web/search")
@@ -1270,8 +1430,46 @@ def register(payload: AuthRequest) -> dict:
             raise HTTPException(status_code=409, detail="Email is already registered") from exc
         create_starter_notebook(conn, user_id)
 
-    user = {"id": user_id, "email": email, "display_name": display_name, "is_temporary": 0}
+    user = {"id": user_id, "email": email, "display_name": display_name, "is_temporary": 0, "is_admin": 0}
     return {"token": create_token(user_id), "user": serialize_user(user)}
+
+
+@app.post("/api/auth/upgrade-demo")
+def upgrade_demo_account(payload: DemoUpgradeRequest, user: dict = Depends(require_user)) -> dict:
+    if not user.get("is_temporary"):
+        raise HTTPException(status_code=400, detail="Current account is already permanent")
+
+    email = normalize_email(payload.email)
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+
+    display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
+    ts = now_iso()
+    with connect() as conn:
+        try:
+            conn.execute(
+                """
+                UPDATE users
+                SET email = ?, display_name = ?, password_hash = ?, is_temporary = 0, updated_at = ?
+                WHERE id = ? AND is_temporary = 1
+                """,
+                (email, display_name, password_hash(payload.password), ts, user["id"]),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="Email is already registered") from exc
+
+        upgraded_user = conn.execute(
+            """
+            SELECT id, email, display_name, is_temporary, is_admin
+            FROM users
+            WHERE id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+
+    if not upgraded_user:
+        raise HTTPException(status_code=404, detail="Demo account not found")
+    return {"token": create_token(user["id"]), "user": serialize_user(dict(upgraded_user))}
 
 
 @app.post("/api/auth/demo", status_code=201)
@@ -1285,7 +1483,7 @@ def resume_demo_notebook(notebook_ref: str) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT users.id, users.email, users.display_name, users.is_temporary
+            SELECT users.id, users.email, users.display_name, users.is_temporary, users.is_admin
             FROM notebooks
             JOIN users ON users.id = notebooks.owner_user_id
             WHERE users.is_temporary = 1
@@ -1319,7 +1517,7 @@ def login(payload: AuthRequest) -> dict:
     with connect() as conn:
         user = conn.execute(
             """
-            SELECT id, email, display_name, password_hash, is_temporary
+            SELECT id, email, display_name, password_hash, is_temporary, is_admin
             FROM users
             WHERE email = ?
             """,
@@ -1328,6 +1526,34 @@ def login(payload: AuthRequest) -> dict:
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
+
+
+@app.post("/api/auth/change-password")
+def change_password(payload: PasswordChangeRequest, user: dict = Depends(require_user)) -> dict:
+    if user.get("is_temporary"):
+        raise HTTPException(status_code=400, detail="Demo accounts must be upgraded before changing password")
+
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, password_hash
+            FROM users
+            WHERE id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+        if not row or not verify_password(payload.currentPassword, row["password_hash"]):
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+        conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (password_hash(payload.newPassword), now_iso(), user["id"]),
+        )
+    return {"ok": True}
 
 
 @app.get("/api/auth/me")

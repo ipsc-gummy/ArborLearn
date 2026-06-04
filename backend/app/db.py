@@ -40,7 +40,14 @@ def init_db() -> None:
               display_name TEXT NOT NULL,
               password_hash TEXT NOT NULL,
               is_temporary INTEGER NOT NULL DEFAULT 0,
+              is_admin INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
 
@@ -356,6 +363,7 @@ def init_db() -> None:
         ensure_column(conn, "nodes", "source_metadata_json", "TEXT")
         ensure_column(conn, "nodes", "summary_stale", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "users", "is_temporary", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:

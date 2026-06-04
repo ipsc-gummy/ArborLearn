@@ -13,7 +13,18 @@ export interface AuthUser {
   email: string;
   displayName: string;
   isTemporary?: boolean;
+  isAdmin?: boolean;
 }
+
+export interface RuntimeSetting {
+  value: number;
+  label: string;
+  default: number;
+  min: number;
+  max: number;
+}
+
+export type RuntimeSettings = Record<string, RuntimeSetting>;
 
 interface AuthResponse {
   token: string;
@@ -251,8 +262,22 @@ export function register(payload: { email: string; password: string; displayName
   });
 }
 
+export function upgradeDemoAccount(payload: { email: string; password: string; displayName?: string }) {
+  return request<AuthResponse>("/api/auth/upgrade-demo", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function login(payload: { email: string; password: string }) {
   return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function changePassword(payload: { currentPassword: string; newPassword: string }) {
+  return request<{ ok: true }>("/api/auth/change-password", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -286,6 +311,21 @@ export function getUsageSummary(params?: { from?: string; to?: string; scope?: "
 
 export function getUsageEvents(params?: { from?: string; to?: string; limit?: number; cursor?: string; scope?: "month" | "all" }) {
   return request<{ events: UsageEvent[]; nextCursor?: string | null }>(`/api/usage/events?${usageParams(params)}`);
+}
+
+export function fetchAppSettings() {
+  return request<{ settings: RuntimeSettings }>("/api/app-settings");
+}
+
+export function fetchAdminSettings() {
+  return request<{ settings: RuntimeSettings }>("/api/admin/settings");
+}
+
+export function updateAdminSettings(settings: Record<string, number>) {
+  return request<{ settings: RuntimeSettings }>("/api/admin/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ settings }),
+  });
 }
 
 export function fetchTreeState() {

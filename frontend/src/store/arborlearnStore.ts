@@ -20,6 +20,7 @@ import {
   resumeDemoNotebook as resumeDemoNotebookRequest,
   setAuthToken,
   type AuthUser,
+  upgradeDemoAccount,
   uploadNodeFile,
 } from "../lib/api";
 import type { BackfillSourceMetadata, ChatMessage, KnowledgeNode, SelectionDraft, SkillTemplate, UploadedFile } from "../types/arborlearn";
@@ -401,7 +402,10 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
   register: async (email, password, displayName) => {
     set({ authStatus: "checking", authError: null });
     try {
-      const response = await registerRequest({ email, password, displayName });
+      const state = get();
+      const response = state.user?.isTemporary
+        ? await upgradeDemoAccount({ email, password, displayName })
+        : await registerRequest({ email, password, displayName });
       setAuthToken(response.token);
       set({ user: response.user, authStatus: "authenticated", authError: null });
       await get().hydrateFromBackend();
@@ -473,7 +477,8 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       set({ apiStatus: "idle", apiError: null });
       return;
     }
-    set({ apiStatus: "loading", apiError: null });
+    const shouldShowGlobalLoading = Object.keys(get().nodes).length === 0;
+    set({ apiStatus: shouldShowGlobalLoading ? "loading" : "ready", apiError: null });
     try {
       const state = await fetchTreeState();
       const previousActiveNodeId = get().activeNodeId;
@@ -482,13 +487,15 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
         getSavedActiveNodeId(state.nodes) ??
         state.rootIds[0] ??
         "";
+      const activeNode = activeNodeId ? state.nodes[activeNodeId] : null;
+      const compareNodeId = activeNode?.parentId && state.nodes[activeNode.parentId] ? activeNode.parentId : null;
       set({
         nodes: state.nodes,
         rootIds: state.rootIds,
         pinnedRootIds: state.pinnedRootIds,
         filesByNode: {},
         activeNodeId,
-        compareNodeId: null,
+        compareNodeId,
         selectionDraft: null,
         apiStatus: "ready",
         apiError: null,

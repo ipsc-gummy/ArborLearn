@@ -7,20 +7,24 @@ import {
   CircleUserRound,
   Github,
   HelpCircle,
+  KeyRound,
   LogIn,
   LogOut,
   MessageSquareWarning,
   Monitor,
   Moon,
+  ShieldCheck,
   Settings,
   Star,
   Sun,
   UserPlus,
+  Wallet as WalletIcon,
   X,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { WalletMenu } from "./WalletMenu";
 import { cn } from "../lib/utils";
-import type { AuthUser } from "../lib/api";
+import { changePassword, fetchAdminSettings, updateAdminSettings, type AuthUser, type RuntimeSettings } from "../lib/api";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type AuthDialogMode = "login" | "register";
@@ -41,6 +45,7 @@ interface AuthDialogProps {
   initialMode?: AuthDialogMode;
   authStatus: "checking" | "authenticated" | "anonymous" | "error";
   authError: string | null;
+  user: AuthUser | null;
   onClose: () => void;
   onLogin: (email: string, password: string) => Promise<void>;
   onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
@@ -153,6 +158,8 @@ export function SettingsMenu({ themeMode, onThemeChange }: SettingsMenuProps) {
 export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [accountInfoOpen, setAccountInfoOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
   const avatar = (
     <button
       className="flex h-9 w-9 items-center justify-center rounded-full border border-[#dadce0] bg-[#f1f3f4] text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#e8eaed] dark:border-transparent dark:bg-[#f1f3f4] dark:text-[#202124] dark:hover:bg-white"
@@ -190,6 +197,45 @@ export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps)
                 setAccountInfoOpen(true);
               }}
             />
+            <WalletMenu
+              user={user}
+              trigger={
+                <button className="tl-hover flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left">
+                  <WalletIcon className="h-4 w-4" />
+                  <span>钱包</span>
+                </button>
+              }
+            />
+            {user.isTemporary && (
+              <MenuButton
+                icon={UserPlus}
+                label="绑定正式账号"
+                onClick={() => {
+                  setAccountMenuOpen(false);
+                  onRequestAuth("register");
+                }}
+              />
+            )}
+            {user.isAdmin && (
+              <MenuButton
+                icon={ShieldCheck}
+                label="后台设置"
+                onClick={() => {
+                  setAccountMenuOpen(false);
+                  setAdminSettingsOpen(true);
+                }}
+              />
+            )}
+            {!user.isTemporary && (
+              <MenuButton
+                icon={KeyRound}
+                label="修改密码"
+                onClick={() => {
+                  setAccountMenuOpen(false);
+                  setPasswordDialogOpen(true);
+                }}
+              />
+            )}
             <button
               className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-destructive hover:bg-destructive/10"
               onClick={onLogout}
@@ -228,7 +274,227 @@ export function AccountMenu({ user, onLogout, onRequestAuth }: AccountMenuProps)
         </div>,
         document.body,
       )}
+      {passwordDialogOpen && typeof document !== "undefined" &&
+        createPortal(
+          <ChangePasswordDialog onClose={() => setPasswordDialogOpen(false)} />,
+          document.body,
+        )}
+      {adminSettingsOpen && typeof document !== "undefined" &&
+        createPortal(
+          <AdminSettingsDialog onClose={() => setAdminSettingsOpen(false)} />,
+          document.body,
+        )}
     </>
+  );
+}
+
+function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const canSubmit = currentPassword.length > 0 && newPassword.length >= 8 && confirmPassword.length >= 8 && status !== "saving";
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage(null);
+    if (newPassword !== confirmPassword) {
+      setStatus("error");
+      setMessage("两次输入的新密码不一致。");
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setStatus("error");
+      setMessage("新密码不能和当前密码相同。");
+      return;
+    }
+    setStatus("saving");
+    try {
+      await changePassword({ currentPassword, newPassword });
+      setStatus("success");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("密码已更新，下次登录请使用新密码。");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "修改密码失败");
+    }
+  };
+
+  return (
+    <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+      <div className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-lg font-semibold">修改密码</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              输入当前密码后设置新密码。新密码至少 8 位。
+            </p>
+          </div>
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭修改密码窗口">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form className="space-y-3" onSubmit={submit}>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">当前密码</span>
+            <input
+              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">新密码</span>
+            <input
+              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
+            <input
+              className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+            />
+          </label>
+
+          {message && (
+            <p className={cn("rounded-lg px-3 py-2 text-xs", status === "success" ? "bg-primary/8 text-primary" : "bg-destructive/10 text-destructive")}>
+              {message}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
+              关闭
+            </Button>
+            <Button type="submit" variant="primary" disabled={!canSubmit}>
+              {status === "saving" ? "保存中..." : "保存新密码"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AdminSettingsDialog({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useState<RuntimeSettings | null>(null);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [status, setStatus] = useState<"loading" | "ready" | "saving" | "error">("loading");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    void fetchAdminSettings()
+      .then((response) => {
+        if (cancelled) return;
+        setSettings(response.settings);
+        setDraft(Object.fromEntries(Object.entries(response.settings).map(([key, setting]) => [key, setting.value])));
+        setStatus("ready");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setStatus("error");
+        setMessage(error instanceof Error ? error.message : "无法加载后台设置");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async () => {
+    setStatus("saving");
+    setMessage(null);
+    try {
+      const response = await updateAdminSettings(draft);
+      setSettings(response.settings);
+      setDraft(Object.fromEntries(Object.entries(response.settings).map(([key, setting]) => [key, setting.value])));
+      setStatus("ready");
+      setMessage("设置已保存，用户刷新页面后生效。");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : "保存失败");
+    }
+  };
+
+  return (
+    <div className="tl-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+      <div className="tl-modal-panel tl-panel max-h-[86vh] w-full max-w-2xl overflow-auto rounded-2xl border p-5 shadow-panel">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-lg font-semibold">后台设置</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              调整演示账号提示阈值和保留策略。建议小步修改，观察转化和使用体验后再继续调。
+            </p>
+          </div>
+          <button className="tl-hover rounded-full p-2" onClick={onClose} aria-label="关闭后台设置">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {status === "loading" && <p className="text-sm text-muted-foreground">正在加载设置...</p>}
+        {settings && (
+          <div className="grid gap-3">
+            {Object.entries(settings).map(([key, setting]) => (
+              <label key={key} className="rounded-xl border border-border bg-muted/25 p-3">
+                <span className="block text-sm font-semibold">{setting.label}</span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  范围 {setting.min} - {setting.max}，默认 {setting.default}
+                </span>
+                <input
+                  type="number"
+                  min={setting.min}
+                  max={setting.max}
+                  value={draft[key] ?? setting.value}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value);
+                    setDraft((current) => ({
+                      ...current,
+                      [key]: Number.isFinite(nextValue) ? nextValue : setting.value,
+                    }));
+                  }}
+                  className="tl-input mt-2 h-10 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </label>
+            ))}
+          </div>
+        )}
+
+        {message && (
+          <p className={cn("mt-4 rounded-lg px-3 py-2 text-sm", status === "error" ? "bg-destructive/10 text-destructive" : "bg-primary/8 text-primary")}>
+            {message}
+          </p>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>
+            关闭
+          </Button>
+          <Button variant="primary" onClick={save} disabled={!settings || status === "saving" || status === "loading"}>
+            {status === "saving" ? "保存中..." : "保存设置"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -237,6 +503,7 @@ export function AuthDialog({
   initialMode = "login",
   authStatus,
   authError,
+  user,
   onClose,
   onLogin,
   onRegister,
@@ -251,6 +518,8 @@ export function AuthDialog({
   const normalizedEmail = email.trim();
   const hasRequiredCredentials = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && password.length >= 8;
   const canSubmit = hasRequiredCredentials && !loading;
+  const isDemoUpgrade = Boolean(user?.isTemporary && mode === "register");
+  const isOpeningDemoUpgrade = Boolean(user?.isTemporary && initialMode === "register");
 
   useEffect(() => {
     if (!open) return;
@@ -259,11 +528,11 @@ export function AuthDialog({
   }, [initialMode, open]);
 
   useEffect(() => {
-    if (open && authStatus === "authenticated") {
+    if (open && authStatus === "authenticated" && !isDemoUpgrade && !isOpeningDemoUpgrade) {
       setPassword("");
       onClose();
     }
-  }, [authStatus, onClose, open]);
+  }, [authStatus, isDemoUpgrade, isOpeningDemoUpgrade, onClose, open]);
 
   if (!open) return null;
 
@@ -290,6 +559,7 @@ export function AuthDialog({
     setLocalError(null);
     try {
       await onCreateDemoSession();
+      onClose();
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "进入演示失败");
     }

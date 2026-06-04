@@ -44,6 +44,8 @@ interface NotebookDashboardProps {
   onRegister: (email: string, password: string, displayName?: string) => Promise<void>;
   onLogout: () => void;
   onRequestAuth: (mode?: AuthDialogMode) => void;
+  demoUpgradeLocked?: boolean;
+  onRequireDemoUpgrade?: () => void;
 }
 
 interface DeleteTarget {
@@ -145,6 +147,8 @@ export function NotebookDashboard({
   onRegister,
   onLogout,
   onRequestAuth,
+  demoUpgradeLocked = false,
+  onRequireDemoUpgrade,
 }: NotebookDashboardProps) {
   const nodes = useArborLearnStore((state) => state.nodes);
   const rootIds = useArborLearnStore((state) => state.rootIds);
@@ -201,6 +205,10 @@ export function NotebookDashboard({
   const handleCreateNotebook = () => {
     if (!isLoggedIn) {
       onRequestAuth("login");
+      return;
+    }
+    if (demoUpgradeLocked) {
+      onRequireDemoUpgrade?.();
       return;
     }
     // 创建根节点后立即打开工作区，让用户从新笔记本继续学习。
