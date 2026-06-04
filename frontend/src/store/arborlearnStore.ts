@@ -473,7 +473,8 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       set({ apiStatus: "idle", apiError: null });
       return;
     }
-    set({ apiStatus: "loading", apiError: null });
+    const shouldShowGlobalLoading = Object.keys(get().nodes).length === 0;
+    set({ apiStatus: shouldShowGlobalLoading ? "loading" : "ready", apiError: null });
     try {
       const state = await fetchTreeState();
       const previousActiveNodeId = get().activeNodeId;
@@ -482,13 +483,15 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
         getSavedActiveNodeId(state.nodes) ??
         state.rootIds[0] ??
         "";
+      const activeNode = activeNodeId ? state.nodes[activeNodeId] : null;
+      const compareNodeId = activeNode?.parentId && state.nodes[activeNode.parentId] ? activeNode.parentId : null;
       set({
         nodes: state.nodes,
         rootIds: state.rootIds,
         pinnedRootIds: state.pinnedRootIds,
         filesByNode: {},
         activeNodeId,
-        compareNodeId: null,
+        compareNodeId,
         selectionDraft: null,
         apiStatus: "ready",
         apiError: null,
