@@ -933,20 +933,23 @@ export function AuthDialog({
   const loading = authStatus === "checking" || localLoading;
   const normalizedEmail = email.trim();
   const normalizedVerificationCode = verificationCode.replace(/\D/g, "");
-  const hasRequiredCredentials = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && password.length >= 8;
+  const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+  const hasRequiredCredentials = emailIsValid && password.length >= 8;
+  const registerDetailsVisible = mode === "register" && emailIsValid;
+  const passwordMismatch = (registerDetailsVisible || mode === "reset-password") && confirmPassword.length > 0 && password !== confirmPassword;
+  const registerPasswordConfirmed = password.length >= 8 && confirmPassword.length >= 8 && password === confirmPassword;
   const isDemoUpgrade = Boolean(user?.isTemporary && mode === "register");
   const isOpeningDemoUpgrade = Boolean(user?.isTemporary && initialMode === "register");
-  const canRequestVerificationCode =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && !loading && verificationCooldown <= 0;
+  const canRequestVerificationCode = emailIsValid && !loading && verificationCooldown <= 0;
   const canSubmit =
     mode === "forgot-password"
-      ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && !loading
+      ? emailIsValid && !loading
       : mode === "reset-password"
-        ? password.length >= 8 && confirmPassword.length >= 8 && !loading
+        ? password.length >= 8 && confirmPassword.length >= 8 && password === confirmPassword && !loading
         : mode === "verify-email"
-          ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) && normalizedVerificationCode.length === 6 && !loading
+          ? emailIsValid && normalizedVerificationCode.length === 6 && !loading
           : mode === "register"
-            ? hasRequiredCredentials && normalizedVerificationCode.length === 6 && !loading
+            ? emailIsValid && registerPasswordConfirmed && normalizedVerificationCode.length === 6 && !loading
             : hasRequiredCredentials && !loading;
   const showOAuthLogin = mode === "login" || mode === "register";
 
@@ -1012,8 +1015,13 @@ export function AuthDialog({
           window.location.href = "/notebooks";
         }, 500);
       } else if (mode === "register") {
+        if (password !== confirmPassword) {
+          setLocalError("两次输入的密码不一致。");
+          return;
+        }
         await onRegister(email, password, displayName || undefined, normalizedVerificationCode);
         setPassword("");
+        setConfirmPassword("");
         setVerificationCode("");
       } else {
         await onLogin(email, password);
@@ -1129,7 +1137,15 @@ export function AuthDialog({
               <input
                 className="tl-input h-12 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (mode === "register") {
+                    setVerificationCode("");
+                    setVerificationCodeSent(false);
+                    setVerificationCooldown(0);
+                    setStatusMessage(null);
+                  }
+                }}
                 placeholder="you@example.com"
                 type="email"
                 autoComplete="email"
@@ -1137,7 +1153,7 @@ export function AuthDialog({
               />
             </label>
           )}
-          {mode === "register" && (
+          {registerDetailsVisible && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">邮箱验证码</span>
               <div className="tl-input flex h-12 w-full items-center rounded-xl border px-4 focus-within:ring-2 focus-within:ring-primary/20">
@@ -1166,7 +1182,7 @@ export function AuthDialog({
               </div>
             </label>
           )}
-          {mode === "register" && (
+          {registerDetailsVisible && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">昵称</span>
               <input
@@ -1193,7 +1209,7 @@ export function AuthDialog({
               />
             </label>
           )}
-          {(mode === "login" || mode === "register" || mode === "reset-password") && (
+          {(mode === "login" || registerDetailsVisible || mode === "reset-password") && (
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">{mode === "reset-password" ? "新密码" : "密码"}</span>
               <input
@@ -1208,20 +1224,25 @@ export function AuthDialog({
               />
             </label>
           )}
-          {mode === "reset-password" && (
+          {(registerDetailsVisible || mode === "reset-password") && (
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">确认新密码</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">{mode === "reset-password" ? "确认新密码" : "确认密码"}</span>
               <input
-                className="tl-input h-11 w-full rounded-lg border px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                className="tl-input h-12 w-full rounded-xl border px-4 text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="再次输入新密码"
+                placeholder={mode === "reset-password" ? "再次输入新密码" : "再次输入密码"}
                 type="password"
                 autoComplete="new-password"
                 minLength={8}
                 required
               />
             </label>
+          )}
+          {passwordMismatch && (
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              两次输入的密码不一致。
+            </p>
           )}
 
           {displayError && (
