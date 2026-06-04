@@ -144,6 +144,24 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_provider
               ON oauth_accounts(user_id, provider);
 
+            CREATE TABLE IF NOT EXISTS email_verification_codes (
+              id TEXT PRIMARY KEY,
+              email TEXT NOT NULL,
+              code_hash TEXT NOT NULL,
+              purpose TEXT NOT NULL CHECK(purpose IN ('register', 'reset_password')),
+              expires_at TEXT NOT NULL,
+              used INTEGER NOT NULL DEFAULT 0,
+              attempt_count INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              last_sent_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_email_verification_codes_email_purpose
+              ON email_verification_codes(email, purpose, created_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_email_verification_codes_recent
+              ON email_verification_codes(email, purpose, last_sent_at DESC);
+
             CREATE TABLE IF NOT EXISTS app_settings (
               key TEXT PRIMARY KEY,
               value TEXT NOT NULL,

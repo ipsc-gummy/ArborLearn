@@ -34,7 +34,7 @@ import {
   getOAuthLoginUrl,
   resetPassword,
   sendAccountVerificationEmail,
-  sendVerificationEmail,
+  sendEmailCode,
   setAuthToken,
   startOAuthLink,
   unlinkOAuthAccount,
@@ -1042,16 +1042,17 @@ export function AuthDialog({
     setStatusMessage(null);
     try {
       setLocalLoading(true);
-      await sendVerificationEmail({ email: normalizedEmail });
+      const response = await sendEmailCode({ email: normalizedEmail, purpose: "register" });
       setStatusMessage("验证码已发送，请查收邮箱。");
+      if (response.message) setStatusMessage(response.message);
       setVerificationCodeSent(true);
       setVerificationCooldown(60);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "发送验证邮件失败";
-      if (message.includes("Please wait before requesting another email")) {
+      const message = error instanceof Error ? error.message : "验证码发送失败，请稍后重试";
+      if (message.includes("稍后") || message.includes("Please wait before requesting another email")) {
         setVerificationCodeSent(true);
         setVerificationCooldown(60);
-        setLocalError("验证码刚刚发送过，请稍后再试。");
+        setLocalError(message);
       } else {
         setLocalError(message);
       }
@@ -1158,7 +1159,7 @@ export function AuthDialog({
                 >
                   {verificationCodeSent
                     ? verificationCooldown > 0
-                      ? `重新发送（${verificationCooldown}）`
+                      ? `重新发送（${verificationCooldown}s）`
                       : "重新发送"
                     : "发送验证码"}
                 </button>
@@ -1241,7 +1242,7 @@ export function AuthDialog({
               disabled={!canRequestVerificationCode}
             >
               <MailCheck className="h-4 w-4" />
-              {verificationCooldown > 0 ? `重新发送（${verificationCooldown}）` : "重新发送"}
+              {verificationCooldown > 0 ? `重新发送（${verificationCooldown}s）` : "重新发送"}
             </button>
           )}
 

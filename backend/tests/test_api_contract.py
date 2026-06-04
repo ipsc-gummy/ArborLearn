@@ -4,6 +4,7 @@ import json
 import sys
 import types
 import uuid
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -53,6 +54,54 @@ def register(client: TestClient, label: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "email": email,
     }
+
+
+def test_register_requires_email_code_when_enabled(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import main
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setenv("EMAIL_CODE_SECRET", "test-email-code-secret")
+    sent_codes: list[tuple[str, str]] = []
+    monkeypatch.setattr(main, "send_verification_code_email", lambda email, code: sent_codes.append((email, code)))
+
+    email = f"verified-{uuid.uuid4().hex[:8]}@example.com"
+    send_response = client.post(
+        "/api/auth/send-email-code",
+        json={"email": email, "purpose": "register"},
+    )
+
+    assert send_response.status_code == 200
+    assert send_response.json()["message"] == "验证码已发送，请查收邮箱"
+    assert len(sent_codes) == 1
+    assert sent_codes[0][0] == email
+    assert sent_codes[0][1].isdigit()
+    assert len(sent_codes[0][1]) == 6
+
+    wrong_code = "000000" if sent_codes[0][1] != "000000" else "111111"
+    bad_register = client.post(
+        "/api/auth/register",
+        json={
+            "email": email,
+            "password": "ArborLearnTest2026!",
+            "displayName": "Verified User",
+            "verificationCode": wrong_code,
+        },
+    )
+    assert bad_register.status_code == 400
+    assert bad_register.json()["detail"] == "验证码错误或已过期"
+
+    good_register = client.post(
+        "/api/auth/register",
+        json={
+            "email": email,
+            "password": "ArborLearnTest2026!",
+            "displayName": "Verified User",
+            "verificationCode": sent_codes[0][1],
+        },
+    )
+    assert good_register.status_code == 201
+    assert good_register.json()["user"]["email"] == email
+    assert good_register.json()["user"]["emailVerified"] is True
 
 
 def create_root(client: TestClient, headers: dict[str, str], root_id: str | None = None) -> dict:
@@ -331,6 +380,7 @@ def test_email_verification_required_for_registration_and_demo_upgrade(tmp_path:
     monkeypatch.setenv("MODEL_API_KEY", "test-key")
     monkeypatch.setenv("ENABLE_RAG", "false")
     monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setenv("EMAIL_CODE_SECRET", "test-email-code-secret")
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setenv("LANCEDB_CONFIG_DIR", str(tmp_path / "lancedb-config"))
     (tmp_path / "appdata").mkdir(parents=True, exist_ok=True)
@@ -339,7 +389,7 @@ def test_email_verification_required_for_registration_and_demo_upgrade(tmp_path:
     from app import main
 
     sent_codes: dict[str, str] = {}
-    monkeypatch.setattr(main, "send_verification_email", lambda email, display_name, code: sent_codes.setdefault(email, code))
+    monkeypatch.setattr(main, "send_verification_code_email", lambda email, code: sent_codes.setdefault(email, code))
 
     with TestClient(main.app) as test_client:
         demo = test_client.post("/api/auth/demo", json={})
@@ -354,8 +404,9 @@ def test_email_verification_required_for_registration_and_demo_upgrade(tmp_path:
         )
         assert blocked_upgrade.status_code == 400
 
-        send_upgrade_code = test_client.post("/api/auth/send-verification-email", json={"email": upgrade_email})
+        send_upgrade_code = test_client.post("/api/auth/send-email-code", json={"email": upgrade_email, "purpose": "register"})
         assert send_upgrade_code.status_code == 200
+        assert send_upgrade_code.json()["message"] == "验证码已发送，请查收邮箱"
         upgraded = test_client.post(
             "/api/auth/upgrade-demo",
             headers=demo_headers,
@@ -377,8 +428,9 @@ def test_email_verification_required_for_registration_and_demo_upgrade(tmp_path:
         )
         assert blocked_register.status_code == 400
 
-        send_register_code = test_client.post("/api/auth/send-verification-email", json={"email": register_email})
+        send_register_code = test_client.post("/api/auth/send-email-code", json={"email": register_email, "purpose": "register"})
         assert send_register_code.status_code == 200
+        assert send_register_code.json()["message"] == "验证码已发送，请查收邮箱"
         registered = test_client.post(
             "/api/auth/register",
             json={

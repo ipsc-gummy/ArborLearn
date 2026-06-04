@@ -77,6 +77,15 @@ CORS_ORIGINS=http://your_server_ip,https://your_domain
 
 DATABASE_PATH=data/arborlearn.sqlite3
 
+EMAIL_VERIFICATION_REQUIRED=true
+SMTP_HOST=smtpdm.aliyun.com
+SMTP_PORT=465
+SMTP_USER=no-reply@arborlearn.top
+SMTP_PASSWORD=your_aliyun_directmail_smtp_password
+SMTP_FROM=no-reply@arborlearn.top
+SMTP_FROM_NAME=ArborLearn
+EMAIL_CODE_SECRET=replace_with_a_long_random_value
+
 ENABLE_RAG=false
 VECTOR_DB_PATH=data/lancedb
 VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
@@ -87,6 +96,13 @@ VECTOR_EMBEDDING_MODEL=all-MiniLM-L6-v2
 # BRAVE_SEARCH_API_KEY=...
 # SEARXNG_BASE_URL=http://127.0.0.1:8080
 ```
+
+邮箱验证码部署注意：
+
+- 阿里云 ECS 使用阿里云 DirectMail SMTP SSL，端口固定为 `465`，不要使用 `25` 端口。
+- `SMTP_PASSWORD` 是发信地址的 SMTP 密码，只写入服务器真实 `.env`，不要提交到 Git。
+- `EMAIL_CODE_SECRET` 用于验证码 hash，生产环境必须设置为长随机字符串。
+- 修改 `backend/.env` 后执行 `systemctl restart arborlearn-backend.service`。
 
 本地健康检查：
 

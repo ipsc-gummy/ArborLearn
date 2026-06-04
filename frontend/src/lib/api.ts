@@ -321,11 +321,15 @@ export function login(payload: { email: string; password: string }) {
   });
 }
 
-export function sendVerificationEmail(payload: { email: string }) {
-  return request<{ ok: true }>("/api/auth/send-verification-email", {
+export function sendEmailCode(payload: { email: string; purpose: "register" }) {
+  return request<{ message: string }>("/api/auth/send-email-code", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function sendVerificationEmail(payload: { email: string }) {
+  return sendEmailCode({ email: payload.email, purpose: "register" });
 }
 
 export function sendAccountVerificationEmail() {

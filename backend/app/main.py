@@ -3,19 +3,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
 import shutil
 import sqlite3
-import smtplib
-import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -83,6 +81,7 @@ from .db import (
     uid,
 )
 from .effective_context import content_hash, list_effective_messages
+from .email_service import EmailConfigurationError, EmailDeliveryError, send_email, send_verification_code_email
 from .file_uploads import extract_stored_file, prepare_uploaded_file
 from .long_task_context import build_step_context
 from .long_task_runner import LongTaskRunner
@@ -120,11 +119,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+logger = logging.getLogger(__name__)
+
 LEGACY_DEMO_ACCOUNT_EMAIL = "demo@arborlearn.local"
 DEMO_SESSION_TTL_HOURS = 24
-EMAIL_VERIFICATION_TOKEN_TTL_HOURS = 24
 PASSWORD_RESET_TOKEN_TTL_MINUTES = 60
 EMAIL_VERIFICATION_CODE_LENGTH = 6
+EMAIL_CODE_TTL_MINUTES = 10
+EMAIL_CODE_RESEND_SECONDS = 60
+EMAIL_CODE_DAILY_LIMIT = 10
+EMAIL_CODE_MAX_ATTEMPTS = 5
+EMAIL_CODE_ERROR_MESSAGE = "验证码错误或已过期"
 OAUTH_STATE_TTL_MINUTES = 10
 OAUTH_PROVIDER_GITHUB = "github"
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
@@ -231,6 +236,11 @@ class PasswordChangeRequest(BaseModel):
 
 class EmailRequest(BaseModel):
     email: str
+
+
+class EmailCodeRequest(BaseModel):
+    email: str
+    purpose: Literal["register"] = "register"
 
 
 class TokenRequest(BaseModel):
@@ -800,6 +810,35 @@ def upgrade_demo_with_oauth(conn: sqlite3.Connection, provider: str, profile: di
     return dict(updated_user)
 
 
+def email_code_secret() -> str:
+    secret = os.getenv("EMAIL_CODE_SECRET", "").strip()
+    if secret:
+        return secret
+    environment = (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "development").strip().lower()
+    if environment in {"prod", "production"}:
+        raise HTTPException(status_code=500, detail="验证码服务未配置")
+    # Development-only fallback. Production must set EMAIL_CODE_SECRET.
+    return "arborlearn-email-code-development-secret"
+
+
+def email_code_hash(code: str, email: str, purpose: str) -> str:
+    normalized_email = normalize_email(email)
+    return hashlib.sha256((code + normalized_email + purpose + email_code_secret()).encode("utf-8")).hexdigest()
+
+
+def normalize_email_code(code: str | None) -> str:
+    return re.sub(r"\D", "", code or "")
+
+
+def parse_iso_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
+def debug_log_email_code(email: str, purpose: str, code: str) -> None:
+    if os.getenv("DEBUG_EMAIL_CODES", "").lower() in {"1", "true", "yes"}:
+        logger.info("Email verification code for %s (%s): %s", email, purpose, code)
+
+
 def create_auth_token(conn: sqlite3.Connection, user_id: str, token_type: str, ttl: timedelta) -> str:
     raw_token = secrets.token_urlsafe(32)
     ts = now_iso()
@@ -837,24 +876,19 @@ def create_email_verification_code(conn: sqlite3.Connection, user_id: str, ttl: 
 
 
 def create_pending_registration_code(conn: sqlite3.Connection, email: str, ttl: timedelta) -> str:
+    purpose = "register"
+    email = normalize_email(email)
     code = "".join(str(secrets.randbelow(10)) for _ in range(EMAIL_VERIFICATION_CODE_LENGTH))
     ts = now_iso()
     expires_at = (datetime.now(timezone.utc) + ttl).isoformat()
     conn.execute(
         """
-        UPDATE pending_email_verifications
-        SET used_at = ?
-        WHERE email = ? AND purpose = 'registration' AND used_at IS NULL
+        INSERT INTO email_verification_codes(id, email, code_hash, purpose, expires_at, used, attempt_count, created_at, last_sent_at)
+        VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
         """,
-        (ts, email),
+        (uid("email-code"), email, email_code_hash(code, email, purpose), purpose, expires_at, ts, ts),
     )
-    conn.execute(
-        """
-        INSERT INTO pending_email_verifications(id, email, purpose, code_hash, expires_at, created_at)
-        VALUES (?, ?, 'registration', ?, ?, ?)
-        """,
-        (uid("pending-email"), email, token_hash(code), expires_at, ts),
-    )
+    debug_log_email_code(email, purpose, code)
     return code
 
 
@@ -881,30 +915,49 @@ def consume_auth_token(conn: sqlite3.Connection, raw_token: str, token_type: str
 
 
 def consume_pending_registration_code(conn: sqlite3.Connection, email: str, code: str | None) -> None:
-    normalized_code = re.sub(r"\D", "", code or "")
+    email = normalize_email(email)
+    purpose = "register"
+    normalized_code = normalize_email_code(code)
     if len(normalized_code) != EMAIL_VERIFICATION_CODE_LENGTH:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+        raise HTTPException(status_code=400, detail=EMAIL_CODE_ERROR_MESSAGE)
     row = conn.execute(
         """
         SELECT *
-        FROM pending_email_verifications
+        FROM email_verification_codes
         WHERE email = ?
-          AND purpose = 'registration'
-          AND code_hash = ?
+          AND purpose = ?
+          AND used = 0
         ORDER BY created_at DESC
         LIMIT 1
         """,
-        (email, token_hash(normalized_code)),
+        (email, purpose),
     ).fetchone()
-    if not row or row["used_at"]:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
+    if not row:
+        raise HTTPException(status_code=400, detail=EMAIL_CODE_ERROR_MESSAGE)
+
+    def fail_with_attempt() -> None:
+        conn.execute(
+            """
+            UPDATE email_verification_codes
+            SET attempt_count = attempt_count + 1
+            WHERE id = ?
+            """,
+            (row["id"],),
+        )
+        conn.commit()
+        raise HTTPException(status_code=400, detail=EMAIL_CODE_ERROR_MESSAGE)
+
     try:
-        expires_at = datetime.fromisoformat(row["expires_at"])
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code") from exc
+        expires_at = parse_iso_datetime(row["expires_at"])
+    except ValueError:
+        fail_with_attempt()
     if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-    conn.execute("UPDATE pending_email_verifications SET used_at = ? WHERE id = ?", (now_iso(), row["id"]))
+        fail_with_attempt()
+    if int(row["attempt_count"] or 0) >= EMAIL_CODE_MAX_ATTEMPTS:
+        raise HTTPException(status_code=400, detail=EMAIL_CODE_ERROR_MESSAGE)
+    if row["code_hash"] != email_code_hash(normalized_code, email, purpose):
+        fail_with_attempt()
+    conn.execute("UPDATE email_verification_codes SET used = 1 WHERE id = ?", (row["id"],))
 
 
 def consume_email_verification_code(conn: sqlite3.Connection, email: str, code: str) -> sqlite3.Row:
@@ -936,52 +989,54 @@ def consume_email_verification_code(conn: sqlite3.Connection, email: str, code: 
     return row
 
 
+def validate_email_address(raw_email: str) -> str:
+    email = normalize_email(raw_email)
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    return email
+
+
+def enforce_email_code_send_limits(conn: sqlite3.Connection, email: str, purpose: str) -> None:
+    recent = conn.execute(
+        """
+        SELECT last_sent_at
+        FROM email_verification_codes
+        WHERE email = ? AND purpose = ?
+        ORDER BY last_sent_at DESC
+        LIMIT 1
+        """,
+        (email, purpose),
+    ).fetchone()
+    if recent:
+        try:
+            last_sent_at = parse_iso_datetime(recent["last_sent_at"])
+        except ValueError:
+            last_sent_at = datetime.now(timezone.utc) - timedelta(seconds=EMAIL_CODE_RESEND_SECONDS + 1)
+        if last_sent_at > datetime.now(timezone.utc) - timedelta(seconds=EMAIL_CODE_RESEND_SECONDS):
+            raise HTTPException(status_code=429, detail="验证码刚刚发送过，请稍后再试")
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    count = conn.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM email_verification_codes
+        WHERE email = ? AND purpose = ? AND last_sent_at >= ?
+        """,
+        (email, purpose, since),
+    ).fetchone()["count"]
+    if int(count or 0) >= EMAIL_CODE_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="该邮箱 24 小时内验证码发送次数过多，请稍后再试")
+
+
 def build_auth_link(path: str, token: str) -> str:
     return f"{frontend_base_url()}{path}?{urlencode({'token': token})}"
 
 
-def send_email(to_email: str, subject: str, body: str) -> None:
-    host = os.getenv("SMTP_HOST", "").strip()
-    from_email = (os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "no-reply@arborlearn.local").strip()
-    if not host:
-        print(f"[email disabled] To: {to_email} | {subject}\n{body}")
-        return
-
-    port = int(os.getenv("SMTP_PORT", "587"))
-    username = os.getenv("SMTP_USER", "").strip()
-    password = os.getenv("SMTP_PASSWORD", "")
-    use_ssl = os.getenv("SMTP_USE_SSL", "").lower() in {"1", "true", "yes"}
-
-    message = EmailMessage()
-    message["From"] = from_email
-    message["To"] = to_email
-    message["Subject"] = subject
-    message.set_content(body)
-
-    context = ssl.create_default_context()
-    if use_ssl:
-        with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as smtp:
-            if username:
-                smtp.login(username, password)
-            smtp.send_message(message)
-        return
-
-    with smtplib.SMTP(host, port, timeout=20) as smtp:
-        smtp.starttls(context=context)
-        if username:
-            smtp.login(username, password)
-        smtp.send_message(message)
-
-
 def send_verification_email(email: str, display_name: str, code: str) -> None:
     try:
-        send_email(
-            email,
-            "Your ArborLearn verification code",
-            f"Hi {display_name},\n\nYour ArborLearn verification code is:\n\n{code}\n\nEnter this code on the registration or login page. This code expires in 24 hours.",
-        )
+        send_verification_code_email(email, code)
     except Exception as exc:
-        print(f"[email error] Unable to send verification email to {email}: {exc}")
+        logger.warning("Unable to send verification email to %s", email, exc_info=True)
 
 
 def send_password_reset_email(email: str, display_name: str, token: str) -> None:
@@ -993,7 +1048,7 @@ def send_password_reset_email(email: str, display_name: str, token: str) -> None
             f"Hi {display_name},\n\nOpen this link to reset your ArborLearn password:\n{link}\n\nThis link expires in 60 minutes. If you did not request it, you can ignore this email.",
         )
     except Exception as exc:
-        print(f"[email error] Unable to send password reset email to {email}: {exc}")
+        logger.warning("Unable to send password reset email to %s", email, exc_info=True)
 
 
 def _setting_default(key: str) -> int:
@@ -2217,9 +2272,7 @@ def confirm_oauth_login(payload: TokenRequest) -> dict:
 
 @app.post("/api/auth/register", status_code=201)
 def register(payload: AuthRequest) -> dict:
-    email = normalize_email(payload.email)
-    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    email = validate_email_address(payload.email)
 
     display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
     user_id = uid("user")
@@ -2255,9 +2308,7 @@ def upgrade_demo_account(payload: DemoUpgradeRequest, background_tasks: Backgrou
     if not user.get("is_temporary"):
         raise HTTPException(status_code=400, detail="Current account is already permanent")
 
-    email = normalize_email(payload.email)
-    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    email = validate_email_address(payload.email)
 
     display_name = (payload.displayName or email.split("@", 1)[0]).strip()[:64] or "ArborLearn User"
     ts = now_iso()
@@ -2348,11 +2399,9 @@ def login(payload: AuthRequest) -> dict:
     return {"token": create_token(user["id"]), "user": serialize_user(dict(user))}
 
 
-@app.post("/api/auth/send-verification-email")
-def resend_verification_email(payload: EmailRequest, background_tasks: BackgroundTasks) -> dict:
-    email = normalize_email(payload.email)
-    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+@app.post("/api/auth/send-email-code")
+def send_email_code(payload: EmailCodeRequest) -> dict:
+    email = validate_email_address(payload.email)
     with connect() as conn:
         existing_user = conn.execute(
             """
@@ -2364,28 +2413,23 @@ def resend_verification_email(payload: EmailRequest, background_tasks: Backgroun
         ).fetchone()
         if existing_user:
             raise HTTPException(status_code=409, detail="Email is already registered")
-        recent = conn.execute(
-            """
-            SELECT created_at
-            FROM pending_email_verifications
-            WHERE email = ? AND purpose = 'registration'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (email,),
-        ).fetchone()
-        if recent:
-            created_at = datetime.fromisoformat(recent["created_at"])
-            if created_at > datetime.now(timezone.utc) - timedelta(seconds=60):
-                raise HTTPException(status_code=429, detail="Please wait before requesting another email")
+        enforce_email_code_send_limits(conn, email, payload.purpose)
         verification_code = create_pending_registration_code(
             conn,
             email,
-            timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS),
+            timedelta(minutes=EMAIL_CODE_TTL_MINUTES),
         )
-        display_name = email.split("@", 1)[0]
-        background_tasks.add_task(send_verification_email, email, display_name, verification_code)
-    return {"ok": True}
+        try:
+            send_verification_code_email(email, verification_code)
+        except (EmailConfigurationError, EmailDeliveryError) as exc:
+            logger.warning("Unable to send registration verification email to %s", email, exc_info=True)
+            raise HTTPException(status_code=502, detail="验证码发送失败，请稍后重试") from exc
+    return {"message": "验证码已发送，请查收邮箱"}
+
+
+@app.post("/api/auth/send-verification-email")
+def resend_verification_email(payload: EmailRequest) -> dict:
+    return send_email_code(EmailCodeRequest(email=payload.email, purpose="register"))
 
 
 @app.post("/api/auth/send-account-verification-email")
@@ -2411,7 +2455,7 @@ def send_account_verification_email(background_tasks: BackgroundTasks, user: dic
         verification_code = create_email_verification_code(
             conn,
             user["id"],
-            timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS),
+            timedelta(minutes=EMAIL_CODE_TTL_MINUTES),
         )
     background_tasks.add_task(send_verification_email, user["email"], user["display_name"], verification_code)
     return {"ok": True}

@@ -114,6 +114,10 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 | `MODEL_BASE_URL` | 是 | 默认 `https://api.deepseek.com` |
 | `MODEL_NAME` | 是 | 默认 `deepseek-v4-pro` |
 | `AUTH_SECRET` | 生产必填 | 登录 token 签名密钥，生产环境必须换成长随机值 |
+| `EMAIL_CODE_SECRET` | 生产必填 | 邮箱验证码 hash 密钥，生产环境必须换成长随机值 |
+| `SMTP_HOST` / `SMTP_PORT` | 开启验证码必填 | 阿里云 DirectMail 使用 `smtpdm.aliyun.com` + `465` |
+| `SMTP_USER` / `SMTP_PASSWORD` | 开启验证码必填 | 发信地址和 SMTP 密码，密码只写入真实 `.env` |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | 开启验证码必填 | 邮件发件人地址和显示名 |
 | `CORS_ORIGINS` | 是 | 允许访问后端的前端 origin 列表 |
 | `DATABASE_PATH` | 否 | SQLite 路径，默认 `backend/data/arborlearn.sqlite3` |
 | `ENABLE_RAG` | 否 | 是否启用 RAG |
@@ -126,9 +130,17 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 | --- | --- |
 | `VITE_API_BASE_URL` | 后端地址，本地默认 `http://127.0.0.1:8000`，生产环境通常使用同源 `/api` |
 
+邮箱验证码配置：
+
+- 注册前调用 `POST /api/auth/send-email-code` 发送 6 位验证码，`POST /api/auth/register` 需要携带 `verificationCode`。
+- 阿里云 ECS 部署使用 DirectMail SMTP SSL：`SMTP_HOST=smtpdm.aliyun.com`、`SMTP_PORT=465`，不要使用 25 端口。
+- `SMTP_PASSWORD` 和 `EMAIL_CODE_SECRET` 只写入真实 `backend/.env`，不要提交到 Git。
+- 验证码有效期 10 分钟，同一邮箱 60 秒内不能重复发送，24 小时最多发送 10 次，最多失败尝试 5 次。
+
 ## 核心 API
 
 - `POST /api/auth/register`
+- `POST /api/auth/send-email-code`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/tree`
@@ -300,6 +312,10 @@ Backend:
 | `MODEL_BASE_URL` | Yes | Default `https://api.deepseek.com` |
 | `MODEL_NAME` | Yes | Default `deepseek-v4-pro` |
 | `AUTH_SECRET` | Production | Signing secret for login tokens |
+| `EMAIL_CODE_SECRET` | Production | Secret for hashing email verification codes |
+| `SMTP_HOST` / `SMTP_PORT` | Required for email codes | Aliyun DirectMail uses `smtpdm.aliyun.com` + `465` |
+| `SMTP_USER` / `SMTP_PASSWORD` | Required for email codes | Sender address and SMTP password; never commit the password |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | Required for email codes | Sender address and display name |
 | `CORS_ORIGINS` | Yes | Allowed frontend origins |
 | `DATABASE_PATH` | No | SQLite path |
 | `ENABLE_RAG` | No | Enables retrieval-augmented context |
@@ -312,9 +328,16 @@ Frontend:
 | --- | --- |
 | `VITE_API_BASE_URL` | Backend URL. Local default is `http://127.0.0.1:8000`; production usually uses same-origin `/api`. |
 
+Email verification:
+
+- `POST /api/auth/send-email-code` sends a 6-digit registration code; `POST /api/auth/register` must include `verificationCode`.
+- On Aliyun ECS, use DirectMail SMTP SSL with `SMTP_HOST=smtpdm.aliyun.com` and `SMTP_PORT=465`; do not use port 25.
+- Keep `SMTP_PASSWORD` and `EMAIL_CODE_SECRET` only in the real `backend/.env`, never in Git.
+
 ## Core API
 
 - `POST /api/auth/register`
+- `POST /api/auth/send-email-code`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `GET /api/tree`

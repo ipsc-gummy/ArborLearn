@@ -34,7 +34,18 @@ MODEL_API_KEY=your_deepseek_key
 AUTH_SECRET=replace_with_a_long_random_value
 CORS_ORIGINS=http://your_server_ip
 DATABASE_PATH=data/arborlearn.sqlite3
+
+EMAIL_VERIFICATION_REQUIRED=true
+SMTP_HOST=smtpdm.aliyun.com
+SMTP_PORT=465
+SMTP_USER=no-reply@arborlearn.top
+SMTP_PASSWORD=your_aliyun_directmail_smtp_password
+SMTP_FROM=no-reply@arborlearn.top
+SMTP_FROM_NAME=ArborLearn
+EMAIL_CODE_SECRET=replace_with_a_long_random_value
 ```
+
+For Aliyun ECS, ArborLearn uses DirectMail over SMTP SSL on port `465`. Do not use port `25`, and do not commit the real `SMTP_PASSWORD` or `EMAIL_CODE_SECRET`.
 
 ## 3. Frontend
 

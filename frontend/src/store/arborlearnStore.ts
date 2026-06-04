@@ -402,6 +402,7 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
   },
   register: async (email, password, displayName, verificationCode) => {
     set({ authStatus: "checking", authError: null });
+    const isDemoUpgrade = Boolean(get().user?.isTemporary);
     try {
       const state = get();
       const response = state.user?.isTemporary
@@ -416,6 +417,13 @@ export const useArborLearnStore = create<ArborLearnState>((set, get) => ({
       clearAuthToken();
       set({ user: null, authStatus: "anonymous", authError: null });
     } catch (error) {
+      if (isDemoUpgrade) {
+        set({
+          authStatus: "authenticated",
+          authError: error instanceof Error ? error.message : "绑定正式账号失败",
+        });
+        throw error;
+      }
       clearAuthToken();
       set({
         authStatus: "error",

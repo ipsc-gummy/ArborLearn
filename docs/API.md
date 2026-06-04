@@ -77,7 +77,7 @@ Response:
 
 ### `POST /api/auth/register`
 
-注册用户并创建入门 notebook 与 Transformer 演示 notebook。
+校验邮箱验证码后注册用户，并创建入门 notebook 与 Transformer 演示 notebook。
 
 Request:
 
@@ -85,7 +85,8 @@ Request:
 {
   "email": "user@example.com",
   "password": "password with at least 8 chars",
-  "displayName": "Optional Name"
+  "displayName": "Optional Name",
+  "verificationCode": "123456"
 }
 ```
 
@@ -106,7 +107,37 @@ Response `201`:
 Errors:
 
 - `400` invalid email
+- `400` 验证码错误或已过期
 - `409` email already registered
+
+### `POST /api/auth/send-email-code`
+
+发送注册邮箱验证码。验证码通过 SMTP SSL 发送，不会在响应中返回。
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "purpose": "register"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "message": "验证码已发送，请查收邮箱"
+}
+```
+
+Errors:
+
+- `400` invalid email
+- `409` email already registered
+- `429` 验证码刚刚发送过，请稍后再试
+- `429` 该邮箱 24 小时内验证码发送次数过多，请稍后再试
+- `502` 验证码发送失败，请稍后重试
 
 ### `POST /api/auth/login`
 
