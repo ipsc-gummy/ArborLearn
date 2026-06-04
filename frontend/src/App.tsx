@@ -10,7 +10,7 @@ import { ProductGuidePage } from "./components/ProductGuidePage";
 import { SelectionBubble } from "./components/SelectionBubble";
 import { Workspace } from "./components/Workspace";
 import { AuthDialog, type AuthDialogMode, type ThemeMode } from "./components/AppMenus";
-import { fetchAppSettings, type RuntimeSettings } from "./lib/api";
+import { confirmOAuthLogin, fetchAppSettings, setAuthToken, type RuntimeSettings } from "./lib/api";
 import { useArborLearnStore } from "./store/arborlearnStore";
 
 const LAST_LOCATION_KEY = "arborlearn.lastLocation";
@@ -112,6 +112,7 @@ function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (segments[0] === "guide") return { kind: "guide" };
   if (segments[0] === "reset-password") return { kind: "landing" };
+  if (segments[0] === "oauth" && segments[1] === "callback") return { kind: "landing" };
   if (segments[0] === "notebooks" && segments[1]) {
     return {
       kind: "workspace",
@@ -228,6 +229,9 @@ export default function App() {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogMode, setAuthDialogMode] = useState<AuthDialogInitialMode>("login");
   const [authDialogToken, setAuthDialogToken] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthPending, setOauthPending] = useState<{ token: string; email: string; provider: string; redirect: string } | null>(null);
+  const [oauthPendingStatus, setOauthPendingStatus] = useState<"idle" | "saving" | "error">("idle");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
   const [onboardingChoiceOpen, setOnboardingChoiceOpen] = useState(false);
   const [newlyRegisteredUserId, setNewlyRegisteredUserId] = useState<string | null>(null);
@@ -264,6 +268,42 @@ export default function App() {
   useEffect(() => {
     void initializeAuth();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    if (location.pathname !== "/oauth/callback") return;
+    const params = new URLSearchParams(location.search);
+    const token = params.get("auth_token");
+    const error = params.get("oauth_error");
+    const pendingToken = params.get("oauth_pending_token");
+    const pendingEmail = params.get("oauth_pending_email");
+    const pendingProvider = params.get("oauth_pending_provider") || "github";
+    const redirect = params.get("redirect") || "/notebooks";
+    const safeRedirect = redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/notebooks";
+
+    if (token) {
+      setAuthToken(token);
+      setOauthError(null);
+      setOauthPending(null);
+      navigate(safeRedirect, { replace: true });
+      void initializeAuth();
+      return;
+    }
+
+    if (pendingToken && pendingEmail) {
+      setOauthError(null);
+      setOauthPending({ token: pendingToken, email: pendingEmail, provider: pendingProvider, redirect: safeRedirect });
+      setOauthPendingStatus("idle");
+      navigate("/", { replace: true });
+      return;
+    }
+
+    setOauthError(error || "GitHub 登录失败，请稍后再试。");
+    setOauthPending(null);
+    setAuthDialogMode("login");
+    setAuthDialogToken(null);
+    setAuthDialogOpen(true);
+    navigate("/", { replace: true });
+  }, [initializeAuth, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -463,7 +503,26 @@ export default function App() {
   const requestAuth = (mode: AuthDialogMode = "login") => {
     setAuthDialogMode(mode);
     setAuthDialogToken(null);
+    setOauthError(null);
+    setOauthPending(null);
     setAuthDialogOpen(true);
+  };
+
+  const confirmPendingOAuth = async () => {
+    if (!oauthPending) return;
+    setOauthPendingStatus("saving");
+    try {
+      const response = await confirmOAuthLogin({ token: oauthPending.token });
+      if (!response.token) throw new Error("GitHub 登录响应缺少认证令牌");
+      setAuthToken(response.token);
+      setOauthPending(null);
+      setOauthPendingStatus("idle");
+      navigate(response.redirect || oauthPending.redirect || "/notebooks", { replace: true });
+      await initializeAuth();
+    } catch (error) {
+      setOauthPendingStatus("error");
+      setOauthError(error instanceof Error ? error.message : "GitHub 绑定确认失败");
+    }
   };
 
   const goHome = () => {
@@ -675,10 +734,11 @@ export default function App() {
         initialMode={authDialogMode}
         initialToken={authDialogToken}
         authStatus={authStatus}
-        authError={authError}
+        authError={oauthError ?? authError}
         user={user}
         onClose={() => {
           setAuthDialogOpen(false);
+          setOauthError(null);
           if (location.pathname === "/reset-password") {
             navigate(routeToPath({ kind: "landing" }), { replace: true });
           }
@@ -687,6 +747,40 @@ export default function App() {
         onRegister={registerWithDefaultTheme}
         onCreateDemoSession={createDemoSession}
       />
+      {oauthPending && (
+        <div className="tl-modal-backdrop fixed inset-0 z-[110] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-sm">
+          <section className="tl-modal-panel tl-panel w-full max-w-md rounded-2xl border p-5 shadow-panel">
+            <div className="mb-5">
+              <p className="text-lg font-semibold">确认绑定 GitHub</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                GitHub 返回的已验证邮箱与现有 ArborLearn 账号一致。确认后，这个 GitHub 账号会绑定到 {oauthPending.email} 并完成登录。
+              </p>
+            </div>
+            {oauthError && oauthPendingStatus === "error" && (
+              <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{oauthError}</p>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                className="tl-hover rounded-full px-4 py-2 text-sm font-medium text-muted-foreground"
+                onClick={() => {
+                  setOauthPending(null);
+                  setOauthPendingStatus("idle");
+                }}
+                disabled={oauthPendingStatus === "saving"}
+              >
+                取消
+              </button>
+              <button
+                className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-60"
+                onClick={confirmPendingOAuth}
+                disabled={oauthPendingStatus === "saving"}
+              >
+                {oauthPendingStatus === "saving" ? "绑定中..." : "确认绑定并登录"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
