@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as Popover from "@radix-ui/react-popover";
 import {
+  BarChart3,
   BookOpen,
   Check,
   ChevronDown,
@@ -35,6 +36,7 @@ import type { KnowledgeNode } from "../types/arborlearn";
 
 interface NotebookDashboardProps {
   onOpenNotebook: (nodeId: string) => void;
+  onOpenMonitoring?: () => void;
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
   user: AuthUser | null;
@@ -138,6 +140,7 @@ function collectNotebookSearchText(nodes: Record<string, KnowledgeNode>, rootId:
 // 首页/笔记本仪表盘：负责创建、排序、重命名、删除和进入 ArborLearn 笔记本。
 export function NotebookDashboard({
   onOpenNotebook,
+  onOpenMonitoring,
   themeMode,
   onThemeChange,
   user,
@@ -468,6 +471,16 @@ export function NotebookDashboard({
                 <Plus className="h-4 w-4" />
                 新建 ArborLearn 笔记本
               </Button>
+              {user?.isAdmin && onOpenMonitoring && (
+                <Button
+                  variant="outline"
+                  onClick={onOpenMonitoring}
+                  className="tl-notebook-monitoring-action"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                  监控平台
+                </Button>
+              )}
             </div>
           </div>
           {hasSearchKeyword && (

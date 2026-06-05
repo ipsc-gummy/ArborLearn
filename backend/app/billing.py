@@ -19,15 +19,15 @@ DEFAULT_USD_TO_CNY_RATE = Decimal("7.20")
 DEFAULT_MODEL_PRICING_USD = {
     "deepseek-chat": {
         "provider": "deepseek",
-        "cache_hit_usd_per_million_tokens": "0.07",
-        "cache_miss_usd_per_million_tokens": "0.27",
-        "output_usd_per_million_tokens": "1.10",
+        "cache_hit_cents_per_million_tokens": "2",
+        "cache_miss_cents_per_million_tokens": "100",
+        "output_cents_per_million_tokens": "200",
     },
     "deepseek-reasoner": {
         "provider": "deepseek",
-        "cache_hit_usd_per_million_tokens": "0.14",
-        "cache_miss_usd_per_million_tokens": "0.55",
-        "output_usd_per_million_tokens": "2.19",
+        "cache_hit_cents_per_million_tokens": "2.5",
+        "cache_miss_cents_per_million_tokens": "300",
+        "output_cents_per_million_tokens": "600",
     },
     "qwen2.5-vl-7b-instruct": {
         "provider": "qwen",

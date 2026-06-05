@@ -242,7 +242,6 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
               <button className="tl-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left" onClick={() => void shareNode()}>
                 <Share2 className="h-4 w-4" />
                 <span>分享</span>
-                {shareFeedback && <span className="ml-auto text-[11px] text-primary">{shareFeedback}</span>}
               </button>
               <button
                 className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-destructive hover:bg-destructive/10"
@@ -313,6 +312,16 @@ function TreeItem({ nodeId, depth, onRequestDelete, openMenuId, onOpenMenuChange
                   完成
                 </Button>
               </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {shareFeedback && typeof document !== "undefined" &&
+        createPortal(
+          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[120] flex justify-center px-4">
+            <div className="tl-panel rounded-full border px-4 py-2 text-sm font-medium shadow-panel">
+              {shareFeedback}
             </div>
           </div>,
           document.body,
