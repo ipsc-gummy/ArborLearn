@@ -1305,13 +1305,13 @@ input {
     color: rgba(43, 38, 30, 0.94);
     background:
       linear-gradient(90deg, rgba(139, 76, 54, 0.22) 0 1px, transparent 1px) 1.4rem 0 / 1px 100% no-repeat,
-      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(96, 77, 50, 0.15) 1.43rem 1.48rem),
-      linear-gradient(rgba(96, 77, 50, 0.08) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(96, 77, 50, 0.08) 1px, transparent 1px),
-      radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.2), transparent 8rem),
-      radial-gradient(circle at 16% 82%, rgba(94, 70, 38, 0.12), transparent 8rem),
-      linear-gradient(145deg, #e7d9bd, #dac8a7);
-    border-color: rgba(139, 115, 74, 0.28);
+      repeating-linear-gradient(180deg, transparent 0 1.38rem, rgba(86, 64, 38, 0.18) 1.43rem 1.48rem),
+      linear-gradient(rgba(86, 64, 38, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(86, 64, 38, 0.1) 1px, transparent 1px),
+      radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.16), transparent 8rem),
+      radial-gradient(circle at 16% 82%, rgba(82, 57, 30, 0.14), transparent 8rem),
+      linear-gradient(145deg, #d2bd97, #c3aa80);
+    border-color: rgba(126, 96, 55, 0.34);
     box-shadow:
       0 24px 62px rgba(0, 0, 0, 0.34),
       0 1px 0 rgba(255, 255, 255, 0.34) inset,
@@ -1320,7 +1320,7 @@ input {
 
   :root.dark .tl-notebook-page-card:hover,
   :root.dark .tl-notebook-page-card:focus-within {
-    border-color: rgba(152, 124, 78, 0.38);
+    border-color: rgba(139, 104, 57, 0.44);
     box-shadow:
       0 28px 70px rgba(0, 0, 0, 0.38),
       0 1px 0 rgba(255, 255, 255, 0.38) inset,
@@ -1412,19 +1412,19 @@ input {
   }
 
   :root.dark .tl-notebook-thumbnail {
-    --tl-notebook-thumb-link: color-mix(in srgb, var(--tl-brand) 26%, rgba(104, 82, 51, 0.42));
-    --tl-notebook-thumb-node: rgba(244, 235, 211, 0.92);
-    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 12%, rgba(244, 235, 211, 0.92));
+    --tl-notebook-thumb-link: color-mix(in srgb, var(--tl-brand) 22%, rgba(96, 70, 38, 0.46));
+    --tl-notebook-thumb-node: rgba(232, 211, 176, 0.94);
+    --tl-notebook-thumb-node-active: color-mix(in srgb, var(--tl-brand) 10%, rgba(232, 211, 176, 0.94));
     --tl-notebook-thumb-node-stroke: rgba(116, 94, 61, 0.32);
     --tl-notebook-thumb-node-active-stroke: color-mix(in srgb, var(--tl-brand) 42%, rgba(116, 94, 61, 0.38));
     --tl-notebook-thumb-ink: rgba(43, 38, 30, 0.86);
     border-color: rgba(132, 108, 68, 0.24);
     color: rgba(43, 38, 30, 0.82);
     background:
-      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 8%, transparent), transparent 8rem),
-      linear-gradient(rgba(96, 77, 50, 0.11) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(96, 77, 50, 0.11) 1px, transparent 1px),
-      rgba(239, 226, 196, 0.5);
+      radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--tl-brand) 7%, transparent), transparent 8rem),
+      linear-gradient(rgba(86, 64, 38, 0.13) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(86, 64, 38, 0.13) 1px, transparent 1px),
+      rgba(220, 199, 159, 0.54);
     box-shadow:
       0 0.75rem 1.3rem rgba(84, 63, 34, 0.1) inset,
       0 1px 0 rgba(255, 255, 255, 0.22);
@@ -1433,7 +1433,7 @@ input {
   :root.dark .tl-notebook-thumbnail-count {
     color: rgba(65, 55, 39, 0.82);
     border-color: rgba(116, 94, 61, 0.26);
-    background: rgba(246, 235, 206, 0.72);
+    background: rgba(234, 217, 183, 0.74);
   }
 
   .tl-child-conversation-layout {
@@ -2290,6 +2290,87 @@ input {
 
   .tl-landing-footer-filing a:hover {
     color: rgba(12, 35, 34, 0.92);
+  }
+
+  :root.dark .tl-landing-footer {
+    border-color: rgba(147, 217, 214, 0.14);
+    background:
+      radial-gradient(circle at 12% -18%, color-mix(in srgb, var(--tl-brand) 14%, transparent), transparent 28rem),
+      radial-gradient(circle at 88% 112%, rgba(236, 188, 105, 0.09), transparent 24rem),
+      linear-gradient(180deg, #071016, #09151a 58%, #061016);
+    color: rgba(230, 244, 241, 0.92);
+    box-shadow:
+      0 -1px 0 rgba(147, 217, 214, 0.08),
+      0 -22px 70px rgba(0, 0, 0, 0.28);
+  }
+
+  :root.dark .tl-landing-footer-glow {
+    background: linear-gradient(90deg, transparent, rgba(119, 220, 210, 0.44), rgba(236, 188, 105, 0.18), transparent);
+  }
+
+  :root.dark .tl-landing-footer-wordmark {
+    color: rgba(245, 250, 248, 0.96);
+    text-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+  }
+
+  :root.dark .tl-landing-footer-tagline {
+    color: rgba(178, 198, 195, 0.76);
+  }
+
+  :root.dark .tl-landing-footer-brand-link {
+    border-color: rgba(119, 220, 210, 0.24);
+    background: rgba(119, 220, 210, 0.08);
+    color: rgba(226, 242, 239, 0.86);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset;
+  }
+
+  :root.dark .tl-landing-footer-brand-link:hover {
+    border-color: rgba(119, 220, 210, 0.42);
+    background: rgba(119, 220, 210, 0.13);
+    color: rgba(248, 253, 252, 0.96);
+    text-decoration-color: rgba(119, 220, 210, 0.42);
+  }
+
+  :root.dark .tl-landing-footer-heading {
+    color: rgba(239, 248, 246, 0.94);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link {
+    color: rgba(177, 196, 193, 0.78);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link::before {
+    background: rgba(119, 220, 210, 0.3);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link[data-external="true"]::after {
+    color: rgba(119, 220, 210, 0.66);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link:hover {
+    background: rgba(119, 220, 210, 0.08);
+    color: rgba(245, 252, 251, 0.95);
+    text-decoration-color: rgba(119, 220, 210, 0.5);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link:hover::before {
+    background: rgba(119, 220, 210, 0.7);
+  }
+
+  :root.dark .tl-landing-footer-sitemap-link[data-external="true"]:hover::after {
+    color: rgba(245, 252, 251, 0.88);
+  }
+
+  :root.dark .tl-landing-footer-bottom {
+    border-color: rgba(147, 217, 214, 0.12);
+  }
+
+  :root.dark .tl-landing-footer-filing {
+    color: rgba(162, 182, 179, 0.72);
+  }
+
+  :root.dark .tl-landing-footer-filing a:hover {
+    color: rgba(245, 252, 251, 0.92);
   }
 
   .tl-guide-page {
