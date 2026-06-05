@@ -51,17 +51,17 @@
 /* 深色主题变量：App.tsx 会在 html 上切换 .dark，所有组件自动读取这些 CSS 变量。 */
 :root.dark {
   --background: 215 24% 10%;
-  --foreground: 204 28% 92%;
+  --foreground: 0 0% 95%;
   --card: 214 22% 15%;
-  --card-foreground: 210 22% 92%;
+  --card-foreground: 0 0% 95%;
   --primary: 178 62% 63%;
   --primary-foreground: 210 28% 9%;
   --secondary: 187 25% 20%;
-  --secondary-foreground: 172 58% 83%;
+  --secondary-foreground: 0 0% 89%;
   --muted: 214 18% 18%;
-  --muted-foreground: 211 16% 70%;
+  --muted-foreground: 0 0% 73%;
   --accent: 36 34% 21%;
-  --accent-foreground: 39 72% 82%;
+  --accent-foreground: 0 0% 89%;
   --destructive: 0 70% 58%;
   --destructive-foreground: 0 0% 100%;
   --border: 213 18% 25%;
@@ -243,13 +243,13 @@ input {
 
   :root.dark .tl-workspace-page {
     --background: 0 0% 0%;
-    --foreground: 0 0% 93%;
+    --foreground: 0 0% 96%;
     --card: 0 0% 4%;
-    --card-foreground: 0 0% 93%;
+    --card-foreground: 0 0% 96%;
     --muted: 0 0% 10%;
-    --muted-foreground: 0 0% 64%;
+    --muted-foreground: 0 0% 70%;
     --accent: 0 0% 13%;
-    --accent-foreground: 0 0% 93%;
+    --accent-foreground: 0 0% 96%;
     --border: 0 0% 17%;
     --input: 0 0% 17%;
     --ring: 0 0% 66%;
@@ -1128,7 +1128,7 @@ input {
   }
 
   :root.dark .tl-notebooks-title {
-    color: rgba(246, 250, 249, 0.96);
+    color: hsl(var(--foreground));
     text-shadow: 0 12px 34px rgba(0, 0, 0, 0.38);
   }
 
@@ -1793,7 +1793,7 @@ input {
   }
 
   :root.dark .tl-landing-title {
-    color: rgba(246, 250, 249, 0.96);
+    color: hsl(var(--foreground));
     text-shadow: 0 18px 54px rgba(0, 0, 0, 0.42);
   }
 
@@ -2298,7 +2298,7 @@ input {
       radial-gradient(circle at 12% -18%, color-mix(in srgb, var(--tl-brand) 14%, transparent), transparent 28rem),
       radial-gradient(circle at 88% 112%, rgba(236, 188, 105, 0.09), transparent 24rem),
       linear-gradient(180deg, #071016, #09151a 58%, #061016);
-    color: rgba(230, 244, 241, 0.92);
+    color: hsl(var(--foreground) / 0.92);
     box-shadow:
       0 -1px 0 rgba(147, 217, 214, 0.08),
       0 -22px 70px rgba(0, 0, 0, 0.28);
@@ -2309,34 +2309,34 @@ input {
   }
 
   :root.dark .tl-landing-footer-wordmark {
-    color: rgba(245, 250, 248, 0.96);
+    color: hsl(var(--foreground));
     text-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
   }
 
   :root.dark .tl-landing-footer-tagline {
-    color: rgba(178, 198, 195, 0.76);
+    color: hsl(var(--muted-foreground) / 0.9);
   }
 
   :root.dark .tl-landing-footer-brand-link {
     border-color: rgba(119, 220, 210, 0.24);
     background: rgba(119, 220, 210, 0.08);
-    color: rgba(226, 242, 239, 0.86);
+    color: hsl(var(--foreground) / 0.88);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset;
   }
 
   :root.dark .tl-landing-footer-brand-link:hover {
     border-color: rgba(119, 220, 210, 0.42);
     background: rgba(119, 220, 210, 0.13);
-    color: rgba(248, 253, 252, 0.96);
+    color: hsl(var(--foreground));
     text-decoration-color: rgba(119, 220, 210, 0.42);
   }
 
   :root.dark .tl-landing-footer-heading {
-    color: rgba(239, 248, 246, 0.94);
+    color: hsl(var(--foreground) / 0.96);
   }
 
   :root.dark .tl-landing-footer-sitemap-link {
-    color: rgba(177, 196, 193, 0.78);
+    color: hsl(var(--muted-foreground) / 0.86);
   }
 
   :root.dark .tl-landing-footer-sitemap-link::before {
@@ -2349,7 +2349,7 @@ input {
 
   :root.dark .tl-landing-footer-sitemap-link:hover {
     background: rgba(119, 220, 210, 0.08);
-    color: rgba(245, 252, 251, 0.95);
+    color: hsl(var(--foreground) / 0.96);
     text-decoration-color: rgba(119, 220, 210, 0.5);
   }
 
@@ -2358,7 +2358,7 @@ input {
   }
 
   :root.dark .tl-landing-footer-sitemap-link[data-external="true"]:hover::after {
-    color: rgba(245, 252, 251, 0.88);
+    color: hsl(var(--foreground) / 0.88);
   }
 
   :root.dark .tl-landing-footer-bottom {
@@ -2366,11 +2366,11 @@ input {
   }
 
   :root.dark .tl-landing-footer-filing {
-    color: rgba(162, 182, 179, 0.72);
+    color: hsl(var(--muted-foreground) / 0.78);
   }
 
   :root.dark .tl-landing-footer-filing a:hover {
-    color: rgba(245, 252, 251, 0.92);
+    color: hsl(var(--foreground) / 0.92);
   }
 
   .tl-guide-page {
@@ -2578,6 +2578,7 @@ input {
   }
 
   :root.dark .tl-guide-prose h1 {
+    color: hsl(var(--foreground));
     text-shadow: 0 18px 54px rgba(0, 0, 0, 0.4);
   }
 
