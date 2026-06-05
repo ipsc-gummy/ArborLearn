@@ -206,6 +206,127 @@ export interface UsageEvent {
   created_at: string;
 }
 
+export interface AdminMonitoringUsageTotal {
+  request_count: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_cents: number;
+  cost_micro_cents: number;
+  successful_requests: number;
+  failed_requests: number;
+  avg_latency_ms: number;
+  web_search_requests: number;
+}
+
+export interface AdminMonitoringModel {
+  model_name: string;
+  request_count: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  completion_tokens: number;
+  cost_cents: number;
+  cost_micro_cents: number;
+  failed_requests: number;
+  avg_latency_ms: number;
+}
+
+export interface AdminMonitoringSeriesPoint {
+  date: string;
+  request_count: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_cents: number;
+  cost_micro_cents: number;
+  models: Record<string, {
+    request_count: number;
+    total_tokens: number;
+    prompt_tokens: number;
+    cache_hit_tokens?: number;
+    cache_miss_tokens?: number;
+    completion_tokens: number;
+    cost_cents: number;
+    cost_micro_cents: number;
+  }>;
+}
+
+export interface AdminMonitoringUser {
+  id: string;
+  email: string;
+  display_name: string;
+  is_admin: boolean;
+  is_temporary: boolean;
+  email_verified: boolean;
+  created_at: string;
+  balance_cents?: number | null;
+  balance_micro_cents?: number | null;
+  balance_tokens?: number | null;
+  request_count: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_cents: number;
+  cost_micro_cents: number;
+  failed_requests: number;
+  last_model_call_at?: string | null;
+  notebook_count: number;
+  node_count: number;
+}
+
+export interface AdminMonitoringEvent extends UsageEvent {
+  user_email: string;
+  user_display_name: string;
+  notebook_title?: string | null;
+  node_title?: string | null;
+}
+
+export interface AdminMonitoringOverview {
+  range: { from?: string | null; to?: string | null; label: string };
+  system: {
+    users: number;
+    admin_users: number;
+    temporary_users: number;
+    active_users_30d: number;
+    notebooks: number;
+    nodes: number;
+    messages: number;
+    long_tasks: number;
+    messages_by_role: Record<string, number>;
+  };
+  usage: AdminMonitoringUsageTotal;
+  models: AdminMonitoringModel[];
+  series: AdminMonitoringSeriesPoint[];
+  users: AdminMonitoringUser[];
+  task_statuses: Array<{ status: string; count: number }>;
+  recent_events: AdminMonitoringEvent[];
+}
+
+export interface AdminMonitoringNotebook {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  pinned: number;
+  node_count: number;
+  message_count: number;
+}
+
+export interface AdminMonitoringUserDetail {
+  range: { from?: string | null; to?: string | null; label: string };
+  user: AdminMonitoringUser & {
+    updated_at?: string;
+  };
+  usage: AdminMonitoringUsageTotal;
+  models: AdminMonitoringModel[];
+  series: AdminMonitoringSeriesPoint[];
+  notebooks: AdminMonitoringNotebook[];
+  task_statuses: Array<{ status: string; count: number }>;
+  recent_events: AdminMonitoringEvent[];
+}
+
 function monthRangeParams() {
   const now = new Date();
   const from = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -410,6 +531,23 @@ export function updateAdminSettings(settings: Record<string, number>) {
     method: "PATCH",
     body: JSON.stringify({ settings }),
   });
+}
+
+function adminMonitoringParams(params?: { from?: string; to?: string }) {
+  const search = new URLSearchParams();
+  if (params?.from) search.set("from", params.from);
+  if (params?.to) search.set("to", params.to);
+  return search.toString();
+}
+
+export function fetchAdminMonitoring(params?: { from?: string; to?: string }) {
+  const query = adminMonitoringParams(params);
+  return request<AdminMonitoringOverview>(`/api/admin/monitoring${query ? `?${query}` : ""}`);
+}
+
+export function fetchAdminMonitoringUser(userId: string, params?: { from?: string; to?: string }) {
+  const query = adminMonitoringParams(params);
+  return request<AdminMonitoringUserDetail>(`/api/admin/monitoring/users/${encodeURIComponent(userId)}${query ? `?${query}` : ""}`);
 }
 
 export function fetchTreeState() {

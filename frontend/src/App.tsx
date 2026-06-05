@@ -1,6 +1,7 @@
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { AdminMonitoringDashboard } from "./components/AdminMonitoringDashboard";
 import { KnowledgeTree } from "./components/KnowledgeTree";
 import { LandingPage } from "./components/LandingPage";
 import { NotebookDashboard } from "./components/NotebookDashboard";
@@ -33,6 +34,8 @@ type AppRoute =
   | { kind: "landing" }
   | { kind: "guide" }
   | { kind: "dashboard" }
+  | { kind: "adminMonitoring" }
+  | { kind: "adminMonitoringUser"; userId: string }
   | { kind: "workspace"; notebookId: string };
 
 type WorkspaceView = "chat" | "diagram";
@@ -111,6 +114,10 @@ function saveThemeMode(mode: ThemeMode, userId?: string) {
 function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (segments[0] === "guide") return { kind: "guide" };
+  if (segments[0] === "admin" && segments[1] === "monitoring" && segments[2] === "users" && segments[3]) {
+    return { kind: "adminMonitoringUser", userId: segments[3] };
+  }
+  if (segments[0] === "admin" && segments[1] === "monitoring") return { kind: "adminMonitoring" };
   if (segments[0] === "reset-password") return { kind: "landing" };
   if (segments[0] === "oauth" && segments[1] === "callback") return { kind: "landing" };
   if (segments[0] === "notebooks" && segments[1]) {
@@ -125,6 +132,8 @@ function parseRoute(pathname: string): AppRoute {
 
 function routeToPath(route: AppRoute) {
   if (route.kind === "guide") return "/guide";
+  if (route.kind === "adminMonitoring") return "/admin/monitoring";
+  if (route.kind === "adminMonitoringUser") return `/admin/monitoring/users/${encodeURIComponent(route.userId)}`;
   if (route.kind === "dashboard") return "/notebooks";
   if (route.kind === "workspace") return `/notebooks/${encodeURIComponent(route.notebookId)}`;
   return "/";
@@ -586,7 +595,28 @@ export default function App() {
   ) : routeKind === "dashboard" ? (
     <NotebookDashboard
       onOpenNotebook={openNotebook}
+      onOpenMonitoring={() => navigate(routeToPath({ kind: "adminMonitoring" }))}
       {...menuProps}
+    />
+  ) : routeKind === "adminMonitoring" ? (
+    <AdminMonitoringDashboard
+      onBack={goHome}
+      onOpenUser={(userId) => navigate(routeToPath({ kind: "adminMonitoringUser", userId }))}
+      themeMode={themeMode}
+      onThemeChange={setThemeMode}
+      user={user}
+      onLogout={menuProps.onLogout}
+      onRequestAuth={requestAuth}
+    />
+  ) : routeKind === "adminMonitoringUser" ? (
+    <AdminMonitoringDashboard
+      onBack={() => navigate(routeToPath({ kind: "adminMonitoring" }))}
+      targetUserId={route.userId}
+      themeMode={themeMode}
+      onThemeChange={setThemeMode}
+      user={user}
+      onLogout={menuProps.onLogout}
+      onRequestAuth={requestAuth}
     />
   ) : missingNotebookRef === routeNotebookId ? (
     <WorkspaceUnavailable onHome={goHome} />

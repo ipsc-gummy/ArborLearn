@@ -40,6 +40,7 @@ from .backfill import (
 )
 from .billing import (
     WalletInsufficientCreditError,
+    calculate_cost_micro_cents,
     ensure_wallet,
     ensure_wallet_can_charge_model,
     record_successful_model_usage,
@@ -74,6 +75,7 @@ from .db import (
     list_step_outputs,
     list_task_evidence,
     list_uploaded_files,
+    micro_cents_to_display_cents,
     now_iso,
     touch_node,
     update_uploaded_file_extraction,
@@ -1881,6 +1883,420 @@ def usage_tree(
         raise HTTPException(status_code=400, detail="Only groupBy=model,callType is supported.")
     with connect() as conn:
         return {"tree": get_usage_tree(conn, user["id"], from_ts=from_, to_ts=to)}
+
+
+def monitoring_time_filter(column: str, from_ts: str | None, to_ts: str | None) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if from_ts:
+        clauses.append(f"{column} >= ?")
+        params.append(from_ts)
+    if to_ts:
+        clauses.append(f"{column} <= ?")
+        params.append(to_ts)
+    return (" AND " + " AND ".join(clauses) if clauses else "", params)
+
+
+def monitoring_range_label(from_ts: str | None, to_ts: str | None) -> str:
+    if from_ts and to_ts:
+        return f"{from_ts[:10]} 至 {to_ts[:10]}"
+    if from_ts:
+        return f"{from_ts[:10]} 起"
+    if to_ts:
+        return f"截至 {to_ts[:10]}"
+    return "全部时间"
+
+
+def monitoring_total_row(conn: sqlite3.Connection, table: str, where: str = "", params: list[Any] | None = None) -> int:
+    row = conn.execute(f"SELECT COUNT(*) AS total FROM {table} {where}", params or []).fetchone()
+    return int(row["total"] or 0)
+
+
+def monitoring_usage_total(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None, user_id: str | None = None) -> dict:
+    time_clause, time_params = monitoring_time_filter("created_at", from_ts, to_ts)
+    user_clause = " AND user_id = ?" if user_id else ""
+    params = [*time_params]
+    if user_id:
+        params.append(user_id)
+    row = conn.execute(
+        f"""
+        SELECT
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0) AS successful_requests,
+          COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed_requests,
+          COALESCE(AVG(CASE WHEN success = 1 THEN latency_ms ELSE NULL END), 0) AS avg_latency_ms,
+          COALESCE(SUM(CASE WHEN web_search_enabled = 1 THEN 1 ELSE 0 END), 0) AS web_search_requests
+        FROM model_call_logs
+        WHERE 1 = 1{time_clause}{user_clause}
+        """,
+        params,
+    ).fetchone()
+    item = dict(row)
+    item["cost_micro_cents"] = sum(model["cost_micro_cents"] for model in monitoring_model_breakdown(conn, from_ts, to_ts, user_id))
+    item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+    item["avg_latency_ms"] = round(float(item.get("avg_latency_ms") or 0))
+    return item
+
+
+def monitoring_model_breakdown(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None, user_id: str | None = None) -> list[dict]:
+    time_clause, time_params = monitoring_time_filter("created_at", from_ts, to_ts)
+    user_clause = " AND user_id = ?" if user_id else ""
+    params = [*time_params]
+    if user_id:
+        params.append(user_id)
+    rows = conn.execute(
+        f"""
+        SELECT
+          COALESCE(model_name, 'unknown') AS model_name,
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_cache_hit_tokens ELSE 0 END), 0) AS cache_hit_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_cache_miss_tokens ELSE 0 END), 0) AS cache_miss_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
+          COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failed_requests,
+          COALESCE(AVG(CASE WHEN success = 1 THEN latency_ms ELSE NULL END), 0) AS avg_latency_ms
+        FROM model_call_logs
+        WHERE 1 = 1{time_clause}{user_clause}
+        GROUP BY COALESCE(model_name, 'unknown')
+        ORDER BY total_tokens DESC, request_count DESC
+        """,
+        params,
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        cost_micro_cents, _pricing_source = calculate_cost_micro_cents(
+            item.get("model_name"),
+            int(item.get("prompt_tokens") or 0),
+            int(item.get("completion_tokens") or 0),
+            prompt_cache_hit_tokens=int(item.get("cache_hit_tokens") or 0),
+            prompt_cache_miss_tokens=int(item.get("cache_miss_tokens") or 0),
+        )
+        item["cost_micro_cents"] = cost_micro_cents
+        item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+        item["avg_latency_ms"] = round(float(item.get("avg_latency_ms") or 0))
+        items.append(item)
+    return items
+
+
+def monitoring_daily_series(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None, user_id: str | None = None) -> list[dict]:
+    time_clause, time_params = monitoring_time_filter("created_at", from_ts, to_ts)
+    user_clause = " AND user_id = ?" if user_id else ""
+    params = [*time_params]
+    if user_id:
+        params.append(user_id)
+    rows = conn.execute(
+        f"""
+        SELECT
+          date(created_at) AS date,
+          COALESCE(model_name, 'unknown') AS model_name,
+          COUNT(*) AS request_count,
+          COALESCE(SUM(CASE WHEN success = 1 THEN total_tokens ELSE 0 END), 0) AS total_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_cache_hit_tokens ELSE 0 END), 0) AS cache_hit_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN prompt_cache_miss_tokens ELSE 0 END), 0) AS cache_miss_tokens,
+          COALESCE(SUM(CASE WHEN success = 1 THEN completion_tokens ELSE 0 END), 0) AS completion_tokens,
+          0 AS cost_micro_cents
+        FROM model_call_logs
+        WHERE 1 = 1{time_clause}{user_clause}
+        GROUP BY date(created_at), COALESCE(model_name, 'unknown')
+        ORDER BY date ASC
+        """,
+        params,
+    ).fetchall()
+    by_date: dict[str, dict] = {}
+    for row in rows:
+        bucket = by_date.setdefault(
+            row["date"],
+            {
+                "date": row["date"],
+                "request_count": 0,
+                "total_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_micro_cents": 0,
+                "models": {},
+            },
+        )
+        model_item = {
+            "request_count": int(row["request_count"] or 0),
+            "total_tokens": int(row["total_tokens"] or 0),
+            "prompt_tokens": int(row["prompt_tokens"] or 0),
+            "cache_hit_tokens": int(row["cache_hit_tokens"] or 0),
+            "cache_miss_tokens": int(row["cache_miss_tokens"] or 0),
+            "completion_tokens": int(row["completion_tokens"] or 0),
+        }
+        cost_micro_cents, _pricing_source = calculate_cost_micro_cents(
+            row["model_name"],
+            model_item["prompt_tokens"],
+            model_item["completion_tokens"],
+            prompt_cache_hit_tokens=model_item["cache_hit_tokens"],
+            prompt_cache_miss_tokens=model_item["cache_miss_tokens"],
+        )
+        model_item["cost_micro_cents"] = cost_micro_cents
+        model_item["cost_cents"] = micro_cents_to_display_cents(cost_micro_cents)
+        bucket["models"][row["model_name"]] = model_item
+        bucket["request_count"] += model_item["request_count"]
+        bucket["total_tokens"] += model_item["total_tokens"]
+        bucket["prompt_tokens"] += model_item["prompt_tokens"]
+        bucket["completion_tokens"] += model_item["completion_tokens"]
+        bucket["cost_micro_cents"] += model_item["cost_micro_cents"]
+    items = list(by_date.values())
+    for item in items:
+        item["cost_cents"] = micro_cents_to_display_cents(item["cost_micro_cents"])
+    return items
+
+
+def monitoring_recent_events(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None, user_id: str | None = None, limit: int = 12) -> list[dict]:
+    time_clause, time_params = monitoring_time_filter("logs.created_at", from_ts, to_ts)
+    user_clause = " AND logs.user_id = ?" if user_id else ""
+    params = [*time_params]
+    if user_id:
+        params.append(user_id)
+    params.append(limit)
+    rows = conn.execute(
+        f"""
+        SELECT
+          logs.*,
+          users.email AS user_email,
+          users.display_name AS user_display_name,
+          notebooks.title AS notebook_title,
+          nodes.title AS node_title
+        FROM model_call_logs logs
+        JOIN users ON users.id = logs.user_id
+        LEFT JOIN notebooks ON notebooks.id = logs.notebook_id
+        LEFT JOIN nodes ON nodes.id = logs.node_id
+        WHERE 1 = 1{time_clause}{user_clause}
+        ORDER BY logs.created_at DESC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        if item.get("success"):
+            cost_micro_cents, _pricing_source = calculate_cost_micro_cents(
+                item.get("model_name"),
+                int(item.get("prompt_tokens") or 0),
+                int(item.get("completion_tokens") or 0),
+                prompt_cache_hit_tokens=item.get("prompt_cache_hit_tokens"),
+                prompt_cache_miss_tokens=item.get("prompt_cache_miss_tokens"),
+            )
+            item["cost_micro_cents"] = cost_micro_cents
+        else:
+            item["cost_micro_cents"] = 0
+        item["cost_cents"] = micro_cents_to_display_cents(item.get("cost_micro_cents"))
+        items.append(item)
+    return items
+
+
+def monitoring_user_rows(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None) -> list[dict]:
+    time_clause, time_params = monitoring_time_filter("logs.created_at", from_ts, to_ts)
+    rows = conn.execute(
+        f"""
+        SELECT
+          users.id,
+          users.email,
+          users.display_name,
+          users.is_admin,
+          users.is_temporary,
+          users.email_verified,
+          users.created_at,
+          wallets.balance_cents,
+          wallets.balance_micro_cents,
+          wallets.balance_tokens,
+          COALESCE(usage.request_count, 0) AS request_count,
+          COALESCE(usage.total_tokens, 0) AS total_tokens,
+          COALESCE(usage.prompt_tokens, 0) AS prompt_tokens,
+          COALESCE(usage.completion_tokens, 0) AS completion_tokens,
+          0 AS cost_micro_cents,
+          COALESCE(usage.failed_requests, 0) AS failed_requests,
+          usage.last_model_call_at,
+          COALESCE(assets.notebook_count, 0) AS notebook_count,
+          COALESCE(assets.node_count, 0) AS node_count
+        FROM users
+        LEFT JOIN user_wallets wallets ON wallets.user_id = users.id
+        LEFT JOIN (
+          SELECT
+            logs.user_id,
+            COUNT(logs.id) AS request_count,
+            COALESCE(SUM(CASE WHEN logs.success = 1 THEN logs.total_tokens ELSE 0 END), 0) AS total_tokens,
+            COALESCE(SUM(CASE WHEN logs.success = 1 THEN logs.prompt_tokens ELSE 0 END), 0) AS prompt_tokens,
+            COALESCE(SUM(CASE WHEN logs.success = 1 THEN logs.completion_tokens ELSE 0 END), 0) AS completion_tokens,
+            COALESCE(SUM(CASE WHEN logs.success = 0 THEN 1 ELSE 0 END), 0) AS failed_requests,
+            MAX(logs.created_at) AS last_model_call_at
+          FROM model_call_logs logs
+          WHERE 1 = 1{time_clause}
+          GROUP BY logs.user_id
+        ) usage ON usage.user_id = users.id
+        LEFT JOIN (
+          SELECT
+            users.id AS user_id,
+            COALESCE(notebook_assets.notebook_count, 0) AS notebook_count,
+            COALESCE(node_assets.node_count, 0) AS node_count
+          FROM users
+          LEFT JOIN (
+            SELECT owner_user_id AS user_id, COUNT(*) AS notebook_count
+            FROM notebooks
+            GROUP BY owner_user_id
+          ) notebook_assets ON notebook_assets.user_id = users.id
+          LEFT JOIN (
+            SELECT notebooks.owner_user_id AS user_id, COUNT(nodes.id) AS node_count
+            FROM notebooks
+            LEFT JOIN nodes ON nodes.notebook_id = notebooks.id
+            GROUP BY notebooks.owner_user_id
+          ) node_assets ON node_assets.user_id = users.id
+        ) assets ON assets.user_id = users.id
+        ORDER BY total_tokens DESC, request_count DESC, users.created_at DESC
+        """,
+        time_params,
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["is_admin"] = bool(item.get("is_admin"))
+        item["is_temporary"] = bool(item.get("is_temporary"))
+        item["email_verified"] = bool(item.get("email_verified"))
+        usage_total = monitoring_usage_total(conn, from_ts, to_ts, item["id"])
+        item["cost_micro_cents"] = usage_total["cost_micro_cents"]
+        item["cost_cents"] = usage_total["cost_cents"]
+        items.append(item)
+    return items
+
+
+def build_monitoring_overview(conn: sqlite3.Connection, from_ts: str | None, to_ts: str | None) -> dict:
+    active_since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    system = {
+        "users": monitoring_total_row(conn, "users"),
+        "admin_users": monitoring_total_row(conn, "users", "WHERE is_admin = 1"),
+        "temporary_users": monitoring_total_row(conn, "users", "WHERE is_temporary = 1"),
+        "active_users_30d": monitoring_total_row(
+            conn,
+            "users",
+            "WHERE id IN (SELECT DISTINCT user_id FROM model_call_logs WHERE created_at >= ?)",
+            [active_since],
+        ),
+        "notebooks": monitoring_total_row(conn, "notebooks"),
+        "nodes": monitoring_total_row(conn, "nodes"),
+        "messages": monitoring_total_row(conn, "messages"),
+        "long_tasks": monitoring_total_row(conn, "long_tasks"),
+    }
+    message_rows = conn.execute(
+        """
+        SELECT role, COUNT(*) AS count
+        FROM messages
+        GROUP BY role
+        """
+    ).fetchall()
+    system["messages_by_role"] = {row["role"]: int(row["count"] or 0) for row in message_rows}
+    task_rows = conn.execute(
+        """
+        SELECT status, COUNT(*) AS count
+        FROM long_tasks
+        GROUP BY status
+        ORDER BY count DESC
+        """
+    ).fetchall()
+    return {
+        "range": {"from": from_ts, "to": to_ts, "label": monitoring_range_label(from_ts, to_ts)},
+        "system": system,
+        "usage": monitoring_usage_total(conn, from_ts, to_ts),
+        "models": monitoring_model_breakdown(conn, from_ts, to_ts),
+        "series": monitoring_daily_series(conn, from_ts, to_ts),
+        "users": monitoring_user_rows(conn, from_ts, to_ts),
+        "task_statuses": [dict(row) for row in task_rows],
+        "recent_events": monitoring_recent_events(conn, from_ts, to_ts),
+    }
+
+
+def build_monitoring_user_detail(conn: sqlite3.Connection, target_user_id: str, from_ts: str | None, to_ts: str | None) -> dict:
+    target = conn.execute(
+        """
+        SELECT users.*, wallets.balance_cents, wallets.balance_micro_cents, wallets.balance_tokens
+        FROM users
+        LEFT JOIN user_wallets wallets ON wallets.user_id = users.id
+        WHERE users.id = ?
+        """,
+        (target_user_id,),
+    ).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    notebook_rows = conn.execute(
+        """
+        SELECT
+          notebooks.id,
+          notebooks.title,
+          notebooks.created_at,
+          notebooks.updated_at,
+          notebooks.pinned,
+          COALESCE(node_assets.node_count, 0) AS node_count,
+          COALESCE(node_assets.message_count, 0) AS message_count
+        FROM notebooks
+        LEFT JOIN (
+          SELECT
+            nodes.notebook_id,
+            COUNT(DISTINCT nodes.id) AS node_count,
+            COUNT(messages.id) AS message_count
+          FROM nodes
+          LEFT JOIN messages ON messages.node_id = nodes.id
+          GROUP BY nodes.notebook_id
+        ) node_assets ON node_assets.notebook_id = notebooks.id
+        WHERE notebooks.owner_user_id = ?
+        ORDER BY notebooks.updated_at DESC
+        LIMIT 20
+        """,
+        (target_user_id,),
+    ).fetchall()
+    task_rows = conn.execute(
+        """
+        SELECT status, COUNT(*) AS count
+        FROM long_tasks
+        WHERE user_id = ?
+        GROUP BY status
+        ORDER BY count DESC
+        """,
+        (target_user_id,),
+    ).fetchall()
+    user_payload = dict(target)
+    user_payload["is_admin"] = bool(user_payload.get("is_admin"))
+    user_payload["is_temporary"] = bool(user_payload.get("is_temporary"))
+    user_payload["email_verified"] = bool(user_payload.get("email_verified"))
+    return {
+        "range": {"from": from_ts, "to": to_ts, "label": monitoring_range_label(from_ts, to_ts)},
+        "user": user_payload,
+        "usage": monitoring_usage_total(conn, from_ts, to_ts, target_user_id),
+        "models": monitoring_model_breakdown(conn, from_ts, to_ts, target_user_id),
+        "series": monitoring_daily_series(conn, from_ts, to_ts, target_user_id),
+        "notebooks": [dict(row) for row in notebook_rows],
+        "task_statuses": [dict(row) for row in task_rows],
+        "recent_events": monitoring_recent_events(conn, from_ts, to_ts, target_user_id, limit=20),
+    }
+
+
+@app.get("/api/admin/monitoring")
+def admin_monitoring_overview(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    user: dict = Depends(require_admin),
+) -> dict:
+    with connect() as conn:
+        return build_monitoring_overview(conn, from_, to)
+
+
+@app.get("/api/admin/monitoring/users/{target_user_id}")
+def admin_monitoring_user_detail(
+    target_user_id: str,
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None),
+    user: dict = Depends(require_admin),
+) -> dict:
+    with connect() as conn:
+        return build_monitoring_user_detail(conn, target_user_id, from_, to)
 
 
 @app.get("/api/app-settings")

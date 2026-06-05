@@ -1196,6 +1196,21 @@ input {
       0 1px 0 rgba(255, 255, 255, 0.66) inset;
   }
 
+  .tl-notebook-monitoring-action {
+    color: hsl(var(--foreground));
+    border-color: color-mix(in srgb, var(--tl-brand-3) 34%, var(--tl-border));
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--tl-panel-solid) 88%, var(--tl-brand-3) 12%), var(--tl-panel-solid));
+    box-shadow: 0 10px 24px rgba(20, 82, 96, 0.08);
+  }
+
+  .tl-notebook-monitoring-action:hover {
+    color: hsl(var(--foreground));
+    border-color: color-mix(in srgb, var(--tl-brand-3) 52%, var(--tl-border));
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--tl-panel-solid) 82%, var(--tl-brand-3) 18%), var(--tl-panel-solid));
+  }
+
   .tl-sort-option:not(.is-active):hover {
     background: color-mix(in srgb, var(--tl-brand) 9%, transparent);
     color: hsl(var(--foreground));

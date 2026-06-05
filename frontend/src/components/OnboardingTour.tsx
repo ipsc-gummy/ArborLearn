@@ -4,7 +4,7 @@ import { ArrowRight, Check, Hand, MousePointerClick, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { useArborLearnStore } from "../store/arborlearnStore";
 
-type RouteKind = "landing" | "dashboard" | "workspace";
+type RouteKind = "landing" | "dashboard" | "workspace" | "adminMonitoring" | "adminMonitoringUser";
 type WorkspaceView = "chat" | "diagram";
 
 interface OnboardingTourProps {
