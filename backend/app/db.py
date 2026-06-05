@@ -1987,12 +1987,11 @@ def get_or_create_wallet(
     user_id: str,
     *,
     initial_cents: int,
-    initial_tokens: int,
 ) -> dict:
     row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
     if row:
         wallet = normalize_wallet_precision(conn, user_id, dict(row))
-        return sync_wallet_default_quota(conn, user_id, wallet, initial_cents, initial_tokens)
+        return sync_wallet_default_quota(conn, user_id, wallet, initial_cents)
 
     ts = now_iso()
     initial_micro_cents = cents_to_micro_cents(initial_cents)
@@ -2008,10 +2007,10 @@ def get_or_create_wallet(
             user_id,
             micro_cents_to_display_cents(initial_micro_cents),
             initial_micro_cents,
-            initial_tokens,
+            0,
             initial_cents,
             initial_micro_cents,
-            initial_tokens,
+            0,
             ts,
             ts,
         ),
@@ -2031,10 +2030,10 @@ def get_or_create_wallet(
             "initial_grant",
             micro_cents_to_display_cents(initial_micro_cents),
             initial_micro_cents,
-            initial_tokens,
+            0,
             micro_cents_to_display_cents(initial_micro_cents),
             initial_micro_cents,
-            initial_tokens,
+            0,
             "system",
             None,
             "default_initial_quota",
@@ -2080,10 +2079,10 @@ def normalize_wallet_precision(conn: sqlite3.Connection, user_id: str, wallet: d
     return dict(row)
 
 
-def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, int, int]:
+def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, int]:
     row = conn.execute(
         """
-        SELECT delta_cents, delta_micro_cents, delta_tokens
+        SELECT delta_cents, delta_micro_cents
         FROM wallet_ledger
         WHERE user_id = ? AND entry_type = 'initial_grant'
         ORDER BY created_at ASC
@@ -2092,12 +2091,12 @@ def wallet_initial_grant(conn: sqlite3.Connection, user_id: str) -> tuple[int, i
         (user_id,),
     ).fetchone()
     if not row:
-        return 0, 0, 0
+        return 0, 0
     delta_cents = int(row["delta_cents"] or 0)
     delta_micro_cents = row["delta_micro_cents"]
     if delta_micro_cents is None:
         delta_micro_cents = cents_to_micro_cents(delta_cents)
-    return delta_cents, int(delta_micro_cents or 0), int(row["delta_tokens"] or 0)
+    return delta_cents, int(delta_micro_cents or 0)
 
 
 def sync_wallet_default_quota(
@@ -2105,26 +2104,21 @@ def sync_wallet_default_quota(
     user_id: str,
     wallet: dict,
     initial_cents: int,
-    initial_tokens: int,
 ) -> dict:
     wallet = normalize_wallet_precision(conn, user_id, wallet)
-    grant_cents, grant_micro_cents, grant_tokens = wallet_initial_grant(conn, user_id)
+    grant_cents, grant_micro_cents = wallet_initial_grant(conn, user_id)
     applied_cents = wallet.get("default_cents_applied")
     applied_micro_cents = wallet.get("default_micro_cents_applied")
-    applied_tokens = wallet.get("default_tokens_applied")
     applied_cents = int(applied_cents if applied_cents is not None else grant_cents)
     applied_micro_cents = int(applied_micro_cents if applied_micro_cents is not None else grant_micro_cents)
-    applied_tokens = int(applied_tokens if applied_tokens is not None else grant_tokens)
 
     initial_micro_cents = cents_to_micro_cents(initial_cents)
     delta_micro_cents = max(0, initial_micro_cents - applied_micro_cents)
     delta_cents = micro_cents_to_display_cents(delta_micro_cents)
-    delta_tokens = max(0, initial_tokens - applied_tokens)
     next_applied_cents = max(applied_cents, initial_cents)
     next_applied_micro_cents = max(applied_micro_cents, initial_micro_cents)
-    next_applied_tokens = max(applied_tokens, initial_tokens)
 
-    if delta_cents == 0 and delta_tokens == 0:
+    if delta_cents == 0:
         if (
             wallet.get("default_cents_applied") is None
             or wallet.get("default_micro_cents_applied") is None
@@ -2138,7 +2132,7 @@ def sync_wallet_default_quota(
                     default_tokens_applied = ?
                 WHERE user_id = ?
                 """,
-                (next_applied_cents, next_applied_micro_cents, next_applied_tokens, user_id),
+                (next_applied_cents, next_applied_micro_cents, 0, user_id),
             )
             row = conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone()
             return dict(row)
@@ -2152,7 +2146,7 @@ def sync_wallet_default_quota(
         UPDATE user_wallets
         SET balance_cents = ?,
             balance_micro_cents = ?,
-            balance_tokens = balance_tokens + ?,
+            balance_tokens = 0,
             default_cents_applied = ?,
             default_micro_cents_applied = ?,
             default_tokens_applied = ?,
@@ -2162,10 +2156,9 @@ def sync_wallet_default_quota(
         (
             next_balance_cents,
             next_balance_micro_cents,
-            delta_tokens,
             next_applied_cents,
             next_applied_micro_cents,
-            next_applied_tokens,
+            0,
             ts,
             user_id,
         ),
@@ -2187,10 +2180,10 @@ def sync_wallet_default_quota(
             "quota_adjustment",
             delta_cents,
             delta_micro_cents,
-            delta_tokens,
+            0,
             updated_wallet["balance_cents"],
             updated_wallet["balance_micro_cents"],
-            updated_wallet["balance_tokens"],
+            0,
             "system",
             None,
             "default_quota_increase",
@@ -2206,14 +2199,12 @@ def apply_wallet_usage(
     user_id: str,
     delta_cents: int,
     delta_micro_cents: int | None = None,
-    delta_tokens: int,
     source: str,
     model_call_log_id: str | None,
     reason: str,
     initial_cents: int,
-    initial_tokens: int,
 ) -> dict:
-    wallet = get_or_create_wallet(conn, user_id, initial_cents=initial_cents, initial_tokens=initial_tokens)
+    wallet = get_or_create_wallet(conn, user_id, initial_cents=initial_cents)
     if delta_micro_cents is None:
         delta_micro_cents = cents_to_micro_cents(delta_cents)
     delta_cents = micro_cents_to_display_cents(delta_micro_cents)
@@ -2225,11 +2216,11 @@ def apply_wallet_usage(
         UPDATE user_wallets
         SET balance_cents = ?,
             balance_micro_cents = ?,
-            balance_tokens = balance_tokens + ?,
+            balance_tokens = 0,
             updated_at = ?
         WHERE user_id = ?
         """,
-        (next_balance_cents, next_balance_micro_cents, delta_tokens, ts, user_id),
+        (next_balance_cents, next_balance_micro_cents, ts, user_id),
     )
     wallet = dict(conn.execute("SELECT * FROM user_wallets WHERE user_id = ?", (user_id,)).fetchone())
     conn.execute(
@@ -2247,10 +2238,10 @@ def apply_wallet_usage(
             "usage",
             delta_cents,
             delta_micro_cents,
-            delta_tokens,
+            0,
             wallet["balance_cents"],
             wallet["balance_micro_cents"],
-            wallet["balance_tokens"],
+            0,
             source,
             model_call_log_id,
             reason,

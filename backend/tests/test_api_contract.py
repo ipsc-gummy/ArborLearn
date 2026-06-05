@@ -32,7 +32,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     from app.main import app
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1000")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000000")
 
     with TestClient(app) as test_client:
         yield test_client
@@ -151,7 +150,8 @@ def test_wallet_initializes_on_first_read(client: TestClient) -> None:
     assert response.status_code == 200
     wallet = response.json()["wallet"]
     assert wallet["balanceCents"] == 1000
-    assert wallet["balanceTokens"] == 1_000_000
+    assert "balanceTokens" not in wallet
+    assert "initialTokens" not in wallet
     assert wallet["canCallApi"] is True
 
 
@@ -161,25 +161,20 @@ def test_wallet_default_quota_increase_tops_up_existing_wallet(client: TestClien
     first = client.get("/api/wallet", headers=headers)
     assert first.status_code == 200
     assert first.json()["wallet"]["balanceCents"] == 1000
-    assert first.json()["wallet"]["balanceTokens"] == 1_000_000
 
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1500")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1500000")
     increased = client.get("/api/wallet", headers=headers)
     assert increased.status_code == 200
     assert increased.json()["wallet"]["balanceCents"] == 1500
-    assert increased.json()["wallet"]["balanceTokens"] == 1_500_000
 
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "300")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "300000")
     decreased = client.get("/api/wallet", headers=headers)
     assert decreased.status_code == 200
     assert decreased.json()["wallet"]["balanceCents"] == 1500
-    assert decreased.json()["wallet"]["balanceTokens"] == 1_500_000
 
 
 def test_wallet_cost_keeps_sub_cent_precision(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.billing import calculate_paid_cost_cents, calculate_paid_cost_micro_cents
+    from app.billing import calculate_cost_cents, calculate_cost_micro_cents
 
     monkeypatch.setenv(
         "MODEL_PRICING_JSON",
@@ -193,31 +188,15 @@ def test_wallet_cost_keeps_sub_cent_precision(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
 
-    cost_micro_cents, pricing_source = calculate_paid_cost_micro_cents(
-        model_name="tiny-model",
-        prompt_tokens=1,
-        prompt_cache_hit_tokens=None,
-        prompt_cache_miss_tokens=None,
-        completion_tokens=0,
-        total_tokens=1,
-        paid_tokens=1,
-    )
-    cost_cents, _ = calculate_paid_cost_cents(
-        model_name="tiny-model",
-        prompt_tokens=1,
-        prompt_cache_hit_tokens=None,
-        prompt_cache_miss_tokens=None,
-        completion_tokens=0,
-        total_tokens=1,
-        paid_tokens=1,
-    )
+    cost_micro_cents, pricing_source = calculate_cost_micro_cents("tiny-model", 1, 0)
+    cost_cents, _ = calculate_cost_cents("tiny-model", 1, 0)
 
     assert pricing_source == "env"
     assert cost_micro_cents == 1
     assert cost_cents == 0
 
 
-def test_chat_usage_uses_free_tokens_then_wallet_balance(
+def test_chat_usage_charges_wallet_balance_for_all_tokens(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app import main
@@ -234,7 +213,6 @@ def test_chat_usage_uses_free_tokens_then_wallet_balance(
             }
         ),
     )
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000")
     monkeypatch.setattr(
         main,
         "call_model_with_usage",
@@ -263,29 +241,29 @@ def test_chat_usage_uses_free_tokens_then_wallet_balance(
     assert first.status_code == 200
 
     wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
-    assert wallet["balanceCents"] == 800
-    assert wallet["balanceMicroCents"] == 800_000_000
-    assert wallet["balanceTokens"] == 0
-    assert wallet["canCallApi"] is True
+    assert wallet["balanceCents"] == -200
+    assert wallet["balanceMicroCents"] == -200_000_000
+    assert "balanceTokens" not in wallet
+    assert wallet["canCallApi"] is False
 
     second = client.post(
         "/api/chat",
         headers=headers,
         json={"nodeId": root["id"], "message": "again", "modelName": "deepseek-v4-pro"},
     )
-    assert second.status_code == 200
+    assert second.status_code == 402
+    assert "balanceTokens" not in second.json()["detail"]
 
     wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
-    assert wallet["balanceCents"] == -400
-    assert wallet["balanceMicroCents"] == -400_000_000
-    assert wallet["balanceTokens"] == 0
+    assert wallet["balanceCents"] == -200
+    assert wallet["balanceMicroCents"] == -200_000_000
     assert wallet["canCallApi"] is False
 
     summary = client.get("/api/usage/summary", headers=headers)
     assert summary.status_code == 200
-    assert summary.json()["total"]["total_tokens"] == 2400
-    assert summary.json()["total"]["cost_cents"] == 1400
-    assert summary.json()["total"]["cost_micro_cents"] == 1_400_000_000
+    assert summary.json()["total"]["total_tokens"] == 1200
+    assert summary.json()["total"]["cost_cents"] == 1200
+    assert summary.json()["total"]["cost_micro_cents"] == 1_200_000_000
 
     events = client.get("/api/usage/events", headers=headers)
     assert events.status_code == 200

@@ -125,22 +125,17 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
   if (!user) return null;
 
   const balanceCents = (wallet?.balanceCents ?? 0) + mockTopupCents;
-  const rawRemainingTokens = wallet?.balanceTokens ?? 0;
-  const displayRemainingTokens = Math.max(rawRemainingTokens, 0);
   const usedTokens = summary?.total.total_tokens ?? 0;
-  const monthTokenQuota = Math.max(displayRemainingTokens + usedTokens, wallet?.initialTokens ?? displayRemainingTokens + usedTokens);
-  const usagePercent = monthTokenQuota > 0 ? Math.min(100, Math.max(0, (usedTokens / monthTokenQuota) * 100)) : 0;
-  const isLowBalance = wallet ? displayRemainingTokens <= 0 && balanceCents <= 0 : false;
+  const isLowBalance = wallet ? balanceCents <= 0 : false;
+  const statusText = wallet ? (isLowBalance ? "余额不足" : "可继续调用") : "同步中";
   const customAmount = Number(customTopup);
   const customInvalid = customTopup.trim() !== "" && (!Number.isFinite(customAmount) || customAmount < 0.1 || customAmount > 500);
-  const tooltip = wallet
-    ? `钱包 ${formatCents(balanceCents)} · 免费 token ${formatTokens(displayRemainingTokens)}`
-    : "钱包加载中";
+  const tooltip = wallet ? `钱包 ${formatCents(balanceCents)}` : "钱包加载中";
 
   const applyMockTopup = (amountYuan: number) => {
     const cents = Math.round(amountYuan * 100);
     setMockTopupCents((value) => value + cents);
-    setMockNotice(`模拟充值钱包 ${formatCents(cents)} 成功，当前仅用于演示。`);
+    setMockNotice(`已在本地界面模拟增加 ${formatCents(cents)}，不会写入后端余额。`);
   };
 
   const openWallet = () => {
@@ -177,21 +172,36 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
             onMouseDown={() => setWalletOpen(false)}
           >
             <section
-              className="tl-modal-panel tl-panel max-h-[88vh] w-full max-w-[26rem] overflow-auto rounded-2xl border p-3 text-sm shadow-panel"
+              className="tl-modal-panel tl-panel max-h-[88vh] w-full max-w-[30rem] overflow-auto rounded-2xl border p-4 text-sm shadow-panel"
               role="dialog"
               aria-modal="true"
               aria-label="钱包"
               onMouseDown={(event) => event.stopPropagation()}
             >
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground">钱包</p>
-              <div className="mt-1 flex items-baseline gap-2">
-                <p className={cn("text-2xl font-semibold", isLowBalance && "text-destructive")}>{formatCents(balanceCents)}</p>
-                {isLowBalance && <AlertCircle className="h-4 w-4 text-destructive" />}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary">
+                  <WalletIcon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground">钱包余额</p>
+                  <p
+                    className={cn(
+                      "mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      isLowBalance ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary",
+                    )}
+                  >
+                    {isLowBalance && <AlertCircle className="h-3.5 w-3.5" />}
+                    {statusText}
+                  </p>
+                </div>
               </div>
+              <p className={cn("mt-3 text-3xl font-semibold tracking-normal", isLowBalance && "text-destructive")}>
+                {formatCents(balanceCents)}
+              </p>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <Button variant="ghost" size="icon" onClick={() => void loadWallet()} disabled={loading} title="刷新钱包">
                 <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
               </Button>
@@ -207,39 +217,23 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
             </div>
           )}
 
-          <div className="mt-3 rounded-lg border border-primary/20 bg-primary/8 p-3 text-xs leading-5 text-muted-foreground">
-            免费 token 和钱包余额会连续保留；本页按本月汇总展示用量。免费 token 用完后，会按模型价格消耗钱包余额。
-          </div>
+          <p className="mt-3 rounded-lg border border-primary/20 bg-primary/8 p-3 text-xs leading-5 text-muted-foreground">
+            模型调用按当前模型价格消耗钱包余额；token 只作为用量统计，不再作为剩余额度展示。
+          </p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <Metric label="免费 token" value={formatTokens(displayRemainingTokens)} />
-            <Metric label="本月请求" value={formatTokens(summary?.total.request_count)} />
             <Metric label="本月花费" value={formatCents(summary?.total.cost_cents)} />
+            <Metric label="本月 token" value={formatTokens(usedTokens)} />
+            <Metric label="本月请求" value={formatTokens(summary?.total.request_count)} />
           </div>
 
           <div className="mt-4 rounded-lg border border-border/70 p-3">
-            <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="font-medium">本月 token</span>
-              <span className="text-muted-foreground">
-                {formatTokens(usedTokens)} / {formatTokens(monthTokenQuota)}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn("h-full rounded-full bg-primary transition-all", isLowBalance && "bg-destructive")}
-                style={{ width: `${usagePercent}%` }}
-              />
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <span>已用 {formatTokens(usedTokens)}</span>
-              <span className="text-right">免费剩余 {formatTokens(displayRemainingTokens)}</span>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="mb-2 flex items-center gap-2">
-              <Coins className="h-4 w-4 text-primary" />
-              <p className="text-xs font-semibold text-muted-foreground">模拟充值钱包</p>
+            <div className="mb-3 flex items-start gap-2">
+              <Coins className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-muted-foreground">开发演示充值</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">只影响当前界面展示，不会发起支付或写入后端。</p>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {MOCK_TOPUP_AMOUNTS.map((amount) => (
@@ -278,7 +272,7 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
             {mockNotice && <p className="mt-2 text-xs text-primary">{mockNotice}</p>}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 rounded-lg border border-border/70 p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="text-xs font-semibold text-muted-foreground">最近用量</p>
               <button
@@ -290,16 +284,18 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
               </button>
             </div>
             <div className="max-h-44 space-y-2 overflow-auto">
-              {events.length === 0 && <p className="rounded-lg border border-border/70 p-3 text-xs text-muted-foreground">暂无用量记录。</p>}
+              {loading && events.length === 0 && <p className="rounded-lg bg-muted/45 p-3 text-xs text-muted-foreground">正在加载用量...</p>}
+              {!loading && events.length === 0 && <p className="rounded-lg bg-muted/45 p-3 text-xs text-muted-foreground">暂无用量记录。</p>}
               {events.map((event) => (
-                <div key={event.id} className="rounded-lg border border-border/70 p-2">
-                  <div className="flex items-center justify-between gap-2">
+                <div key={event.id} className="rounded-lg bg-muted/35 p-2">
+                  <div className="flex items-start justify-between gap-2">
                     <p className="truncate text-xs font-semibold">{eventLabel(event)}</p>
                     <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(event.created_at)}</span>
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {event.model_name ?? "unknown"} · {formatTokens(event.total_tokens ?? 0)} tokens · {formatCents(event.cost_cents ?? 0)}
-                  </p>
+                  <div className="mt-1 flex min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="truncate">{event.model_name ?? "unknown"}</span>
+                    <span className="shrink-0 text-right">{formatTokens(event.total_tokens ?? 0)} tokens · {formatCents(event.cost_cents ?? 0)}</span>
+                  </div>
                 </div>
               ))}
             </div>

@@ -336,7 +336,6 @@ def wallet_http_error(exc: WalletInsufficientCreditError) -> HTTPException:
             "message": "钱包余额不足，请补充额度后再调用模型。",
             "balanceCents": exc.balance_cents,
             "balanceMicroCents": exc.balance_micro_cents,
-            "balanceTokens": exc.balance_tokens,
         },
     )
 
@@ -1829,12 +1828,11 @@ def health() -> dict:
 @app.get("/api/wallet")
 def wallet(user: dict = Depends(require_user)) -> dict:
     with connect() as conn:
-        initial_cents, initial_tokens = wallet_quota_for_user(conn, user["id"])
+        initial_cents = wallet_quota_for_user(conn, user["id"])
         return {
             "wallet": wallet_public_view(
                 ensure_wallet(conn, user["id"]),
                 initial_cents=initial_cents,
-                initial_tokens=initial_tokens,
             )
         }
 
@@ -2109,7 +2107,6 @@ def monitoring_user_rows(conn: sqlite3.Connection, from_ts: str | None, to_ts: s
           users.created_at,
           wallets.balance_cents,
           wallets.balance_micro_cents,
-          wallets.balance_tokens,
           COALESCE(usage.request_count, 0) AS request_count,
           COALESCE(usage.total_tokens, 0) AS total_tokens,
           COALESCE(usage.prompt_tokens, 0) AS prompt_tokens,
@@ -2217,7 +2214,7 @@ def build_monitoring_overview(conn: sqlite3.Connection, from_ts: str | None, to_
 def build_monitoring_user_detail(conn: sqlite3.Connection, target_user_id: str, from_ts: str | None, to_ts: str | None) -> dict:
     target = conn.execute(
         """
-        SELECT users.*, wallets.balance_cents, wallets.balance_micro_cents, wallets.balance_tokens
+        SELECT users.*, wallets.balance_cents, wallets.balance_micro_cents
         FROM users
         LEFT JOIN user_wallets wallets ON wallets.user_id = users.id
         WHERE users.id = ?

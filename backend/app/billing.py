@@ -12,9 +12,7 @@ from .model_client import ModelCallResult, ModelConfigurationError, ModelUsage
 
 
 DEFAULT_INITIAL_CENTS = 1000
-DEFAULT_INITIAL_TOKENS = 1_000_000
 ADMIN_INITIAL_CENTS = 1000
-ADMIN_INITIAL_TOKENS = 10_000_000
 DEFAULT_USD_TO_CNY_RATE = Decimal("7.20")
 DEFAULT_MODEL_PRICING_USD = {
     "deepseek-chat": {
@@ -43,11 +41,10 @@ MODEL_PRICE_ALIASES = {
 
 
 class WalletInsufficientCreditError(RuntimeError):
-    def __init__(self, balance_cents: int, balance_tokens: int, balance_micro_cents: int | None = None) -> None:
+    def __init__(self, balance_cents: int, balance_micro_cents: int | None = None) -> None:
         self.balance_cents = balance_cents
         self.balance_micro_cents = balance_micro_cents if balance_micro_cents is not None else balance_cents * MICRO_CENTS_PER_CENT
-        self.balance_tokens = balance_tokens
-        super().__init__(f"Wallet balance is insufficient: {balance_cents} cents, {balance_tokens} tokens")
+        super().__init__(f"Wallet balance is insufficient: {balance_cents} cents")
 
 
 @dataclass(frozen=True)
@@ -67,24 +64,16 @@ def initial_wallet_cents() -> int:
     return _env_int("DEFAULT_WALLET_INITIAL_CENTS", DEFAULT_INITIAL_CENTS)
 
 
-def initial_wallet_tokens() -> int:
-    return _env_int("DEFAULT_WALLET_INITIAL_TOKENS", DEFAULT_INITIAL_TOKENS)
-
-
 def admin_wallet_cents() -> int:
     return _env_int("ADMIN_WALLET_INITIAL_CENTS", ADMIN_INITIAL_CENTS)
 
 
-def admin_wallet_tokens() -> int:
-    return _env_int("ADMIN_WALLET_INITIAL_TOKENS", ADMIN_INITIAL_TOKENS)
-
-
-def wallet_quota_for_user(conn: sqlite3.Connection, user_id: str) -> tuple[int, int]:
+def wallet_quota_for_user(conn: sqlite3.Connection, user_id: str) -> int:
     row = conn.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
     is_admin = bool(row and row["is_admin"])
     if is_admin:
-        return admin_wallet_cents(), admin_wallet_tokens()
-    return initial_wallet_cents(), initial_wallet_tokens()
+        return admin_wallet_cents()
+    return initial_wallet_cents()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -94,46 +83,41 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def wallet_public_view(wallet: dict, *, initial_cents: int | None = None, initial_tokens: int | None = None) -> dict:
+def wallet_public_view(wallet: dict, *, initial_cents: int | None = None) -> dict:
     public_initial_cents = initial_wallet_cents() if initial_cents is None else initial_cents
-    public_initial_tokens = initial_wallet_tokens() if initial_tokens is None else initial_tokens
     return {
         "userId": wallet["user_id"],
         "balanceCents": wallet["balance_cents"],
         "balanceMicroCents": wallet["balance_micro_cents"],
-        "balanceTokens": wallet["balance_tokens"],
         "initialCents": public_initial_cents,
         "initialMicroCents": public_initial_cents * MICRO_CENTS_PER_CENT,
-        "initialTokens": public_initial_tokens,
-        "canCallApi": wallet["balance_tokens"] > 0 or wallet["balance_micro_cents"] > 0,
+        "canCallApi": wallet["balance_micro_cents"] > 0,
         "createdAt": wallet["created_at"],
         "updatedAt": wallet["updated_at"],
     }
 
 
 def ensure_wallet(conn: sqlite3.Connection, user_id: str) -> dict:
-    initial_cents, initial_tokens = wallet_quota_for_user(conn, user_id)
+    initial_cents = wallet_quota_for_user(conn, user_id)
     return get_or_create_wallet(
         conn,
         user_id,
         initial_cents=initial_cents,
-        initial_tokens=initial_tokens,
     )
 
 
 def ensure_wallet_has_credit(conn: sqlite3.Connection, user_id: str) -> dict:
     wallet = ensure_wallet(conn, user_id)
-    if wallet["balance_tokens"] <= 0 and wallet["balance_micro_cents"] <= 0:
-        raise WalletInsufficientCreditError(wallet["balance_cents"], wallet["balance_tokens"], wallet["balance_micro_cents"])
+    if wallet["balance_micro_cents"] <= 0:
+        raise WalletInsufficientCreditError(wallet["balance_cents"], wallet["balance_micro_cents"])
     return wallet
 
 
 def ensure_wallet_can_charge_model(conn: sqlite3.Connection, user_id: str, model_name: str | None = None) -> dict:
     wallet = ensure_wallet_has_credit(conn, user_id)
-    if wallet["balance_tokens"] <= 0 and wallet["balance_micro_cents"] > 0:
-        pricing, source = pricing_for_model(model_name)
-        if not pricing or source in {"missing", "invalid"}:
-            raise ModelConfigurationError(f"Missing wallet pricing for model '{model_name or 'default'}'.")
+    pricing, source = pricing_for_model(model_name)
+    if not pricing or source in {"missing", "invalid"}:
+        raise ModelConfigurationError(f"Missing wallet pricing for model '{model_name or 'default'}'.")
     return wallet
 
 
@@ -302,55 +286,6 @@ def calculate_cost_cents(
     return micro_cents_to_display_cents(cost_micro_cents), pricing_source
 
 
-def calculate_paid_cost_micro_cents(
-    *,
-    model_name: str | None,
-    prompt_tokens: int,
-    prompt_cache_hit_tokens: int | None,
-    prompt_cache_miss_tokens: int | None,
-    completion_tokens: int,
-    total_tokens: int,
-    paid_tokens: int,
-) -> tuple[int, str]:
-    if paid_tokens <= 0:
-        return 0, "free_tokens"
-    if total_tokens <= 0:
-        return 0, "missing"
-    full_cost_micro_cents, pricing_source = calculate_cost_micro_cents(
-        model_name,
-        prompt_tokens,
-        completion_tokens,
-        prompt_cache_hit_tokens=prompt_cache_hit_tokens,
-        prompt_cache_miss_tokens=prompt_cache_miss_tokens,
-    )
-    if pricing_source in {"missing", "invalid"}:
-        raise ModelConfigurationError(f"Missing wallet pricing for model '{model_name or 'default'}'.")
-    paid_cost = (Decimal(full_cost_micro_cents) * Decimal(paid_tokens)) / Decimal(total_tokens)
-    return int(paid_cost.quantize(Decimal("1"), rounding=ROUND_HALF_UP)), pricing_source
-
-
-def calculate_paid_cost_cents(
-    *,
-    model_name: str | None,
-    prompt_tokens: int,
-    prompt_cache_hit_tokens: int | None,
-    prompt_cache_miss_tokens: int | None,
-    completion_tokens: int,
-    total_tokens: int,
-    paid_tokens: int,
-) -> tuple[int, str]:
-    paid_cost_micro_cents, pricing_source = calculate_paid_cost_micro_cents(
-        model_name=model_name,
-        prompt_tokens=prompt_tokens,
-        prompt_cache_hit_tokens=prompt_cache_hit_tokens,
-        prompt_cache_miss_tokens=prompt_cache_miss_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=total_tokens,
-        paid_tokens=paid_tokens,
-    )
-    return micro_cents_to_display_cents(paid_cost_micro_cents), pricing_source
-
-
 def _decimal_value(value: object) -> Decimal | None:
     if value is None or isinstance(value, bool):
         return None
@@ -417,25 +352,12 @@ def record_successful_model_usage(
     error_message: str | None = None,
 ) -> dict:
     accounting = build_accounting(model_name=model_name, usage=usage, messages=messages, output_text=output_text)
-    initial_cents, initial_tokens = wallet_quota_for_user(conn, user_id)
-    wallet = get_or_create_wallet(
+    initial_cents = wallet_quota_for_user(conn, user_id)
+    get_or_create_wallet(
         conn,
         user_id,
         initial_cents=initial_cents,
-        initial_tokens=initial_tokens,
     )
-    free_tokens_applied = min(max(int(wallet["balance_tokens"]), 0), accounting.total_tokens)
-    paid_tokens = max(0, accounting.total_tokens - free_tokens_applied)
-    paid_cost_micro_cents, pricing_source = calculate_paid_cost_micro_cents(
-        model_name=model_name,
-        prompt_tokens=accounting.prompt_tokens,
-        prompt_cache_hit_tokens=accounting.prompt_cache_hit_tokens,
-        prompt_cache_miss_tokens=accounting.prompt_cache_miss_tokens,
-        completion_tokens=accounting.completion_tokens,
-        total_tokens=accounting.total_tokens,
-        paid_tokens=paid_tokens,
-    )
-    paid_cost_cents = micro_cents_to_display_cents(paid_cost_micro_cents)
     input_chars = sum(len(str(message.get("content", ""))) for message in messages)
     log = insert_model_call_log(
         conn,
@@ -457,9 +379,9 @@ def record_successful_model_usage(
         completion_tokens=accounting.completion_tokens,
         total_tokens=accounting.total_tokens,
         usage_source=accounting.usage_source,
-        cost_cents=paid_cost_cents,
-        cost_micro_cents=paid_cost_micro_cents,
-        pricing_source=pricing_source,
+        cost_cents=accounting.cost_cents,
+        cost_micro_cents=accounting.cost_micro_cents,
+        pricing_source=accounting.pricing_source,
         context_chars=context_chars,
         web_search_enabled=web_search_enabled,
         search_result_count=search_result_count,
@@ -473,13 +395,11 @@ def record_successful_model_usage(
     apply_wallet_usage(
         conn,
         user_id=user_id,
-        delta_cents=-paid_cost_cents,
-        delta_micro_cents=-paid_cost_micro_cents,
-        delta_tokens=-free_tokens_applied,
+        delta_cents=-accounting.cost_cents,
+        delta_micro_cents=-accounting.cost_micro_cents,
         source="model_call",
         model_call_log_id=log["id"],
         reason=call_type,
         initial_cents=initial_cents,
-        initial_tokens=initial_tokens,
     )
     return log

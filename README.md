@@ -311,6 +311,8 @@ Backend:
 | `MODEL_API_KEY` | Yes | API key for the OpenAI-compatible model service |
 | `MODEL_BASE_URL` | Yes | Default `https://api.deepseek.com` |
 | `MODEL_NAME` | Yes | Default `deepseek-v4-pro` |
+| `DEFAULT_WALLET_INITIAL_CENTS` | No | Initial RMB wallet grant for new users, in cents; free token grants are no longer configured |
+| `ADMIN_WALLET_INITIAL_CENTS` | No | Initial RMB wallet grant for admins, in cents; free token grants are no longer configured |
 | `AUTH_SECRET` | Production | Signing secret for login tokens |
 | `EMAIL_CODE_SECRET` | Production | Secret for hashing email verification codes |
 | `SMTP_HOST` / `SMTP_PORT` | Required for email codes | Aliyun DirectMail uses `smtpdm.aliyun.com` + `465` |
