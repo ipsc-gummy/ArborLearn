@@ -940,6 +940,7 @@ export function AuthDialog({
   const registerPasswordConfirmed = password.length >= 8 && confirmPassword.length >= 8 && password === confirmPassword;
   const isDemoUpgrade = Boolean(user?.isTemporary && mode === "register");
   const isOpeningDemoUpgrade = Boolean(user?.isTemporary && initialMode === "register");
+  const showDemoEntry = mode === "register" && !registerDetailsVisible;
   const canRequestVerificationCode = emailIsValid && !loading && verificationCooldown <= 0;
   const canSubmit =
     mode === "forgot-password"
@@ -1343,7 +1344,7 @@ export function AuthDialog({
           </button>
         )}
 
-        {mode === "register" && (
+        {showDemoEntry && (
           <button
             type="button"
             className="tl-panel-soft group mt-4 w-full rounded-xl border p-3 text-left text-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25"
