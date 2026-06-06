@@ -192,6 +192,8 @@ export interface UsageEvent {
   model_name?: string | null;
   thinking_mode?: string | null;
   prompt_tokens?: number | null;
+  prompt_cache_hit_tokens?: number | null;
+  prompt_cache_miss_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
   usage_source?: string | null;

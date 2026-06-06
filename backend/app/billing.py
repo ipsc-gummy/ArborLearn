@@ -14,6 +14,7 @@ from .model_client import ModelCallResult, ModelConfigurationError, ModelUsage
 DEFAULT_INITIAL_CENTS = 1000
 ADMIN_INITIAL_CENTS = 1000
 DEFAULT_USD_TO_CNY_RATE = Decimal("7.20")
+BILLING_COST_MULTIPLIER = Decimal("2")
 DEFAULT_MODEL_PRICING_USD = {
     "deepseek-chat": {
         "provider": "deepseek",
@@ -179,7 +180,7 @@ def pricing_for_model(model_name: str | None) -> tuple[dict | None, str]:
             return None, "invalid"
         if not isinstance(pricing, dict):
             return None, "invalid"
-        model_pricing = pricing.get(model_name or "") or pricing.get(resolved_model_name) or pricing.get("default")
+        model_pricing = pricing.get("default") or pricing.get(model_name or "") or pricing.get(resolved_model_name)
         if isinstance(model_pricing, dict):
             return model_pricing, "env"
 
@@ -225,46 +226,22 @@ def calculate_cost_micro_cents(
         "output_cents_per_million_tokens",
         "output_usd_per_million_tokens",
     )
-    provider = str(pricing.get("provider", "")).lower()
-    if provider == "deepseek" or "cache_miss_usd_per_million_tokens" in pricing or "cache_miss_cents_per_million_tokens" in pricing:
-        cache_hit_cents_per_million = price_cents_per_million(
-            pricing,
-            "cache_hit_cents_per_million_tokens",
-            "cache_hit_usd_per_million_tokens",
-        )
-        cache_miss_cents_per_million = price_cents_per_million(
-            pricing,
-            "cache_miss_cents_per_million_tokens",
-            "cache_miss_usd_per_million_tokens",
-        )
-        if cache_hit_cents_per_million is None or cache_miss_cents_per_million is None or output_cents_per_million is None:
-            return 0, "invalid"
-        if prompt_cache_hit_tokens is None and prompt_cache_miss_tokens is None:
-            cache_hit_tokens = 0
-            cache_miss_tokens = prompt_tokens
-        else:
-            cache_hit_tokens = max(0, prompt_cache_hit_tokens or 0)
-            cache_miss_tokens = max(0, prompt_cache_miss_tokens or 0)
-            missing_prompt_tokens = max(0, prompt_tokens - cache_hit_tokens - cache_miss_tokens)
-            cache_miss_tokens += missing_prompt_tokens
-        cost = (
-            Decimal(cache_hit_tokens) * cache_hit_cents_per_million
-            + Decimal(cache_miss_tokens) * cache_miss_cents_per_million
-            + Decimal(completion_tokens) * output_cents_per_million
-        ) / Decimal(1_000_000)
-        micro_cost = cost * Decimal(MICRO_CENTS_PER_CENT)
-        return int(micro_cost.quantize(Decimal("1"), rounding=ROUND_HALF_UP)), source
-
     input_cents_per_million = price_cents_per_million(
         pricing,
         "input_cents_per_million_tokens",
         "input_usd_per_million_tokens",
     )
+    if input_cents_per_million is None:
+        input_cents_per_million = price_cents_per_million(
+            pricing,
+            "cache_miss_cents_per_million_tokens",
+            "cache_miss_usd_per_million_tokens",
+        )
     if input_cents_per_million is None or output_cents_per_million is None:
         return 0, "invalid"
 
     cost = (Decimal(prompt_tokens) * input_cents_per_million + Decimal(completion_tokens) * output_cents_per_million) / Decimal(1_000_000)
-    micro_cost = cost * Decimal(MICRO_CENTS_PER_CENT)
+    micro_cost = cost * BILLING_COST_MULTIPLIER * Decimal(MICRO_CENTS_PER_CENT)
     return int(micro_cost.quantize(Decimal("1"), rounding=ROUND_HALF_UP)), source
 
 

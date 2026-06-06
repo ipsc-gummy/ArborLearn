@@ -3866,7 +3866,13 @@ def retry_chat_stream(payload: ChatRetryRequest, user: dict = Depends(require_us
         if not previous_user_message:
             raise HTTPException(status_code=400, detail="No user message found to retry")
 
-        model_messages = build_model_messages(conn, payload.nodeId, previous_user_message["created_at"], payload.modelName)
+        model_messages = build_model_messages(
+            conn,
+            payload.nodeId,
+            previous_user_message["created_at"],
+            payload.modelName,
+            include_current_summary=False,
+        )
         archived_patch_count = archive_patches_for_message(
             conn,
             user["id"],
@@ -3996,6 +4002,7 @@ async def chat_stream(payload: ChatRequest, user: dict = Depends(require_user)) 
             web_sources=web_sources,
             user_query=(payload.web_query or payload.message).strip(),
             enable_rag=payload.rag_enabled,
+            include_current_summary=False,
         )
 
     def generate():

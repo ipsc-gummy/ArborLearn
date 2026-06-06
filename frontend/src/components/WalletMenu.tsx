@@ -218,7 +218,7 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
           )}
 
           <p className="mt-3 rounded-lg border border-primary/20 bg-primary/8 p-3 text-xs leading-5 text-muted-foreground">
-            模型调用按当前模型价格消耗钱包余额；token 只作为用量统计，不再作为剩余额度展示。
+            模型调用按当前模型价格消耗钱包余额。
           </p>
 
           <div className="mt-4 grid grid-cols-3 gap-2">
@@ -232,7 +232,7 @@ export function WalletMenu({ user, trigger, open: controlledOpen, onOpenChange, 
               <Coins className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-muted-foreground">开发演示充值</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">只影响当前界面展示，不会发起支付或写入后端。</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">只影响当前界面展示，不会发起支付。</p>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -442,6 +442,8 @@ function UsageDetailsModal({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="mt-2 grid gap-1 text-muted-foreground sm:grid-cols-2">
                     <span>Prompt {formatTokens(event.prompt_tokens ?? 0)}</span>
+                    <span>Cache hit {formatTokens(event.prompt_cache_hit_tokens ?? 0)}</span>
+                    <span>Cache miss {formatTokens(event.prompt_cache_miss_tokens ?? 0)}</span>
                     <span>Completion {formatTokens(event.completion_tokens ?? 0)}</span>
                     <span>Total {formatTokens(event.total_tokens ?? 0)}</span>
                     <span>{formatCents(event.cost_cents ?? 0)} · {event.usage_source ?? "unknown"}</span>

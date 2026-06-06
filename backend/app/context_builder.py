@@ -161,6 +161,7 @@ def _build_hierarchical_context(
     conn: sqlite3.Connection,
     chain: list[sqlite3.Row],
     before_created_at: str | None = None,
+    include_current_summary: bool = True,
 ) -> str:
     if not chain:
         return ""
@@ -178,6 +179,8 @@ def _build_hierarchical_context(
         f"当前节点摘要: {_summary_text(current)}",
         f"当前节点上下文模式: {current['context_mode']}",
     ]
+    if not include_current_summary:
+        parts.pop(4)
 
     if parent:
         parts.extend(
@@ -200,12 +203,18 @@ def build_model_messages(
     web_sources: list[dict] | None = None,
     user_query: str | None = None,
     enable_rag: bool = False,
+    include_current_summary: bool = True,
 ) -> list[dict[str, str]]:
     chain = get_parent_chain(conn, node_id)
     if not chain:
         raise ValueError(f"Node not found: {node_id}")
 
-    hierarchical_context = _build_hierarchical_context(conn, chain, before_created_at)
+    hierarchical_context = _build_hierarchical_context(
+        conn,
+        chain,
+        before_created_at,
+        include_current_summary=include_current_summary,
+    )
     current_history = _recent_turns(conn, node_id, 12, before_created_at)
 
     web_evidence = _format_web_evidence(web_sources, user_query)

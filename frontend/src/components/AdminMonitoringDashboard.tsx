@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowLeft,
   BarChart3,
+  ChevronDown,
   Clock,
   Database,
   FileText,
@@ -30,6 +31,17 @@ import { AccountMenu, type AuthDialogMode, type ThemeMode } from "./AppMenus";
 import type { AuthUser } from "../lib/api";
 
 type RangeMode = string;
+type SeriesMetricKey = "request_count" | "total_tokens" | "prompt_tokens" | "cache_hit_tokens" | "cache_miss_tokens" | "completion_tokens" | "cost_micro_cents";
+
+const DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
+const DEEPSEEK_PRO_MODEL = "deepseek-v4-pro";
+const DEEPSEEK_MODEL_IDS = [DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL];
+const QWEN_MODEL_IDS = ["Qwen/Qwen2.5-VL-7B-Instruct", "qwen2.5-vl-7b-instruct"];
+const MODEL_BUCKET_EXCLUDED_IDS = [...DEEPSEEK_MODEL_IDS, ...QWEN_MODEL_IDS];
+const FLASH_DISPLAY_NAME = "Flash";
+const PRO_DISPLAY_NAME = "Pro";
+const QWEN_DISPLAY_NAME = "Qwen Vision";
+const ELSE_DISPLAY_NAME = "Else";
 
 interface AdminMonitoringDashboardProps {
   onBack: () => void;
@@ -110,9 +122,84 @@ function formatDate(value: string | null | undefined) {
 }
 
 function modelAccent(model: string) {
-  if (model.includes("pro")) return "bg-sky-500";
-  if (model.includes("flash")) return "bg-emerald-500";
+  const normalized = model.toLowerCase();
+  if (isQwenModel(model) || normalized.includes("qwen")) return "bg-rose-500";
+  if (normalized.includes("pro")) return "bg-sky-500";
+  if (normalized.includes("flash")) return "bg-emerald-500";
   return "bg-amber-500";
+}
+
+function isQwenModel(model: string | null | undefined) {
+  const normalized = String(model || "").toLowerCase();
+  return QWEN_MODEL_IDS.some((item) => item.toLowerCase() === normalized);
+}
+
+function sumSeriesMetric(item: AdminMonitoringSeriesPoint, modelNames: string[], key: SeriesMetricKey) {
+  return modelNames.reduce((sum, modelName) => sum + Number(item.models[modelName]?.[key] ?? 0), 0);
+}
+
+function aggregateModelByIds(models: AdminMonitoringModel[], modelNames: string[], displayName: string): AdminMonitoringModel | undefined {
+  const matched = models.filter((model) => modelNames.some((modelName) => modelName.toLowerCase() === model.model_name.toLowerCase()));
+  if (matched.length === 0) return undefined;
+  return aggregateModels(matched, displayName);
+}
+
+function aggregateOtherModels(models: AdminMonitoringModel[]) {
+  const excluded = MODEL_BUCKET_EXCLUDED_IDS.map((modelName) => modelName.toLowerCase());
+  const matched = models.filter((model) => !excluded.includes(model.model_name.toLowerCase()));
+  if (matched.length === 0) return undefined;
+  return aggregateModels(matched, ELSE_DISPLAY_NAME);
+}
+
+function emptyModelBucket(displayName: string): AdminMonitoringModel {
+  return {
+    model_name: displayName,
+    request_count: 0,
+    total_tokens: 0,
+    prompt_tokens: 0,
+    cache_hit_tokens: 0,
+    cache_miss_tokens: 0,
+    completion_tokens: 0,
+    cost_cents: 0,
+    cost_micro_cents: 0,
+    failed_requests: 0,
+    avg_latency_ms: 0,
+  };
+}
+
+function monitoringModelBuckets(models: AdminMonitoringModel[]) {
+  return [
+    aggregateModelByIds(models, [DEEPSEEK_FLASH_MODEL], FLASH_DISPLAY_NAME) ?? emptyModelBucket(FLASH_DISPLAY_NAME),
+    aggregateModelByIds(models, [DEEPSEEK_PRO_MODEL], PRO_DISPLAY_NAME) ?? emptyModelBucket(PRO_DISPLAY_NAME),
+    aggregateModelByIds(models, QWEN_MODEL_IDS, QWEN_DISPLAY_NAME) ?? emptyModelBucket(QWEN_DISPLAY_NAME),
+    aggregateOtherModels(models) ?? emptyModelBucket(ELSE_DISPLAY_NAME),
+  ];
+}
+
+function aggregateModels(matched: AdminMonitoringModel[], displayName: string): AdminMonitoringModel {
+  const requestCount = matched.reduce((sum, model) => sum + model.request_count, 0);
+  const weightedLatency = matched.reduce((sum, model) => sum + model.avg_latency_ms * model.request_count, 0);
+  return {
+    model_name: displayName,
+    request_count: requestCount,
+    total_tokens: matched.reduce((sum, model) => sum + model.total_tokens, 0),
+    prompt_tokens: matched.reduce((sum, model) => sum + model.prompt_tokens, 0),
+    cache_hit_tokens: matched.reduce((sum, model) => sum + model.cache_hit_tokens, 0),
+    cache_miss_tokens: matched.reduce((sum, model) => sum + model.cache_miss_tokens, 0),
+    completion_tokens: matched.reduce((sum, model) => sum + model.completion_tokens, 0),
+    cost_cents: matched.reduce((sum, model) => sum + model.cost_cents, 0),
+    cost_micro_cents: matched.reduce((sum, model) => sum + model.cost_micro_cents, 0),
+    failed_requests: matched.reduce((sum, model) => sum + model.failed_requests, 0),
+    avg_latency_ms: requestCount > 0 ? Math.round(weightedLatency / requestCount) : 0,
+  };
+}
+
+function sumOtherSeriesMetric(item: AdminMonitoringSeriesPoint, key: SeriesMetricKey) {
+  const excluded = MODEL_BUCKET_EXCLUDED_IDS.map((modelName) => modelName.toLowerCase());
+  return Object.entries(item.models).reduce((sum, [modelName, model]) => {
+    if (excluded.includes(modelName.toLowerCase())) return sum;
+    return sum + Number(model?.[key] ?? 0);
+  }, 0);
 }
 
 export function AdminMonitoringDashboard({
@@ -272,7 +359,7 @@ function OverviewPage({
   return (
     <>
       <OverviewCards overview={overview} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.9fr)]">
         <section className="tl-panel rounded-2xl border p-5">
           <SectionTitle icon={BarChart3} title="全局 Token 趋势" aside={overview.range.label} />
           <UsageBars series={overview.series} rangeMode={rangeMode} />
@@ -344,15 +431,38 @@ function UserMonitoringPage({
         <SectionTitle icon={BarChart3} title="每月用量" aside="消费金额" />
         <CostBars series={detail.series} rangeMode={rangeMode} />
       </section>
-      <section className="grid gap-5 xl:grid-cols-2">
-        {["deepseek-v4-flash", "deepseek-v4-pro"].map((modelName) => {
-          const model = detail.models.find((item) => item.model_name === modelName);
-          return (
-            <section key={modelName} className="tl-panel rounded-2xl border p-5">
-              <ModelDeepSeekPanel modelName={modelName} model={model} series={detail.series} rangeMode={rangeMode} />
-            </section>
-          );
-        })}
+      <section className="grid gap-5 xl:grid-cols-4">
+        <section className="tl-panel rounded-2xl border p-5">
+          <ModelDeepSeekPanel
+            displayName={FLASH_DISPLAY_NAME}
+            modelNames={[DEEPSEEK_FLASH_MODEL]}
+            model={aggregateModelByIds(detail.models, [DEEPSEEK_FLASH_MODEL], FLASH_DISPLAY_NAME)}
+            series={detail.series}
+            rangeMode={rangeMode}
+          />
+        </section>
+        <section className="tl-panel rounded-2xl border p-5">
+          <ModelDeepSeekPanel
+            displayName={PRO_DISPLAY_NAME}
+            modelNames={[DEEPSEEK_PRO_MODEL]}
+            model={aggregateModelByIds(detail.models, [DEEPSEEK_PRO_MODEL], PRO_DISPLAY_NAME)}
+            series={detail.series}
+            rangeMode={rangeMode}
+          />
+        </section>
+        <section className="tl-panel rounded-2xl border p-5">
+          <ModelDeepSeekPanel
+            displayName={QWEN_DISPLAY_NAME}
+            modelNames={QWEN_MODEL_IDS}
+            model={aggregateModelByIds(detail.models, QWEN_MODEL_IDS, QWEN_DISPLAY_NAME)}
+            series={detail.series}
+            rangeMode={rangeMode}
+            showCacheBreakdown={false}
+          />
+        </section>
+        <section className="tl-panel rounded-2xl border p-5">
+          <ModelElsePanel model={aggregateOtherModels(detail.models)} series={detail.series} rangeMode={rangeMode} />
+        </section>
       </section>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="tl-panel rounded-2xl border p-5">
@@ -436,66 +546,69 @@ function UsageBars({ series, rangeMode }: { series: AdminMonitoringSeriesPoint[]
   const hasUsage = series.some((item) => item.total_tokens > 0);
   const maxTokens = Math.max(1, ...points.map((item) => item.total_tokens));
   const hoverPoint = hoverIndex === null ? null : points[hoverIndex];
-  if (!hasUsage) return <EmptyState text="当前范围内暂无模型调用记录" />;
+  if (!hasUsage) return <EmptyState text="No model calls in this range" />;
   return (
     <div className="min-h-72">
       <div className="relative overflow-x-clip">
-      <div className="flex h-56 items-end gap-2 border-b border-border/70 pb-2" onMouseLeave={() => setHoverIndex(null)}>
-        {points.map((item, index) => {
-          const flash = item.models["deepseek-v4-flash"]?.total_tokens ?? 0;
-          const pro = item.models["deepseek-v4-pro"]?.total_tokens ?? 0;
-          const other = Math.max(0, item.total_tokens - flash - pro);
-          return (
-            <div
-              key={item.date}
-              className="relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
-              onMouseEnter={() => setHoverIndex(index)}
-            >
-              {hoverIndex === index && <div className="absolute inset-y-0 left-1/2 z-10 border-l border-dashed border-muted-foreground" />}
-              <div className="flex h-48 w-full max-w-10 flex-col justify-end overflow-hidden rounded-t-md">
-                {item.total_tokens > 0 && (
-                  <>
-                    <div className="bg-amber-400" style={{ height: `${(other / maxTokens) * 100}%` }} />
-                    <div className="bg-sky-500" style={{ height: `${(pro / maxTokens) * 100}%` }} />
-                    <div className="bg-emerald-500" style={{ height: `${(flash / maxTokens) * 100}%` }} />
-                  </>
-                )}
+        <div className="flex h-56 items-end gap-2 border-b border-border/70 pb-2" onMouseLeave={() => setHoverIndex(null)}>
+          {points.map((item, index) => {
+            const flash = sumSeriesMetric(item, [DEEPSEEK_FLASH_MODEL], "total_tokens");
+            const pro = sumSeriesMetric(item, [DEEPSEEK_PRO_MODEL], "total_tokens");
+            const qwen = sumSeriesMetric(item, QWEN_MODEL_IDS, "total_tokens");
+            const other = sumOtherSeriesMetric(item, "total_tokens");
+            return (
+              <div key={item.date} className="relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1" onMouseEnter={() => setHoverIndex(index)}>
+                {hoverIndex === index && <div className="absolute inset-y-0 left-1/2 z-10 border-l border-dashed border-muted-foreground" />}
+                <div className="flex h-48 w-full max-w-10 flex-col justify-end overflow-hidden rounded-t-md">
+                  {item.total_tokens > 0 && (
+                    <>
+                      <div className="bg-amber-400" style={{ height: `${(other / maxTokens) * 100}%` }} />
+                      <div className="bg-rose-500" style={{ height: `${(qwen / maxTokens) * 100}%` }} />
+                      <div className="bg-sky-500" style={{ height: `${(pro / maxTokens) * 100}%` }} />
+                      <div className="bg-emerald-500" style={{ height: `${(flash / maxTokens) * 100}%` }} />
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-        <span>{points[0]?.date.slice(5)}</span>
-        <span>{points[points.length - 1]?.date.slice(5)}</span>
-      </div>
-      {hoverPoint && (
-        <div className={cn("pointer-events-none absolute top-0 z-50 min-w-80 -translate-y-[calc(100%+0.75rem)] rounded-xl bg-neutral-800 px-4 py-3 text-sm text-white shadow-2xl", tooltipPlacement(hoverIndex, points.length))}>
-          <div className="mb-2 flex justify-between gap-5 font-semibold">
-            <span>{hoverPoint.date}</span>
-            <span>{formatNumber(hoverPoint.total_tokens)} tokens</span>
-          </div>
-          <TooltipRow color="bg-emerald-500" label="deepseek-v4-flash" value={`${formatNumber(hoverPoint.models["deepseek-v4-flash"]?.total_tokens ?? 0)} tokens`} />
-          <TooltipRow color="bg-sky-500" label="deepseek-v4-pro" value={`${formatNumber(hoverPoint.models["deepseek-v4-pro"]?.total_tokens ?? 0)} tokens`} />
-          <TooltipRow color="bg-amber-400" label="其他模型" value={`${formatNumber(Math.max(0, hoverPoint.total_tokens - (hoverPoint.models["deepseek-v4-flash"]?.total_tokens ?? 0) - (hoverPoint.models["deepseek-v4-pro"]?.total_tokens ?? 0)))} tokens`} />
+            );
+          })}
         </div>
-      )}
+        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+          <span>{points[0]?.date.slice(5)}</span>
+          <span>{points[points.length - 1]?.date.slice(5)}</span>
+        </div>
+        {hoverPoint && (
+          <div className={cn("pointer-events-none absolute top-0 z-50 min-w-80 -translate-y-[calc(100%+0.75rem)] rounded-xl bg-neutral-800 px-4 py-3 text-sm text-white shadow-2xl", tooltipPlacement(hoverIndex, points.length))}>
+            <div className="mb-2 flex justify-between gap-5 font-semibold">
+              <span>{hoverPoint.date}</span>
+              <span>{formatNumber(hoverPoint.total_tokens)} tokens</span>
+            </div>
+            <TooltipRow color="bg-emerald-500" label={FLASH_DISPLAY_NAME} value={`${formatNumber(sumSeriesMetric(hoverPoint, [DEEPSEEK_FLASH_MODEL], "total_tokens"))} tokens`} />
+            <TooltipRow color="bg-sky-500" label={PRO_DISPLAY_NAME} value={`${formatNumber(sumSeriesMetric(hoverPoint, [DEEPSEEK_PRO_MODEL], "total_tokens"))} tokens`} />
+            <TooltipRow color="bg-rose-500" label={QWEN_DISPLAY_NAME} value={`${formatNumber(sumSeriesMetric(hoverPoint, QWEN_MODEL_IDS, "total_tokens"))} tokens`} />
+            <TooltipRow color="bg-amber-400" label={ELSE_DISPLAY_NAME} value={`${formatNumber(sumOtherSeriesMetric(hoverPoint, "total_tokens"))} tokens`} />
+          </div>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <Legend color="bg-emerald-500" label="deepseek-v4-flash" />
-        <Legend color="bg-sky-500" label="deepseek-v4-pro" />
-        <Legend color="bg-amber-400" label="其它模型" />
+        <Legend color="bg-emerald-500" label={FLASH_DISPLAY_NAME} />
+        <Legend color="bg-sky-500" label={PRO_DISPLAY_NAME} />
+        <Legend color="bg-rose-500" label={QWEN_DISPLAY_NAME} />
+        <Legend color="bg-amber-400" label={ELSE_DISPLAY_NAME} />
       </div>
     </div>
   );
 }
 
 function ModelUsage({ models }: { models: AdminMonitoringModel[] }) {
-  const totalTokens = Math.max(1, models.reduce((sum, model) => sum + model.total_tokens, 0));
-  if (models.length === 0) return <EmptyState text="当前范围内暂无模型用量" />;
+  const [showMore, setShowMore] = useState(false);
+  const buckets = monitoringModelBuckets(models);
+  const totalTokens = Math.max(1, buckets.reduce((sum, model) => sum + model.total_tokens, 0));
+  const visibleBuckets = showMore ? buckets : buckets.slice(0, 2);
+  const hiddenCount = Math.max(0, buckets.length - visibleBuckets.length);
   return (
     <div className="space-y-4">
-      {models.map((model) => (
+      {visibleBuckets.map((model) => (
         <div key={model.model_name} className="rounded-xl border border-border/70 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
@@ -505,7 +618,7 @@ function ModelUsage({ models }: { models: AdminMonitoringModel[] }) {
             <span className="text-sm font-semibold">{formatNumber(model.total_tokens)}</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-muted">
-            <div className={modelAccent(model.model_name)} style={{ width: `${Math.max(2, (model.total_tokens / totalTokens) * 100)}%`, height: "100%" }} />
+            <div className={modelAccent(model.model_name)} style={{ width: `${model.total_tokens > 0 ? Math.max(2, (model.total_tokens / totalTokens) * 100) : 0}%`, height: "100%" }} />
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
             <span>输入 {formatNumber(model.prompt_tokens)}</span>
@@ -514,17 +627,70 @@ function ModelUsage({ models }: { models: AdminMonitoringModel[] }) {
           </div>
         </div>
       ))}
+      <button
+        type="button"
+        className="tl-hover flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-border/70 text-xs font-medium text-muted-foreground"
+        onClick={() => setShowMore((value) => !value)}
+      >
+        <span>{showMore ? "收起" : `更多${hiddenCount ? ` ${hiddenCount}` : ""}`}</span>
+        <ChevronDown className={cn("h-4 w-4 transition-transform", showMore && "rotate-180")} />
+      </button>
     </div>
   );
 }
 
 function ModelDeepSeekPanel({
-  modelName,
+  displayName,
+  modelNames,
+  model,
+  series,
+  rangeMode,
+  showCacheBreakdown = true,
+}: {
+  displayName: string;
+  modelNames: string[];
+  model?: AdminMonitoringModel;
+  series: AdminMonitoringSeriesPoint[];
+  rangeMode: RangeMode;
+  showCacheBreakdown?: boolean;
+}) {
+  const byDate = new Map(series.map((item) => [item.date, item]));
+  const points = monthDateKeys(rangeMode).map((date) => {
+    const item = byDate.get(date);
+    return {
+      date,
+      requestCount: item ? sumSeriesMetric(item, modelNames, "request_count") : 0,
+      totalTokens: item ? sumSeriesMetric(item, modelNames, "total_tokens") : 0,
+      promptTokens: item ? sumSeriesMetric(item, modelNames, "prompt_tokens") : 0,
+      cacheHitTokens: item ? sumSeriesMetric(item, modelNames, "cache_hit_tokens") : 0,
+      cacheMissTokens: item ? sumSeriesMetric(item, modelNames, "cache_miss_tokens") || sumSeriesMetric(item, modelNames, "prompt_tokens") : 0,
+      completionTokens: item ? sumSeriesMetric(item, modelNames, "completion_tokens") : 0,
+    };
+  });
+  const maxRequest = Math.max(1, ...points.map((item) => item.requestCount));
+  const maxTokens = Math.max(1, ...points.map((item) => item.totalTokens));
+  return (
+    <div>
+      <SectionTitle icon={Gauge} title={displayName} />
+      <div className="mb-5 grid grid-cols-2 gap-3 text-sm">
+        <MiniStat icon={Activity} label="API 请求次数" value={formatNumber(model?.request_count)} />
+        <MiniStat icon={Database} label="Tokens" value={formatNumber(model?.total_tokens)} />
+        <MiniStat icon={WalletCards} label="消费" value={formatCnyFromMicroCents(model?.cost_micro_cents)} />
+        <MiniStat icon={Clock} label="模型调用延迟" value={`${formatNumber(model?.avg_latency_ms)}ms`} />
+      </div>
+      <div className="grid gap-6">
+        <MiniLineChart title="API 请求次数" total={formatNumber(model?.request_count)} points={points.map((item) => ({ date: item.date, value: item.requestCount }))} max={maxRequest} valueLabel="请求次数" />
+        <TokenStackChart points={points} max={maxTokens} showCacheBreakdown={showCacheBreakdown} />
+      </div>
+    </div>
+  );
+}
+
+function ModelElsePanel({
   model,
   series,
   rangeMode,
 }: {
-  modelName: string;
   model?: AdminMonitoringModel;
   series: AdminMonitoringSeriesPoint[];
   rangeMode: RangeMode;
@@ -534,28 +700,28 @@ function ModelDeepSeekPanel({
     const item = byDate.get(date);
     return {
       date,
-      requestCount: item?.models[modelName]?.request_count ?? 0,
-      totalTokens: item?.models[modelName]?.total_tokens ?? 0,
-      promptTokens: item?.models[modelName]?.prompt_tokens ?? 0,
-      cacheHitTokens: item?.models[modelName]?.cache_hit_tokens ?? 0,
-      cacheMissTokens: item?.models[modelName]?.cache_miss_tokens ?? item?.models[modelName]?.prompt_tokens ?? 0,
-      completionTokens: item?.models[modelName]?.completion_tokens ?? 0,
+      requestCount: item ? sumOtherSeriesMetric(item, "request_count") : 0,
+      totalTokens: item ? sumOtherSeriesMetric(item, "total_tokens") : 0,
+      promptTokens: item ? sumOtherSeriesMetric(item, "prompt_tokens") : 0,
+      cacheHitTokens: 0,
+      cacheMissTokens: item ? sumOtherSeriesMetric(item, "prompt_tokens") : 0,
+      completionTokens: item ? sumOtherSeriesMetric(item, "completion_tokens") : 0,
     };
   });
   const maxRequest = Math.max(1, ...points.map((item) => item.requestCount));
   const maxTokens = Math.max(1, ...points.map((item) => item.totalTokens));
   return (
     <div>
-      <SectionTitle icon={Gauge} title={modelName} />
+      <SectionTitle icon={Gauge} title={ELSE_DISPLAY_NAME} />
       <div className="mb-5 grid grid-cols-2 gap-3 text-sm">
-        <MiniStat icon={Activity} label="API 请求次数" value={formatNumber(model?.request_count)} />
+        <MiniStat icon={Activity} label="API 璇锋眰娆℃暟" value={formatNumber(model?.request_count)} />
         <MiniStat icon={Database} label="Tokens" value={formatNumber(model?.total_tokens)} />
-        <MiniStat icon={WalletCards} label="消费" value={formatCnyFromMicroCents(model?.cost_micro_cents)} />
-        <MiniStat icon={Clock} label="模型调用延迟" value={`${formatNumber(model?.avg_latency_ms)}ms`} />
+        <MiniStat icon={WalletCards} label="娑堣垂" value={formatCnyFromMicroCents(model?.cost_micro_cents)} />
+        <MiniStat icon={Clock} label="妯″瀷璋冪敤寤惰繜" value={`${formatNumber(model?.avg_latency_ms)}ms`} />
       </div>
       <div className="grid gap-6">
-        <MiniLineChart title="API 请求次数" total={formatNumber(model?.request_count)} points={points.map((item) => ({ date: item.date, value: item.requestCount }))} max={maxRequest} valueLabel="请求次数" />
-        <TokenStackChart points={points} max={maxTokens} />
+        <MiniLineChart title="API 璇锋眰娆℃暟" total={formatNumber(model?.request_count)} points={points.map((item) => ({ date: item.date, value: item.requestCount }))} max={maxRequest} valueLabel="璇锋眰娆℃暟" />
+        <TokenStackChart points={points} max={maxTokens} showCacheBreakdown={false} />
       </div>
     </div>
   );
@@ -569,30 +735,28 @@ function CostBars({ series, rangeMode }: { series: AdminMonitoringSeriesPoint[];
   const maxCost = Math.max(1, ...points.map((item) => item.cost_micro_cents));
   const totalCost = series.reduce((sum, item) => sum + item.cost_micro_cents, 0);
   const hoverPoint = hoverIndex === null ? null : points[hoverIndex];
-  if (!hasCost) return <EmptyState text="当前范围内暂无消费记录" />;
+  if (!hasCost) return <EmptyState text="No cost records in this range" />;
   return (
     <div className="min-h-72">
       <div className="mb-5 flex items-center gap-3 text-sm">
-        <span className="font-semibold">消费金额</span>
+        <span className="font-semibold">Cost amount</span>
         <span className="text-muted-foreground">{formatCnyFromMicroCents(totalCost)}</span>
       </div>
       <div className="relative overflow-x-clip">
         <div className="flex h-52 items-end gap-2 border-b border-border/70 pb-2" onMouseLeave={() => setHoverIndex(null)}>
           {points.map((item, index) => {
-            const flashCost = item.models["deepseek-v4-flash"]?.cost_micro_cents ?? 0;
-            const proCost = item.models["deepseek-v4-pro"]?.cost_micro_cents ?? 0;
-            const otherCost = Math.max(0, item.cost_micro_cents - flashCost - proCost);
+            const flashCost = sumSeriesMetric(item, [DEEPSEEK_FLASH_MODEL], "cost_micro_cents");
+            const proCost = sumSeriesMetric(item, [DEEPSEEK_PRO_MODEL], "cost_micro_cents");
+            const qwenCost = sumSeriesMetric(item, QWEN_MODEL_IDS, "cost_micro_cents");
+            const otherCost = sumOtherSeriesMetric(item, "cost_micro_cents");
             return (
-              <div
-                key={item.date}
-                className="relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
-                onMouseEnter={() => setHoverIndex(index)}
-              >
+              <div key={item.date} className="relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1" onMouseEnter={() => setHoverIndex(index)}>
                 {hoverIndex === index && <div className="absolute inset-y-0 left-1/2 z-10 border-l border-dashed border-neutral-700" />}
                 <div className="flex h-44 w-full max-w-9 flex-col justify-end overflow-hidden rounded-t-md">
                   {item.cost_micro_cents > 0 && (
                     <>
                       <div className="bg-yellow-300" style={{ height: `${(otherCost / maxCost) * 100}%` }} />
+                      <div className="bg-rose-500" style={{ height: `${(qwenCost / maxCost) * 100}%` }} />
                       <div className="bg-yellow-500" style={{ height: `${(flashCost / maxCost) * 100}%` }} />
                       <div className="bg-orange-500" style={{ height: `${(proCost / maxCost) * 100}%` }} />
                     </>
@@ -612,14 +776,18 @@ function CostBars({ series, rangeMode }: { series: AdminMonitoringSeriesPoint[];
               <span>{hoverPoint.date}</span>
               <span>{formatCnyFromMicroCents(hoverPoint.cost_micro_cents)}</span>
             </div>
-            <TooltipRow color="bg-yellow-500" label="deepseek-v4-flash" value={formatCnyFromMicroCents(hoverPoint.models["deepseek-v4-flash"]?.cost_micro_cents ?? 0)} />
-            <TooltipRow color="bg-orange-500" label="deepseek-v4-pro" value={formatCnyFromMicroCents(hoverPoint.models["deepseek-v4-pro"]?.cost_micro_cents ?? 0)} />
+            <TooltipRow color="bg-yellow-500" label={FLASH_DISPLAY_NAME} value={formatCnyFromMicroCents(sumSeriesMetric(hoverPoint, [DEEPSEEK_FLASH_MODEL], "cost_micro_cents"))} />
+            <TooltipRow color="bg-orange-500" label={PRO_DISPLAY_NAME} value={formatCnyFromMicroCents(sumSeriesMetric(hoverPoint, [DEEPSEEK_PRO_MODEL], "cost_micro_cents"))} />
+            <TooltipRow color="bg-rose-500" label={QWEN_DISPLAY_NAME} value={formatCnyFromMicroCents(sumSeriesMetric(hoverPoint, QWEN_MODEL_IDS, "cost_micro_cents"))} />
+            <TooltipRow color="bg-yellow-300" label={ELSE_DISPLAY_NAME} value={formatCnyFromMicroCents(sumOtherSeriesMetric(hoverPoint, "cost_micro_cents"))} />
           </div>
         )}
       </div>
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <Legend color="bg-yellow-500" label="deepseek-v4-flash" />
-        <Legend color="bg-orange-500" label="deepseek-v4-pro" />
+        <Legend color="bg-yellow-500" label={FLASH_DISPLAY_NAME} />
+        <Legend color="bg-orange-500" label={PRO_DISPLAY_NAME} />
+        <Legend color="bg-rose-500" label={QWEN_DISPLAY_NAME} />
+        <Legend color="bg-yellow-300" label={ELSE_DISPLAY_NAME} />
       </div>
     </div>
   );
@@ -683,6 +851,7 @@ function MiniLineChart({
 function TokenStackChart({
   points,
   max,
+  showCacheBreakdown = true,
 }: {
   points: Array<{
     date: string;
@@ -693,6 +862,7 @@ function TokenStackChart({
     totalTokens: number;
   }>;
   max: number;
+  showCacheBreakdown?: boolean;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const hoverPoint = hoverIndex === null ? null : points[hoverIndex];
@@ -717,8 +887,14 @@ function TokenStackChart({
               <div className="flex h-24 w-full max-w-5 flex-col justify-end overflow-hidden rounded-t">
                 {item.totalTokens > 0 && (
                   <>
-                    <div className="bg-sky-300" style={{ height: `${(item.cacheHitTokens / max) * 100}%` }} />
-                    <div className="bg-sky-500" style={{ height: `${(item.cacheMissTokens / max) * 100}%` }} />
+                    {showCacheBreakdown ? (
+                      <>
+                        <div className="bg-sky-300" style={{ height: `${(item.cacheHitTokens / max) * 100}%` }} />
+                        <div className="bg-sky-500" style={{ height: `${(item.cacheMissTokens / max) * 100}%` }} />
+                      </>
+                    ) : (
+                      <div className="bg-rose-500" style={{ height: `${(item.promptTokens / max) * 100}%` }} />
+                    )}
                     <div className="bg-blue-600" style={{ height: `${(item.completionTokens / max) * 100}%` }} />
                   </>
                 )}
@@ -737,9 +913,15 @@ function TokenStackChart({
             <span>{hoverPoint.date}</span>
             <span>{formatNumber(hoverPoint.totalTokens)} tokens</span>
           </div>
-          <TooltipRow color="bg-sky-300" label="输入（命中缓存）" value={`${formatNumber(hoverPoint.cacheHitTokens)} tokens`} />
-          <TooltipRow color="bg-sky-500" label="输入（未命中缓存）" value={`${formatNumber(hoverPoint.cacheMissTokens)} tokens`} />
-          <TooltipRow color="bg-blue-600" label="输出" value={`${formatNumber(hoverPoint.completionTokens)} tokens`} />
+          {showCacheBreakdown ? (
+            <>
+              <TooltipRow color="bg-sky-300" label="Input cache hit" value={`${formatNumber(hoverPoint.cacheHitTokens)} tokens`} />
+              <TooltipRow color="bg-sky-500" label="Input cache miss" value={`${formatNumber(hoverPoint.cacheMissTokens)} tokens`} />
+            </>
+          ) : (
+            <TooltipRow color="bg-rose-500" label="Input" value={`${formatNumber(hoverPoint.promptTokens)} tokens`} />
+          )}
+          <TooltipRow color="bg-blue-600" label="Output" value={`${formatNumber(hoverPoint.completionTokens)} tokens`} />
         </div>
       )}
       </div>

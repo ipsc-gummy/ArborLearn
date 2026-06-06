@@ -131,6 +131,7 @@ def build_model_payload(
     }
     if stream:
         payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
     if thinking_config["type"] == "enabled":
         payload["reasoning_effort"] = thinking_config["reasoning_effort"]
     else:
