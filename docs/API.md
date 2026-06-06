@@ -816,7 +816,32 @@ Response:
 }
 ```
 
-## 9. API Groups And Ownership
+## 9. Wallet And Usage
+
+### `GET /api/wallet`
+
+Returns the current user's RMB wallet balance. Token values are usage metrics only; this endpoint does not return free-token balance fields such as `balanceTokens` or `initialTokens`.
+
+Response:
+
+```json
+{
+  "wallet": {
+    "userId": "user-...",
+    "balanceCents": 1000,
+    "balanceMicroCents": 1000000000,
+    "initialCents": 1000,
+    "initialMicroCents": 1000000000,
+    "canCallApi": true,
+    "createdAt": "2026-06-05T00:00:00Z",
+    "updatedAt": "2026-06-05T00:00:00Z"
+  }
+}
+```
+
+`canCallApi` is based only on positive RMB wallet balance. Model calls still record consumed `total_tokens`, `prompt_tokens`, and `completion_tokens` in usage endpoints.
+
+## 10. API Groups And Ownership
 
 所有用户数据接口都必须通过当前 token 约束 owner。
 

@@ -32,7 +32,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     from app.main import app
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1000")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000000")
 
     with TestClient(app) as test_client:
         yield test_client
@@ -54,6 +53,20 @@ def register(client: TestClient, label: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "email": email,
     }
+
+
+def test_stream_model_payload_requests_usage() -> None:
+    from app.model_client import build_model_payload
+
+    payload = build_model_payload(
+        [{"role": "user", "content": "hello"}],
+        model_name="deepseek-v4-flash",
+        thinking_mode="fast",
+        stream=True,
+    )
+
+    assert payload["stream"] is True
+    assert payload["stream_options"] == {"include_usage": True}
 
 
 def test_register_requires_email_code_when_enabled(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,7 +164,8 @@ def test_wallet_initializes_on_first_read(client: TestClient) -> None:
     assert response.status_code == 200
     wallet = response.json()["wallet"]
     assert wallet["balanceCents"] == 1000
-    assert wallet["balanceTokens"] == 1_000_000
+    assert "balanceTokens" not in wallet
+    assert "initialTokens" not in wallet
     assert wallet["canCallApi"] is True
 
 
@@ -161,25 +175,20 @@ def test_wallet_default_quota_increase_tops_up_existing_wallet(client: TestClien
     first = client.get("/api/wallet", headers=headers)
     assert first.status_code == 200
     assert first.json()["wallet"]["balanceCents"] == 1000
-    assert first.json()["wallet"]["balanceTokens"] == 1_000_000
 
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "1500")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1500000")
     increased = client.get("/api/wallet", headers=headers)
     assert increased.status_code == 200
     assert increased.json()["wallet"]["balanceCents"] == 1500
-    assert increased.json()["wallet"]["balanceTokens"] == 1_500_000
 
     monkeypatch.setenv("DEFAULT_WALLET_INITIAL_CENTS", "300")
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "300000")
     decreased = client.get("/api/wallet", headers=headers)
     assert decreased.status_code == 200
     assert decreased.json()["wallet"]["balanceCents"] == 1500
-    assert decreased.json()["wallet"]["balanceTokens"] == 1_500_000
 
 
 def test_wallet_cost_keeps_sub_cent_precision(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.billing import calculate_paid_cost_cents, calculate_paid_cost_micro_cents
+    from app.billing import calculate_cost_cents, calculate_cost_micro_cents
 
     monkeypatch.setenv(
         "MODEL_PRICING_JSON",
@@ -193,31 +202,47 @@ def test_wallet_cost_keeps_sub_cent_precision(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
 
-    cost_micro_cents, pricing_source = calculate_paid_cost_micro_cents(
-        model_name="tiny-model",
-        prompt_tokens=1,
-        prompt_cache_hit_tokens=None,
-        prompt_cache_miss_tokens=None,
-        completion_tokens=0,
-        total_tokens=1,
-        paid_tokens=1,
-    )
-    cost_cents, _ = calculate_paid_cost_cents(
-        model_name="tiny-model",
-        prompt_tokens=1,
-        prompt_cache_hit_tokens=None,
-        prompt_cache_miss_tokens=None,
-        completion_tokens=0,
-        total_tokens=1,
-        paid_tokens=1,
-    )
+    cost_micro_cents, pricing_source = calculate_cost_micro_cents("tiny-model", 1, 0)
+    cost_cents, _ = calculate_cost_cents("tiny-model", 1, 0)
 
     assert pricing_source == "env"
-    assert cost_micro_cents == 1
+    assert cost_micro_cents == 2
     assert cost_cents == 0
 
 
-def test_chat_usage_uses_free_tokens_then_wallet_balance(
+def test_wallet_pricing_prefers_env_default_and_ignores_cache_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.billing import calculate_cost_micro_cents
+
+    monkeypatch.setenv(
+        "MODEL_PRICING_JSON",
+        json.dumps(
+            {
+                "default": {
+                    "input_cents_per_million_tokens": 1_000_000,
+                    "output_cents_per_million_tokens": 2_000_000,
+                },
+                "deepseek-v4-pro": {
+                    "cache_hit_cents_per_million_tokens": 1,
+                    "cache_miss_cents_per_million_tokens": 10,
+                    "output_cents_per_million_tokens": 10,
+                },
+            }
+        ),
+    )
+
+    cost_micro_cents, pricing_source = calculate_cost_micro_cents(
+        "deepseek-v4-pro",
+        100,
+        50,
+        prompt_cache_hit_tokens=100,
+        prompt_cache_miss_tokens=0,
+    )
+
+    assert pricing_source == "env"
+    assert cost_micro_cents == 400_000_000
+
+
+def test_chat_usage_charges_wallet_balance_for_all_tokens(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app import main
@@ -234,7 +259,6 @@ def test_chat_usage_uses_free_tokens_then_wallet_balance(
             }
         ),
     )
-    monkeypatch.setenv("DEFAULT_WALLET_INITIAL_TOKENS", "1000")
     monkeypatch.setattr(
         main,
         "call_model_with_usage",
@@ -263,34 +287,34 @@ def test_chat_usage_uses_free_tokens_then_wallet_balance(
     assert first.status_code == 200
 
     wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
-    assert wallet["balanceCents"] == 800
-    assert wallet["balanceMicroCents"] == 800_000_000
-    assert wallet["balanceTokens"] == 0
-    assert wallet["canCallApi"] is True
+    assert wallet["balanceCents"] == -1400
+    assert wallet["balanceMicroCents"] == -1_400_000_000
+    assert "balanceTokens" not in wallet
+    assert wallet["canCallApi"] is False
 
     second = client.post(
         "/api/chat",
         headers=headers,
         json={"nodeId": root["id"], "message": "again", "modelName": "deepseek-v4-pro"},
     )
-    assert second.status_code == 200
+    assert second.status_code == 402
+    assert "balanceTokens" not in second.json()["detail"]
 
     wallet = client.get("/api/wallet", headers=headers).json()["wallet"]
-    assert wallet["balanceCents"] == -400
-    assert wallet["balanceMicroCents"] == -400_000_000
-    assert wallet["balanceTokens"] == 0
+    assert wallet["balanceCents"] == -1400
+    assert wallet["balanceMicroCents"] == -1_400_000_000
     assert wallet["canCallApi"] is False
 
     summary = client.get("/api/usage/summary", headers=headers)
     assert summary.status_code == 200
-    assert summary.json()["total"]["total_tokens"] == 2400
-    assert summary.json()["total"]["cost_cents"] == 1400
-    assert summary.json()["total"]["cost_micro_cents"] == 1_400_000_000
+    assert summary.json()["total"]["total_tokens"] == 1200
+    assert summary.json()["total"]["cost_cents"] == 2400
+    assert summary.json()["total"]["cost_micro_cents"] == 2_400_000_000
 
     events = client.get("/api/usage/events", headers=headers)
     assert events.status_code == 200
     assert events.json()["events"][0]["usage_source"] == "provider"
-    assert events.json()["events"][0]["cost_micro_cents"] == 1_200_000_000
+    assert events.json()["events"][0]["cost_micro_cents"] == 2_400_000_000
     assert events.json()["events"][0]["prompt_cache_hit_tokens"] == 100
     assert events.json()["events"][0]["prompt_cache_miss_tokens"] == 500
 
@@ -606,7 +630,8 @@ def test_image_vision_retries_transient_failures(monkeypatch: pytest.MonkeyPatch
 
     attempts: list[str] = []
 
-    def fake_vision_call(image_bytes: bytes, mime_type: str) -> str:
+    def fake_vision_call(image_bytes: bytes, mime_type: str, billing_context: dict | None = None) -> str:
+        assert billing_context is None
         attempts.append(mime_type)
         if len(attempts) < 3:
             raise file_uploads.VisionRequestError("The read operation timed out", retryable=True)
@@ -644,7 +669,7 @@ def test_image_vision_failure_is_not_hidden_by_ocr(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         file_uploads,
         "_call_vision_model",
-        lambda image_bytes, mime_type: (_ for _ in ()).throw(
+        lambda image_bytes, mime_type, billing_context=None: (_ for _ in ()).throw(
             file_uploads.VisionRequestError("SSL: UNEXPECTED_EOF_WHILE_READING", retryable=True)
         ),
     )

@@ -153,10 +153,8 @@ export interface Wallet {
   userId: string;
   balanceCents: number;
   balanceMicroCents?: number;
-  balanceTokens: number;
   initialCents: number;
   initialMicroCents?: number;
-  initialTokens: number;
   canCallApi: boolean;
   createdAt: string;
   updatedAt: string;
@@ -194,6 +192,8 @@ export interface UsageEvent {
   model_name?: string | null;
   thinking_mode?: string | null;
   prompt_tokens?: number | null;
+  prompt_cache_hit_tokens?: number | null;
+  prompt_cache_miss_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
   usage_source?: string | null;
@@ -263,7 +263,6 @@ export interface AdminMonitoringUser {
   created_at: string;
   balance_cents?: number | null;
   balance_micro_cents?: number | null;
-  balance_tokens?: number | null;
   request_count: number;
   total_tokens: number;
   prompt_tokens: number;
